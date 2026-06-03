@@ -1,0 +1,4 @@
+{
+  "extends": "@rando/tsconfig/library.json",
+  "include": ["src/**/*"]
+}

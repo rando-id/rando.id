@@ -1,0 +1,34 @@
+{
+  "name": "@rando/api",
+  "version": "0.0.0",
+  "private": true,
+  "scripts": {
+    "dev": "next dev --port 4000",
+    "build": "next build",
+    "start": "next start --port 4000",
+    "lint": "eslint .",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@clerk/nextjs": "^6.10.0",
+    "@rando/api-client": "workspace:*",
+    "@rando/auth": "workspace:*",
+    "@rando/config": "workspace:*",
+    "@rando/db": "workspace:*",
+    "@rando/observability": "workspace:*",
+    "next": "^15.1.3",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "svix": "^1.45.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@rando/eslint-config": "workspace:*",
+    "@rando/tsconfig": "workspace:*",
+    "@types/node": "^22.10.2",
+    "@types/react": "^19.0.2",
+    "@types/react-dom": "^19.0.2",
+    "eslint": "^9.17.0",
+    "typescript": "^5.7.2"
+  }
+}

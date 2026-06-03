@@ -1,0 +1,10 @@
+{
+  "extends": "@rando/tsconfig/expo.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": ["./src/*"]
+    }
+  },
+  "include": ["**/*.ts", "**/*.tsx"],
+  "exclude": ["node_modules", ".expo"]
+}

@@ -1,0 +1,16 @@
+services:
+  postgres:
+    image: postgis/postgis:16-3.4
+    container_name: rando-postgres
+    restart: unless-stopped
+    ports:
+      - '5432:5432'
+    environment:
+      POSTGRES_USER: rando
+      POSTGRES_PASSWORD: rando
+      POSTGRES_DB: rando
+    volumes:
+      - rando-postgres-data:/var/lib/postgresql/data
+
+volumes:
+  rando-postgres-data:

@@ -1,0 +1,23 @@
+{
+  "name": "@rando/testing",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts",
+    "./handlers": "./src/handlers/index.ts",
+    "./fixtures": "./src/fixtures/index.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "msw": "^2.7.0"
+  },
+  "devDependencies": {
+    "@rando/tsconfig": "workspace:*",
+    "typescript": "^5.7.2"
+  }
+}

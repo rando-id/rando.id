@@ -1,0 +1,30 @@
+{
+  "expo": {
+    "name": "Rando",
+    "slug": "rando",
+    "scheme": "rando",
+    "version": "0.0.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "newArchEnabled": true,
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "id.rando.app"
+    },
+    "android": {
+      "package": "id.rando.app",
+      "adaptiveIcon": {
+        "backgroundColor": "#ffffff"
+      }
+    },
+    "plugins": [
+      "expo-secure-store",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Rando uses your location to show contacts you met nearby."
+        }
+      ]
+    ]
+  }
+}
