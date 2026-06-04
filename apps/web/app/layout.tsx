@@ -1,5 +1,5 @@
 import type { ReactNode } from 'react'
-import { ClerkProvider } from '@clerk/nextjs'
+import { ClerkProvider, SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/nextjs'
 import { TamaguiProviderClient } from '../src/providers/Tamagui'
 
 export const metadata = {
@@ -12,7 +12,26 @@ export default function RootLayout({ children }: { children: ReactNode }) {
     <ClerkProvider>
       <html lang="en" suppressHydrationWarning>
         <body>
-          <TamaguiProviderClient>{children}</TamaguiProviderClient>
+          <TamaguiProviderClient>
+            <header
+              style={{
+                display: 'flex',
+                justifyContent: 'flex-end',
+                alignItems: 'center',
+                padding: '12px 24px',
+                borderBottom: '1px solid #eee',
+                gap: 12,
+              }}
+            >
+              <SignedOut>
+                <SignInButton mode="modal" />
+              </SignedOut>
+              <SignedIn>
+                <UserButton afterSignOutUrl="/sign-in" />
+              </SignedIn>
+            </header>
+            {children}
+          </TamaguiProviderClient>
         </body>
       </html>
     </ClerkProvider>
