@@ -1,3 +1,4 @@
+import './load-env'
 import postgres from 'postgres'
 
 async function main() {
@@ -8,8 +9,9 @@ async function main() {
   }
 
   const client = postgres(url, { max: 1, prepare: false })
-  console.log('Dropping public schema…')
+  console.log('Dropping public and drizzle schemas…')
   await client`DROP SCHEMA IF EXISTS public CASCADE`
+  await client`DROP SCHEMA IF EXISTS drizzle CASCADE`
   await client`CREATE SCHEMA public`
   await client.end()
   console.log('Done.')
