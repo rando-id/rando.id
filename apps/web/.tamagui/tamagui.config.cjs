@@ -30,11 +30,13 @@ var __toCommonJS = (mod) => __copyProps(__defProp({}, "__esModule", { value: tru
 // ../../packages/ui/src/tamagui.config.ts
 var tamagui_config_exports = {};
 __export(tamagui_config_exports, {
+  config: () => config,
+  default: () => tamagui_config_default,
   tamaguiConfig: () => tamaguiConfig
 });
 module.exports = __toCommonJS(tamagui_config_exports);
 
-// ../../node_modules/.pnpm/@tamagui+shorthands@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.76.5_@babel+c_c323f98c63ef167be343940fe666a65a/node_modules/@tamagui/shorthands/dist/esm/v4.mjs
+// ../../node_modules/.pnpm/@tamagui+shorthands@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.85.3_@babel+c_5c97273c82bac066ba67f76d80a58637/node_modules/@tamagui/shorthands/dist/esm/v4.mjs
 var shorthands = {
   // text
   text: "textAlign",
@@ -73,13 +75,13 @@ var shorthands = {
   z: "zIndex"
 };
 
-// ../../node_modules/.pnpm/@tamagui+themes@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.76.5_@babel+core@_2406abf264fad0483c429f06656c1207/node_modules/@tamagui/themes/dist/esm/utils.mjs
+// ../../node_modules/.pnpm/@tamagui+themes@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.85.3_@babel+core@_f435fcb559e72b6b6082046ff11723e8/node_modules/@tamagui/themes/dist/esm/utils.mjs
 function sizeToSpace(v) {
   return v === 0 ? 0 : v === 2 ? 0.5 : v === 4 ? 1 : v === 8 ? 1.5 : v <= 16 ? Math.round(v * 0.333) : Math.floor(v * 0.7 - 12);
 }
 __name(sizeToSpace, "sizeToSpace");
 
-// ../../node_modules/.pnpm/@tamagui+themes@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.76.5_@babel+core@_2406abf264fad0483c429f06656c1207/node_modules/@tamagui/themes/dist/esm/v4-tokens.mjs
+// ../../node_modules/.pnpm/@tamagui+themes@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.85.3_@babel+core@_f435fcb559e72b6b6082046ff11723e8/node_modules/@tamagui/themes/dist/esm/v4-tokens.mjs
 var size = {
   $0: 0,
   "$0.25": 2,
@@ -148,7 +150,7 @@ var tokens = {
   size
 };
 
-// ../../node_modules/.pnpm/@tamagui+themes@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.76.5_@babel+core@_2406abf264fad0483c429f06656c1207/node_modules/@tamagui/themes/dist/esm/generated-v4.mjs
+// ../../node_modules/.pnpm/@tamagui+themes@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.85.3_@babel+core@_f435fcb559e72b6b6082046ff11723e8/node_modules/@tamagui/themes/dist/esm/generated-v4.mjs
 function t(a) {
   let res = {};
   for (const [ki, vi] of a) res[ks[ki]] = colors[vi];
@@ -530,7 +532,7 @@ var themes = {
   dark_green_ProgressIndicator: n66
 };
 
-// ../../node_modules/.pnpm/@tamagui+constants@1.144.4_react-native@0.76.5_@babel+core@7.29.7_@babel+preset-env@7.2_3c8a797995d0de70e436bff935fd880e/node_modules/@tamagui/constants/dist/esm/constants.mjs
+// ../../node_modules/.pnpm/@tamagui+constants@1.144.4_react-native@0.85.3_@babel+core@7.29.7_@types+react@19.2.16__c53d6c95435bc38e910cf75a5fb61b5c/node_modules/@tamagui/constants/dist/esm/constants.mjs
 var import_react = __toESM(require("react"), 1);
 var IS_REACT_19 = typeof import_react.default.use < "u";
 var isWeb = true;
@@ -542,7 +544,7 @@ var isChrome = typeof navigator < "u" && /Chrome/.test(navigator.userAgent || ""
 var isWebTouchable = isClient && ("ontouchstart" in window || navigator.maxTouchPoints > 0);
 var isIos = process.env.TEST_NATIVE_PLATFORM === "ios";
 
-// ../../node_modules/.pnpm/@tamagui+use-presence@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.76.5_@babel_dac45ba4de5f282478bdbcc6ec069bd5/node_modules/@tamagui/use-presence/dist/esm/PresenceContext.mjs
+// ../../node_modules/.pnpm/@tamagui+use-presence@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.85.3_@babel_f1f099861e20668b3b150a7e71fcdd65/node_modules/@tamagui/use-presence/dist/esm/PresenceContext.mjs
 var React2 = __toESM(require("react"), 1);
 var import_jsx_runtime = require("react/jsx-runtime");
 var PresenceContext = React2.createContext(null);
@@ -554,7 +556,7 @@ var ResetPresence = /* @__PURE__ */ __name((props) => {
   });
 }, "ResetPresence");
 
-// ../../node_modules/.pnpm/@tamagui+use-presence@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.76.5_@babel_dac45ba4de5f282478bdbcc6ec069bd5/node_modules/@tamagui/use-presence/dist/esm/usePresence.mjs
+// ../../node_modules/.pnpm/@tamagui+use-presence@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.85.3_@babel_f1f099861e20668b3b150a7e71fcdd65/node_modules/@tamagui/use-presence/dist/esm/usePresence.mjs
 var React3 = __toESM(require("react"), 1);
 function usePresence() {
   const context = React3.useContext(PresenceContext);
@@ -569,7 +571,7 @@ function usePresence() {
 }
 __name(usePresence, "usePresence");
 
-// ../../node_modules/.pnpm/@tamagui+animations-css@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.76.5_@bab_be2daea42651054790c929daf4f88a77/node_modules/@tamagui/animations-css/dist/esm/createAnimations.mjs
+// ../../node_modules/.pnpm/@tamagui+animations-css@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.85.3_@bab_036ec57e4dc2ae7b92c4977f6f04e6fe/node_modules/@tamagui/animations-css/dist/esm/createAnimations.mjs
 var import_web = require("@tamagui/core");
 var import_react2 = __toESM(require("react"), 1);
 function extractDuration(animation) {
@@ -598,7 +600,7 @@ function createAnimations(animations) {
         getValue() {
           return val;
         },
-        setValue(next, config, onFinish2) {
+        setValue(next, config2, onFinish2) {
           setVal(next), setOnFinish(onFinish2);
         },
         stop() {
@@ -662,7 +664,7 @@ function createAnimations(animations) {
 }
 __name(createAnimations, "createAnimations");
 
-// ../../node_modules/.pnpm/@tamagui+config@1.144.4_react-dom@19.2.7_react@19.2.7__react-native-reanimated@4.4.0_re_200dedb597b05f0cf30db84abf319e72/node_modules/@tamagui/config/dist/esm/animationsCSS.mjs
+// ../../node_modules/.pnpm/@tamagui+config@1.144.4_react-dom@19.2.7_react@19.2.7__react-native-reanimated@4.4.0_re_e54d04f038568d1dc24acacc06960a9e/node_modules/@tamagui/config/dist/esm/animationsCSS.mjs
 var smoothBezier = "cubic-bezier(0.215, 0.610, 0.355, 1.000)";
 var animationsCSS = createAnimations({
   "75ms": "ease-in 75ms",
@@ -679,7 +681,7 @@ var animationsCSS = createAnimations({
   tooltip: "ease-in 400ms"
 });
 
-// ../../node_modules/.pnpm/@tamagui+config@1.144.4_react-dom@19.2.7_react@19.2.7__react-native-reanimated@4.4.0_re_200dedb597b05f0cf30db84abf319e72/node_modules/@tamagui/config/dist/esm/v4-fonts.mjs
+// ../../node_modules/.pnpm/@tamagui+config@1.144.4_react-dom@19.2.7_react@19.2.7__react-native-reanimated@4.4.0_re_e54d04f038568d1dc24acacc06960a9e/node_modules/@tamagui/config/dist/esm/v4-fonts.mjs
 var import_core = require("@tamagui/core");
 var createSystemFont = /* @__PURE__ */ __name(({
   font = {},
@@ -729,7 +731,7 @@ var fonts = {
   })
 };
 
-// ../../node_modules/.pnpm/@tamagui+config@1.144.4_react-dom@19.2.7_react@19.2.7__react-native-reanimated@4.4.0_re_200dedb597b05f0cf30db84abf319e72/node_modules/@tamagui/config/dist/esm/v4-media.mjs
+// ../../node_modules/.pnpm/@tamagui+config@1.144.4_react-dom@19.2.7_react@19.2.7__react-native-reanimated@4.4.0_re_e54d04f038568d1dc24acacc06960a9e/node_modules/@tamagui/config/dist/esm/v4-media.mjs
 var breakpoints = {
   "2xl": 1536,
   xl: 1280,
@@ -794,7 +796,7 @@ var mediaQueryDefaultActive = {
   "2xs": true
 };
 
-// ../../node_modules/.pnpm/@tamagui+config@1.144.4_react-dom@19.2.7_react@19.2.7__react-native-reanimated@4.4.0_re_200dedb597b05f0cf30db84abf319e72/node_modules/@tamagui/config/dist/esm/v4.mjs
+// ../../node_modules/.pnpm/@tamagui+config@1.144.4_react-dom@19.2.7_react@19.2.7__react-native-reanimated@4.4.0_re_e54d04f038568d1dc24acacc06960a9e/node_modules/@tamagui/config/dist/esm/v4.mjs
 var selectionStyles = /* @__PURE__ */ __name((theme) => theme.color5 ? {
   backgroundColor: theme.color5,
   color: theme.color11
@@ -822,7 +824,7 @@ var defaultConfig = {
   settings
 };
 
-// ../../node_modules/.pnpm/tamagui@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.76.5_@babel+core@7.29.7_@_61f986674cc04f210c8ac31aea5a3ff0/node_modules/tamagui/dist/esm/createTamagui.mjs
+// ../../node_modules/.pnpm/tamagui@1.144.4_react-dom@19.2.7_react@19.2.7__react-native@0.85.3_@babel+core@7.29.7_@_422cc51d36bd294738976c81a1580d24/node_modules/tamagui/dist/esm/createTamagui.mjs
 var import_core2 = require("@tamagui/core");
 var createTamagui = process.env.NODE_ENV !== "development" ? import_core2.createTamagui : (conf) => {
   const sizeTokenKeys = ["$true"], hasKeys = /* @__PURE__ */ __name((expectedKeys, obj) => expectedKeys.every((k) => typeof obj[k] < "u"), "hasKeys"), tamaguiConfig2 = (0, import_core2.createTamagui)(conf);
@@ -867,7 +869,10 @@ Expected a subset of: ${expected.join(", ")}
 
 // ../../packages/ui/src/tamagui.config.ts
 var tamaguiConfig = createTamagui(defaultConfig);
+var config = tamaguiConfig;
+var tamagui_config_default = tamaguiConfig;
 // Annotate the CommonJS export names for ESM import in node:
 0 && (module.exports = {
+  config,
   tamaguiConfig
 });

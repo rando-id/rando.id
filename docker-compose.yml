@@ -12,5 +12,18 @@ services:
     volumes:
       - rando-postgres-data:/var/lib/postgresql/data
 
+  # Cloudflare Tunnel — exposes localhost:4000 (the API) at a stable public URL
+  # so external services (Clerk webhooks, etc.) can reach it during development.
+  # Routing (subdomain → host:port) is configured in the Cloudflare Zero Trust
+  # dashboard, not here. Run with: docker compose --profile tunnel up -d
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: rando-cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    profiles: ['tunnel']
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
+
 volumes:
   rando-postgres-data:
