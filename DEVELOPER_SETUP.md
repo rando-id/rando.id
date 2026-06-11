@@ -72,8 +72,11 @@ Clerk and other webhook providers need a public URL to deliver events to your
 local API. Rather than each developer installing `cloudflared` locally, the
 tunnel runs inside Docker via a named Cloudflare Tunnel.
 
-Current setup uses `api.rando-id.dev` as the dev tunnel hostname. Replace as
-needed for your own domain.
+Local apps are exposed at `dev-*.rando-id.dev` subdomains so you can avoid
+typing `localhost` and so webhooks can reach you. The plain subdomains on
+`rando-id.dev` (without the `dev-` prefix) are reserved for the staging
+Vercel deployment — don't reuse them here. Replace `rando-id.dev` with your
+own domain if you're forking.
 
 ### 1. One-time Cloudflare setup
 
@@ -82,12 +85,16 @@ needed for your own domain.
    - Environment when prompted: **Docker** (we run it inside compose, no need
      to copy the install command shown — we only need the **tunnel token**)
    - Name it `rando-dev` (or similar), copy the token
-2. Open the tunnel → **Public Hostnames** → **Add a public hostname**
-   - Subdomain: `api`
-   - Domain: `rando-id.dev`
-   - Type: `HTTP`
-   - URL: `host.docker.internal:4000`
-   - Save — Cloudflare auto-creates the DNS record
+2. Open the tunnel → **Public Hostnames** → add **three** entries (one per
+   local app):
+
+   | Subdomain   | Domain         | Type | URL                         |
+   | ----------- | -------------- | ---- | --------------------------- |
+   | `dev-web`   | `rando-id.dev` | HTTP | `host.docker.internal:3000` |
+   | `dev-admin` | `rando-id.dev` | HTTP | `host.docker.internal:3100` |
+   | `dev-api`   | `rando-id.dev` | HTTP | `host.docker.internal:4000` |
+
+   Cloudflare auto-creates the matching DNS records.
 
 ### 2. Per-developer setup
 
@@ -98,18 +105,20 @@ docker compose --profile tunnel up -d      # starts postgres + cloudflared
 docker logs rando-cloudflared              # should show "Registered tunnel connection"
 ```
 
-Verify the tunnel reaches your local API (API must be running on :4000):
+Verify the tunnel reaches your local apps (each app must be running on its
+respective port):
 
 ```bash
-curl -i https://api.rando-id.dev/v1/health
-# expect 200 with {"ok":true, ...}
+curl -i https://dev-api.rando-id.dev/v1/health    # expect 200 + {"ok":true, ...}
+curl -i https://dev-web.rando-id.dev              # expect 200 (homepage HTML)
+curl -i https://dev-admin.rando-id.dev            # expect 200 (admin homepage HTML)
 ```
 
 ### 3. Wire the Clerk webhook (one-time)
 
 1. **Clerk dashboard → Webhooks → Add Endpoint**
-   - Endpoint URL: `https://api.rando-id.dev/v1/webhooks/clerk`
-   - Description: `Syncs Clerk user lifecycle events (created/updated/deleted) into the Rando API's local Postgres via the dev Cloudflare Tunnel (api.rando-id.dev → host.docker.internal:4000). Replace with a production URL when the API is deployed.`
+   - Endpoint URL: `https://dev-api.rando-id.dev/v1/webhooks/clerk`
+   - Description: `Syncs Clerk user lifecycle events (created/updated/deleted) into the Rando API's local Postgres via the dev Cloudflare Tunnel (dev-api.rando-id.dev → host.docker.internal:4000). Separate webhook endpoints exist for staging and production — see INFRASTRUCTURE.md.`
    - Subscribe to: `user.created`, `user.updated`, `user.deleted`
 2. Open the endpoint → copy the **Signing Secret** (starts with `whsec_`)
 3. In `apps/api/.env.local`:
