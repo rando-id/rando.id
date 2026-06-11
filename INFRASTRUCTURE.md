@@ -87,6 +87,48 @@ same ref — saves Actions minutes on rapid iteration.
 - `pnpm test` — no tests written yet.
 - Native (Expo) builds — handled by EAS, not CI.
 
+## Deploy strategy (why Vercel-native, and when to migrate)
+
+Right now **Vercel handles all deploys natively** via its GitHub integration:
+push to `main`/`staging`, Vercel builds, Vercel deploys. GitHub Actions only
+runs typecheck + lint. App-level env vars (`DATABASE_URL`, Clerk keys, etc.)
+live in Vercel's project settings — GitHub never needs them. This is also why
+[GitHub Environments](https://docs.github.com/en/actions/deployment/targeting-different-environments/using-environments-for-deployment)
+aren't configured: nothing in CI consumes per-environment secrets.
+
+It's option 1 of a three-option spectrum:
+
+| Option                     | Who runs deploys                                 | When it makes sense                                                                                         |
+| -------------------------- | ------------------------------------------------ | ----------------------------------------------------------------------------------------------------------- |
+| **1. Vercel-native**       | Vercel auto-deploys on push                      | Solo/small team; web is the entire deploy surface; PR previews "for free"; minimal YAML. **← we're here.**  |
+| **2. Hybrid**              | Vercel deploys web; Actions does everything else | You need DB migrations, EAS builds, post-deploy smoke tests, or release uploads (Sentry) around the deploy. |
+| **3. Fully GitHub-driven** | Actions calls `vercel deploy --prebuilt` etc.    | Strict approval gates, audit logs, or compliance — single source of truth for all deploy logic.             |
+
+**Migrate to hybrid (option 2) when any of these become true:**
+
+- **DB migrations need to run before a deploy.** The classic trigger. Add a
+  workflow that runs `pnpm --filter @rando/db db:migrate` against the Neon
+  `staging` branch on push to `staging`, and against `main` on a release tag.
+  Each environment's `DATABASE_URL` goes into a **GitHub Environment** secret
+  (the moment GitHub Environments start to earn their keep).
+- **EAS submissions need automating.** `eas build && eas submit` for
+  TestFlight / Play Internal Testing belongs in a workflow gated by a release
+  tag, not on someone's laptop. `EXPO_TOKEN` goes in a GitHub Environment.
+- **Approval gates.** Prod deploys require a reviewer to click "Deploy"
+  before the workflow continues. GitHub Environments support this natively
+  via **Required reviewers** on the Production environment.
+- **Release tracking.** Uploading source maps and creating a Sentry release
+  on each prod deploy is most reliably done from CI right after Vercel
+  finishes deploying.
+
+**Migrate to fully GitHub-driven (option 3)** only if you outgrow Vercel's
+GitHub integration (rare; usually org-policy-driven). The trigger would be
+needing every deploy to flow through a single auditable pipeline.
+
+Switching later is mostly an env-var move (from Vercel Project Settings into
+GitHub Environments) plus adding workflow YAML — the app code itself doesn't
+change.
+
 ## Pre-commit hooks (local mirror of CI)
 
 Local commits run [`lint-staged`](https://github.com/lint-staged/lint-staged)
