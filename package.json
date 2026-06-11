@@ -13,13 +13,16 @@
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
-    "clean": "turbo run clean && rm -rf node_modules"
+    "clean": "turbo run clean && rm -rf node_modules",
+    "prepare": "husky"
   },
   "devDependencies": {
-    "turbo": "^2.3.3",
-    "typescript": "^5.7.2",
     "@types/node": "^22.10.2",
-    "prettier": "^3.4.2"
+    "husky": "^9.1.7",
+    "lint-staged": "^17.0.7",
+    "prettier": "^3.4.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.2"
   },
   "prettier": {
     "semi": false,
@@ -27,8 +30,19 @@
     "trailingComma": "all",
     "printWidth": 100
   },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,mjs,cjs}": [
+      "eslint --fix --no-warn-ignored",
+      "prettier --write"
+    ],
+    "*.{json,md,yml,yaml,css}": [
+      "prettier --write"
+    ]
+  },
   "pnpm": {
     "overrides": {
+      "react": "19.2.3",
+      "react-dom": "19.2.3",
       "react-native-reanimated": "~4.3.1",
       "react-native-worklets": "~0.8.3",
       "@types/react": "^19.0.0"

@@ -16,6 +16,15 @@ export default tseslint.config(
     },
   },
   {
-    ignores: ['dist/**', 'build/**', '.next/**', '.expo/**', '.turbo/**', 'node_modules/**'],
+    ignores: [
+      'dist/**',
+      'build/**',
+      '.next/**',
+      '.expo/**',
+      '.turbo/**',
+      '.tamagui/**',
+      'node_modules/**',
+      '**/next-env.d.ts',
+    ],
   },
 )

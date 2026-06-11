@@ -73,7 +73,7 @@ export function ContactsList() {
   if (error) {
     return (
       <YStack p="$4">
-        <Text color="$red10">Couldn't load contacts: {error}</Text>
+        <Text color="$red10">Couldn&apos;t load contacts: {error}</Text>
       </YStack>
     )
   }

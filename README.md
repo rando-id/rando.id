@@ -6,8 +6,10 @@ See [SPEC.md](./SPEC.md) for the product spec and locked technical decisions.
 
 ## Getting started
 
-See [DEVELOPER_SETUP.md](./DEVELOPER_SETUP.md) for prerequisites, env config,
-local infrastructure, the Clerk webhook tunnel, and the end-to-end smoke test.
+- [DEVELOPER_SETUP.md](./DEVELOPER_SETUP.md) — prerequisites, env config,
+  local infrastructure, the Clerk webhook tunnel, end-to-end smoke test.
+- [INFRASTRUCTURE.md](./INFRASTRUCTURE.md) — GitHub, Vercel, CI, prod
+  webhooks, deployment.
 
 ## Layout
 

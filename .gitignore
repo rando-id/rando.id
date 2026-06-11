@@ -10,6 +10,7 @@ out/
 dist/
 build/
 .turbo/
+.tamagui/
 .expo/
 .expo-shared/
 
