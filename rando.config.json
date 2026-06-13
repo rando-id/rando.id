@@ -23,5 +23,13 @@
       "rootDirectory": "apps/admin",
       "port": 3100
     }
-  ]
+  ],
+  "jira": {
+    "projectKey": "RANDO",
+    "transitions": {
+      "inProgress": "In Progress",
+      "inReview": "In Review",
+      "done": "Done"
+    }
+  }
 }

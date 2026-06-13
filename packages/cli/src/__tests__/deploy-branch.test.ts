@@ -44,6 +44,7 @@ function adaptersWithDeploy(deploy: DeployProvider, dns?: DnsProvider): Adapters
     tunnel: never as never,
     dns: dns ? () => dns : (never as never),
     deploy: () => deploy,
+    jira: never as never,
   }
 }
 

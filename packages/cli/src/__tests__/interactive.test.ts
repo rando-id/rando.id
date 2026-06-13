@@ -17,6 +17,7 @@ function adaptersWithDb(db: DbProvider): Adapters {
     tunnel: never as never,
     dns: never as never,
     deploy: never as never,
+    jira: never as never,
   }
 }
 

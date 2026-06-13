@@ -1,0 +1,102 @@
+name: Jira sync
+
+# Transitions Jira tickets through their lifecycle based on PR events.
+# Tickets are discovered by scanning the PR's commit range for
+# `Refs: PROJ-N` footers (added automatically by the prepare-commit-msg
+# hook — see packages/cli/README.md → "jira").
+#
+# Events:
+#   pull_request: opened, reopened, synchronize → In Progress
+#   pull_request: closed (merged=true)          → Done
+#
+# The branch-deploy → In Review + URL-comment step lives in preview.yml,
+# right next to the deploy itself, so the URL is in scope without an
+# extra round-trip through deployment_status.
+#
+# Required repo secrets:
+#   JIRA_BASE_URL   — https://<workspace>.atlassian.net
+#   JIRA_EMAIL      — service account / your atlassian email
+#   JIRA_API_TOKEN  — from id.atlassian.com → Security → API tokens
+
+on:
+  pull_request:
+    types: [opened, reopened, synchronize, closed]
+
+concurrency:
+  # Serialize per-PR so out-of-order PR events can't race the
+  # transitions (e.g. a quick close-after-synchronize).
+  group: jira-sync-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  transition:
+    name: Transition referenced tickets
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Skip everything when JIRA_API_TOKEN isn't configured — same
+    # softening as the prepare-commit-msg hook so half-configured repos
+    # don't block PR events.
+    if: ${{ vars.JIRA_ENABLED != 'false' }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Need full history to walk the PR's commit range.
+          fetch-depth: 0
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm setup:cli
+
+      - name: Collect Jira keys from the PR's commit range
+        id: refs
+        run: |
+          KEYS=$(rando jira refs '${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}')
+          # GH Actions multiline outputs use the heredoc form.
+          {
+            echo "keys<<EOF"
+            echo "$KEYS"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+
+      - name: Transition to In Progress (PR opened / synchronize / reopened)
+        if: github.event.action != 'closed' && steps.refs.outputs.keys != ''
+        run: |
+          echo '${{ steps.refs.outputs.keys }}' | while IFS= read -r key; do
+            [ -z "$key" ] && continue
+            echo "→ transitioning $key to in-progress"
+            rando jira lifecycle "$key" in-progress || echo "(non-fatal: $key)"
+          done
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          FORCE_COLOR: '1'
+
+      - name: Transition to Done (PR merged)
+        if: github.event.action == 'closed' && github.event.pull_request.merged == true && steps.refs.outputs.keys != ''
+        run: |
+          echo '${{ steps.refs.outputs.keys }}' | while IFS= read -r key; do
+            [ -z "$key" ] && continue
+            echo "→ transitioning $key to done"
+            rando jira lifecycle "$key" done \
+              --message "Merged in #${{ github.event.pull_request.number }} (${{ github.event.pull_request.html_url }})" \
+              || echo "(non-fatal: $key)"
+          done
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
+          FORCE_COLOR: '1'

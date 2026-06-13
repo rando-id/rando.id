@@ -41,6 +41,35 @@ export const SetupConfigSchema = z.object({
       }),
     )
     .min(1),
+
+  /**
+   * Jira ticket-tracker integration. Optional — when absent, `rando jira`
+   * commands and the commit hook still work but they can't auto-transition
+   * tickets through the Rando-specific lifecycle (PR open → In Progress,
+   * branch deploy → In Review, merge → Done) because those statuses are
+   * per-project and not predictable.
+   *
+   * Run `rando jira doctor` to discover what's available in your project,
+   * then fill in `transitions` with the matching transition names or ids.
+   */
+  jira: z
+    .object({
+      /** Project key, e.g. "RANDO". */
+      projectKey: z.string().min(1),
+      /**
+       * Map from semantic lifecycle state → Jira transition name OR id.
+       * Either works; the doctor command shows both.
+       */
+      transitions: z
+        .object({
+          inProgress: z.string().min(1).optional(),
+          inReview: z.string().min(1).optional(),
+          done: z.string().min(1).optional(),
+        })
+        .partial()
+        .default({}),
+    })
+    .optional(),
 })
 
 export type SetupConfig = z.infer<typeof SetupConfigSchema>

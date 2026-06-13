@@ -8,6 +8,8 @@ name: PR preview
 #   VERCEL_TOKEN            — Vercel personal/team token
 #   CLOUDFLARE_API_TOKEN    — scoped token (see packages/cli/README.md)
 #   CLOUDFLARE_ACCOUNT_ID   — your Cloudflare account id
+#   JIRA_*                  — only needed for the optional "ticket → In
+#                             Review + comment with deploy URLs" step
 #
 # Optional repo variables (Settings → Secrets and variables → Actions → Variables):
 #   RANDO_NEON_PROJECT_ID   — needed only by the optional per-PR Neon branch steps
@@ -57,6 +59,32 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
           CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          FORCE_COLOR: '1'
+
+      # Jira: each ticket referenced by this PR → In Review, plus a
+      # comment with the per-app stable deploy URLs. Soft-fails when
+      # JIRA_* secrets aren't configured so the preview job still
+      # succeeds on contributor forks that don't have them.
+      - name: Sync tickets → In Review with deploy URLs
+        if: vars.JIRA_ENABLED != 'false'
+        run: |
+          KEYS=$(rando jira refs '${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}')
+          if [ -z "$KEYS" ]; then
+            echo "(no Jira keys found in PR commits)"
+            exit 0
+          fi
+          BRANCH='${{ github.head_ref }}'
+          MSG=$(printf 'Branch deploy live:\n\n- https://%s-api.rando-id.dev\n- https://%s-web.rando-id.dev\n- https://%s-admin.rando-id.dev\n\nPR: %s' \
+            "$BRANCH" "$BRANCH" "$BRANCH" "${{ github.event.pull_request.html_url }}")
+          echo "$KEYS" | while IFS= read -r key; do
+            [ -z "$key" ] && continue
+            echo "→ $key in-review + comment"
+            rando jira lifecycle "$key" in-review --message "$MSG" || echo "(non-fatal: $key)"
+          done
+        env:
+          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
+          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
+          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
           FORCE_COLOR: '1'
 
   teardown:
