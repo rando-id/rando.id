@@ -1,7 +1,8 @@
-import { Button, ScrollView, Separator, Text, XStack, YStack } from 'tamagui'
+import { useEffect, useMemo, useState } from 'react'
+import { Button, Input, ScrollView, Select, Separator, Text, XStack, YStack } from 'tamagui'
 import { type ContactListItem } from '@rando/api-client'
 import { useGeolocation } from '../lib/use-geolocation'
-import { useContacts } from '../lib/hooks'
+import { useContacts, type ContactsFilter } from '../lib/hooks'
 
 export interface ContactsScreenProps {
   /** Optional handler for the "+ New" button in the header. */
@@ -9,6 +10,13 @@ export interface ContactsScreenProps {
   /** Optional handler for tapping a contact row. */
   onOpen?: (id: string) => void
 }
+
+const SORT_OPTIONS: Array<{ value: NonNullable<ContactsFilter['sort']>; label: string }> = [
+  { value: 'distance', label: 'Closest first' },
+  { value: 'last_name', label: 'Last name' },
+  { value: 'date_added', label: 'Recently added' },
+  { value: 'date_updated', label: 'Recently updated' },
+]
 
 function displayName(c: ContactListItem): string {
   const first = c.firstName?.trim()
@@ -56,27 +64,32 @@ function ContactRow({ contact, onPress }: { contact: ContactListItem; onPress?: 
 export function ContactsScreen({ onNew, onOpen }: ContactsScreenProps = {}) {
   const geo = useGeolocation()
   const near = geo.status === 'ready' ? { lat: geo.lat, lng: geo.lng } : undefined
+
+  const [draftQ, setDraftQ] = useState('')
+  const [appliedQ, setAppliedQ] = useState('')
+  const [sort, setSort] = useState<NonNullable<ContactsFilter['sort']> | undefined>(undefined)
+
+  // 250ms debounce so each keystroke doesn't refire the query.
+  useEffect(() => {
+    if (draftQ === appliedQ) return
+    const t = setTimeout(() => setAppliedQ(draftQ), 250)
+    return () => clearTimeout(t)
+  }, [draftQ, appliedQ])
+
+  const filter = useMemo<ContactsFilter | undefined>(() => {
+    const f: ContactsFilter = {}
+    if (appliedQ.trim()) f.q = appliedQ.trim()
+    if (sort) f.sort = sort
+    return Object.keys(f).length ? f : undefined
+  }, [appliedQ, sort])
+
   const {
     data: contacts,
     isLoading,
     error,
-  } = useContacts(geo.status === 'pending' ? undefined : near)
+  } = useContacts(geo.status === 'pending' ? undefined : near, filter)
 
-  if (geo.status === 'pending' || isLoading || contacts == null) {
-    return (
-      <YStack p="$4">
-        <Text>Loading…</Text>
-      </YStack>
-    )
-  }
-
-  if (error) {
-    return (
-      <YStack p="$4">
-        <Text color="$red10">Couldn&apos;t load contacts: {error.message}</Text>
-      </YStack>
-    )
-  }
+  const effectiveSort = sort ?? (near ? 'distance' : 'last_name')
 
   return (
     <ScrollView flex={1}>
@@ -91,14 +104,54 @@ export function ContactsScreen({ onNew, onOpen }: ContactsScreenProps = {}) {
             </Button>
           </XStack>
         ) : null}
+
+        <XStack px="$3" pb="$3" gap="$2" items="center">
+          <Input
+            flex={1}
+            value={draftQ}
+            onChangeText={setDraftQ}
+            placeholder="Search name or company"
+          />
+          <Select
+            value={effectiveSort}
+            onValueChange={(v) => setSort(v as NonNullable<ContactsFilter['sort']>)}
+          >
+            <Select.Trigger width={170}>
+              <Select.Value placeholder="Sort" />
+            </Select.Trigger>
+            <Select.Content>
+              <Select.Viewport>
+                {SORT_OPTIONS.map((opt, i) => (
+                  <Select.Item key={opt.value} value={opt.value} index={i}>
+                    <Select.ItemText>{opt.label}</Select.ItemText>
+                  </Select.Item>
+                ))}
+              </Select.Viewport>
+            </Select.Content>
+          </Select>
+        </XStack>
+
         {geo.status !== 'ready' ? (
-          <Text p="$3" fontSize="$2" color="$colorPress">
-            Location unavailable — showing contacts alphabetically.
+          <Text px="$3" pb="$2" fontSize="$2" color="$colorPress">
+            Location unavailable — distance sort falls back to last name.
           </Text>
         ) : null}
-        {contacts.length === 0 ? (
+
+        {geo.status === 'pending' || isLoading || contacts == null ? (
           <YStack p="$4">
-            <Text>No contacts yet — tap &quot;+ New&quot; to add your first.</Text>
+            <Text>Loading…</Text>
+          </YStack>
+        ) : error ? (
+          <YStack p="$4">
+            <Text color="$red10">Couldn&apos;t load contacts: {error.message}</Text>
+          </YStack>
+        ) : contacts.length === 0 ? (
+          <YStack p="$4">
+            <Text>
+              {appliedQ.trim()
+                ? `No contacts match "${appliedQ.trim()}".`
+                : 'No contacts yet — tap "+ New" to add your first.'}
+            </Text>
           </YStack>
         ) : (
           contacts.map((c, i) => (

@@ -24,18 +24,32 @@ import {
 import { useApiClient } from './client-api'
 
 export type Near = { lat: number; lng: number } | undefined
+export type ContactsFilter = {
+  favorites?: boolean
+  listId?: string
+  q?: string
+  sort?: 'distance' | 'last_name' | 'date_added' | 'date_updated'
+}
 
 export const contactKeys = {
   all: ['contacts'] as const,
-  list: (near?: Near) => ['contacts', 'list', near ?? null] as const,
+  list: (near?: Near, filter?: ContactsFilter) =>
+    ['contacts', 'list', near ?? null, filter ?? null] as const,
   detail: (id: string, near?: Near) => ['contacts', 'detail', id, near ?? null] as const,
 }
 
-export function useContacts(near?: Near): UseQueryResult<ContactListItem[], Error> {
+export function useContacts(
+  near?: Near,
+  filter?: ContactsFilter,
+): UseQueryResult<ContactListItem[], Error> {
   const api = useApiClient()
   return useQuery({
-    queryKey: contactKeys.list(near),
-    queryFn: () => listContacts(api, near ?? {}),
+    queryKey: contactKeys.list(near, filter),
+    queryFn: () =>
+      listContacts(api, {
+        ...(near ?? {}),
+        ...(filter ?? {}),
+      }),
   })
 }
 

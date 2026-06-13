@@ -97,6 +97,24 @@ describe('listContacts', () => {
     expect(calls[0]?.url).toBe('https://api.test/v1/contacts?list=l_42')
   })
 
+  it('passes q through as a query param (URL-encoded)', async () => {
+    const calls = stub([{ body: [] }])
+    await listContacts(client(), { q: 'jane doe' })
+    expect(calls[0]?.url).toBe('https://api.test/v1/contacts?q=jane+doe')
+  })
+
+  it('omits q when empty', async () => {
+    const calls = stub([{ body: [] }])
+    await listContacts(client(), { q: '' })
+    expect(calls[0]?.url).toBe('https://api.test/v1/contacts')
+  })
+
+  it('passes sort through as a query param', async () => {
+    const calls = stub([{ body: [] }])
+    await listContacts(client(), { sort: 'last_name' })
+    expect(calls[0]?.url).toBe('https://api.test/v1/contacts?sort=last_name')
+  })
+
   it('returns the parsed JSON body', async () => {
     stub([
       {

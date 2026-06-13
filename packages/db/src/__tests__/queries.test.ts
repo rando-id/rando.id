@@ -376,6 +376,82 @@ describe.skipIf(!TEST_URL)('queries (PostGIS)', () => {
       expect(favorites.map((r) => r.first_name)).toEqual(['Yes'])
     })
 
+    it('q filter is case-insensitive across first/last/company', async () => {
+      await createContactWithLocation(db, {
+        ownerUserId: userId,
+        firstName: 'Jane',
+        lastName: 'Smith',
+        location: { lat: 33.94, lng: -118.41, name: 'Wilson Park' },
+      })
+      await createContactWithLocation(db, {
+        ownerUserId: userId,
+        firstName: 'Bob',
+        lastName: 'Jones',
+        company: 'Acme Corp',
+        location: { lat: 33.94, lng: -118.41, name: 'Wilson Park' },
+      })
+      await createContactWithLocation(db, {
+        ownerUserId: userId,
+        firstName: 'Other',
+        lastName: 'Person',
+        location: { lat: 33.94, lng: -118.41, name: 'Wilson Park' },
+      })
+
+      // Matches 'Jane' (first name) and 'Jones' (last name).
+      const byJ = await getContactsNearby(db, userId, null, { q: 'j' })
+      expect(byJ.map((r) => r.first_name).sort()).toEqual(['Bob', 'Jane'])
+
+      // Matches via company substring, case-insensitive.
+      const byCompany = await getContactsNearby(db, userId, null, { q: 'acme' })
+      expect(byCompany.map((r) => r.first_name)).toEqual(['Bob'])
+
+      // Trims so '   ' alone doesn't ILIKE-match everything.
+      const byWhitespace = await getContactsNearby(db, userId, null, { q: '   ' })
+      expect(byWhitespace).toHaveLength(3)
+    })
+
+    it('sort=last_name orders alphabetically even when near is set', async () => {
+      await createContactWithLocation(db, {
+        ownerUserId: userId,
+        firstName: 'Zoe',
+        lastName: 'Zhang',
+        // Very close to the query point.
+        location: { lat: 33.94, lng: -118.41, name: 'A' },
+      })
+      await createContactWithLocation(db, {
+        ownerUserId: userId,
+        firstName: 'Alice',
+        lastName: 'Alpha',
+        // Farther — would come second by distance.
+        location: { lat: 34.03, lng: -118.41, name: 'B' },
+      })
+
+      const byLast = await getContactsNearby(
+        db,
+        userId,
+        { lat: 33.94, lng: -118.41 },
+        { sort: 'last_name' },
+      )
+      expect(byLast.map((r) => r.last_name)).toEqual(['Alpha', 'Zhang'])
+    })
+
+    it('sort=date_added orders newest first', async () => {
+      const first = await createContactWithLocation(db, {
+        ownerUserId: userId,
+        firstName: 'First',
+        location: { lat: 33.94, lng: -118.41, name: 'X' },
+      })
+      // Force a 1ms gap to make created_at strictly increasing.
+      await new Promise((r) => setTimeout(r, 10))
+      const second = await createContactWithLocation(db, {
+        ownerUserId: userId,
+        firstName: 'Second',
+        location: { lat: 33.94, lng: -118.41, name: 'X' },
+      })
+      const rows = await getContactsNearby(db, userId, null, { sort: 'date_added' })
+      expect(rows.map((r) => r.id)).toEqual([second.contactId, first.contactId])
+    })
+
     it('listId filter scopes to members of that list', async () => {
       const { id: listId } = await createList(db, userId, 'Squad')
       const { contactId: included } = await createContactWithLocation(db, {

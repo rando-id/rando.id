@@ -22,10 +22,23 @@ export async function GET(req: Request) {
     const near = parseNear(url.searchParams.get('near'))
     const favorites = url.searchParams.get('favorites') === 'true'
     const listId = url.searchParams.get('list') || undefined
+    const q = url.searchParams.get('q') || undefined
+    const sortParam = url.searchParams.get('sort')
+    // Unknown sort values fall through to the DB default rather than
+    // 400ing — friendlier for a query-string knob than a hard reject.
+    const sort =
+      sortParam === 'distance' ||
+      sortParam === 'last_name' ||
+      sortParam === 'date_added' ||
+      sortParam === 'date_updated'
+        ? sortParam
+        : undefined
 
     const rows = await getContactsNearby(getDb(), user.id, near, {
       favorites,
       listId,
+      q,
+      sort,
     })
 
     const body: ContactListItem[] = rows.map((r) => ({

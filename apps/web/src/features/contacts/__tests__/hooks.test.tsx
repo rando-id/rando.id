@@ -148,6 +148,30 @@ describe('useContacts', () => {
   })
 })
 
+describe('useContacts with q/sort filter', () => {
+  it('threads q + sort through to listContacts as a merged query', async () => {
+    listContacts.mockResolvedValue([])
+    const { wrap } = wrapper()
+    renderHook(() => useContacts({ lat: 1, lng: 2 }, { q: 'jane', sort: 'last_name' }), {
+      wrapper: wrap,
+    })
+    await waitFor(() => expect(listContacts).toHaveBeenCalled())
+    expect(listContacts).toHaveBeenCalledWith(
+      { stub: true },
+      { lat: 1, lng: 2, q: 'jane', sort: 'last_name' },
+    )
+  })
+
+  it('caches under a distinct key when the filter changes', async () => {
+    listContacts.mockResolvedValue([])
+    const { client, wrap } = wrapper()
+    renderHook(() => useContacts(undefined, { q: 'jane' }), { wrapper: wrap })
+    await waitFor(() => expect(listContacts).toHaveBeenCalled())
+    expect(client.getQueryState(contactKeys.list(undefined, { q: 'jane' }))).not.toBeUndefined()
+    expect(client.getQueryState(contactKeys.list())).toBeUndefined()
+  })
+})
+
 describe('useContact', () => {
   it('fires getContact and resolves with the result', async () => {
     getContact.mockResolvedValue(CONTACT)

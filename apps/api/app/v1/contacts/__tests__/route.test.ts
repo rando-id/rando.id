@@ -68,7 +68,7 @@ describe('GET /v1/contacts', () => {
       expect.anything(),
       'u_1',
       { lat: 33.94, lng: -118.41 },
-      { favorites: false, listId: undefined },
+      { favorites: false, listId: undefined, q: undefined, sort: undefined },
     )
   })
 
@@ -78,6 +78,8 @@ describe('GET /v1/contacts', () => {
     expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
       favorites: false,
       listId: undefined,
+      q: undefined,
+      sort: undefined,
     })
 
     listMock.mockClear()
@@ -85,6 +87,8 @@ describe('GET /v1/contacts', () => {
     expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
       favorites: false,
       listId: undefined,
+      q: undefined,
+      sort: undefined,
     })
   })
 
@@ -94,6 +98,8 @@ describe('GET /v1/contacts', () => {
     expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
       favorites: true,
       listId: undefined,
+      q: undefined,
+      sort: undefined,
     })
   })
 
@@ -103,6 +109,43 @@ describe('GET /v1/contacts', () => {
     expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
       favorites: false,
       listId: 'l_42',
+      q: undefined,
+      sort: undefined,
+    })
+  })
+
+  it('threads q=<term> filter through', async () => {
+    listMock.mockResolvedValue([])
+    await GET(new Request('http://localhost/v1/contacts?q=jane'))
+    expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
+      favorites: false,
+      listId: undefined,
+      q: 'jane',
+      sort: undefined,
+    })
+  })
+
+  it('threads each valid sort value through, and drops unknown sort silently', async () => {
+    for (const s of ['distance', 'last_name', 'date_added', 'date_updated'] as const) {
+      listMock.mockClear()
+      listMock.mockResolvedValue([])
+      await GET(new Request(`http://localhost/v1/contacts?sort=${s}`))
+      expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
+        favorites: false,
+        listId: undefined,
+        q: undefined,
+        sort: s,
+      })
+    }
+
+    listMock.mockClear()
+    listMock.mockResolvedValue([])
+    await GET(new Request('http://localhost/v1/contacts?sort=bogus'))
+    expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
+      favorites: false,
+      listId: undefined,
+      q: undefined,
+      sort: undefined,
     })
   })
 

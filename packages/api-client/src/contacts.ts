@@ -19,6 +19,8 @@ export type ContactListItem = {
   } | null
 }
 
+export type ContactSort = 'distance' | 'last_name' | 'date_added' | 'date_updated'
+
 export type ListContactsQuery = {
   lat?: number
   lng?: number
@@ -26,6 +28,10 @@ export type ListContactsQuery = {
   favorites?: boolean
   /** Only return contacts that are members of this list id. */
   listId?: string
+  /** Free-text search; ILIKE substring on first/last/company server-side. */
+  q?: string
+  /** Sort mode. Server defaults to distance when near is set, else last_name. */
+  sort?: ContactSort
 }
 
 export async function listContacts(
@@ -38,6 +44,8 @@ export async function listContacts(
   }
   if (query.favorites) params.set('favorites', 'true')
   if (query.listId) params.set('list', query.listId)
+  if (query.q) params.set('q', query.q)
+  if (query.sort) params.set('sort', query.sort)
   const path = params.toString() ? `/v1/contacts?${params}` : '/v1/contacts'
   return client.request<ContactListItem[]>(path)
 }

@@ -34,7 +34,12 @@ import {
 import { useApiClient } from '../../lib/client-api'
 
 export type Near = { lat: number; lng: number } | undefined
-export type ContactsFilter = { favorites?: boolean; listId?: string }
+export type ContactsFilter = {
+  favorites?: boolean
+  listId?: string
+  q?: string
+  sort?: 'distance' | 'last_name' | 'date_added' | 'date_updated'
+}
 
 export const contactKeys = {
   all: ['contacts'] as const,

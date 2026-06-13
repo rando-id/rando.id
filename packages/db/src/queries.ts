@@ -207,11 +207,24 @@ export async function updateContact(
   return result.length
 }
 
+export type ContactSort = 'distance' | 'last_name' | 'date_added' | 'date_updated'
+
 export interface ListContactsFilter {
   /** Only return contacts where `favorite = true`. */
   favorites?: boolean
   /** Only return contacts that are members of the given list. */
   listId?: string
+  /** Free-text search — case-insensitive substring on first/last/company. */
+  q?: string
+  /** Sort mode. Defaults to 'distance' when near is provided, else 'last_name'. */
+  sort?: ContactSort
+}
+
+const SORT_CLAUSES: Record<ContactSort, ReturnType<typeof sql>> = {
+  distance: sql`ORDER BY meters ASC NULLS LAST, c.last_name NULLS LAST`,
+  last_name: sql`ORDER BY c.last_name NULLS LAST, c.first_name NULLS LAST`,
+  date_added: sql`ORDER BY c.created_at DESC`,
+  date_updated: sql`ORDER BY c.updated_at DESC`,
 }
 
 export async function getContactsNearby(
@@ -230,9 +243,26 @@ export async function getContactsNearby(
           AND l.owner_user_id = ${userId}
       )`
     : sql``
+  // ILIKE substring against name/company. Trimmed to avoid leading/
+  // trailing whitespace from the URL ever matching everything via `%`.
+  const trimmedQ = filter.q?.trim()
+  const qClause = trimmedQ
+    ? sql`AND (
+        c.first_name ILIKE ${'%' + trimmedQ + '%'}
+        OR c.last_name ILIKE ${'%' + trimmedQ + '%'}
+        OR c.company ILIKE ${'%' + trimmedQ + '%'}
+      )`
+    : sql``
+
+  // Effective sort: if caller asked for 'distance' but didn't provide
+  // coords, fall back to last_name — sorting by NULL distance is a no-op
+  // and `last_name` is the alphabetical default everywhere else.
+  const effectiveSort: ContactSort = filter.sort ?? (near ? 'distance' : 'last_name')
+  const orderClause =
+    SORT_CLAUSES[effectiveSort === 'distance' && !near ? 'last_name' : effectiveSort]
 
   // Without GPS coords we still return the contact list but with null
-  // distance so the caller can fall back to alphabetical sorting.
+  // distance.
   if (!near) {
     const rows = await db.execute<ContactNearbyRow>(sql`
       SELECT
@@ -252,7 +282,8 @@ export async function getContactsNearby(
       WHERE c.owner_user_id = ${userId}
         ${favoritesClause}
         ${listClause}
-      ORDER BY c.last_name NULLS LAST, c.first_name NULLS LAST
+        ${qClause}
+      ${orderClause}
     `)
     return rows as unknown as ContactNearbyRow[]
   }
@@ -287,7 +318,8 @@ export async function getContactsNearby(
     WHERE c.owner_user_id = ${userId}
       ${favoritesClause}
       ${listClause}
-    ORDER BY meters ASC NULLS LAST, c.last_name NULLS LAST
+      ${qClause}
+    ${orderClause}
   `)
   return rows as unknown as ContactNearbyRow[]
 }
