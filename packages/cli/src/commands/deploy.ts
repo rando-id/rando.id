@@ -18,6 +18,7 @@ function parseScopes(raw: string): DeployEnvScope[] {
 }
 
 export function deployCommand(adapters: Adapters, io: Io): Command {
+  const { colors } = io
   const deploy = new Command('deploy').description('Deploy / hosting operations')
 
   const app = new Command('app').description('Manage deploy apps (one per app in the monorepo)')
@@ -34,7 +35,13 @@ export function deployCommand(adapters: Adapters, io: Io): Command {
         repo: opts.repo,
         rootDirectory: opts.root,
       })
-      emit(io, opts.json, p, (x) => `created app: ${x.name} (${x.id})`)
+      emit(
+        io,
+        opts.json,
+        p,
+        (x) =>
+          `${colors.success('✓')} created app: ${colors.resource(x.name)} ${colors.hint(`(${x.id})`)}`,
+      )
     })
 
   app
@@ -50,6 +57,7 @@ export function deployCommand(adapters: Adapters, io: Io): Command {
             name: p.name,
             root: p.rootDirectory ?? '',
           })),
+          colors,
         ),
       )
     })
@@ -66,14 +74,19 @@ export function deployCommand(adapters: Adapters, io: Io): Command {
       const ok = await confirmDestructive(
         io,
         opts,
-        `Delete deploy app "${appName}" (${p.id}) and all its deployments?`,
+        `Delete deploy app ${colors.resource(`"${appName}"`)} ${colors.hint(`(${p.id})`)} and all its deployments?`,
       )
       if (!ok) {
-        io.stdout('aborted.')
+        io.stdout(colors.hint('aborted.'))
         return
       }
       await provider.deleteProject({ projectId: p.id })
-      emit(io, opts.json, { ok: true, name: appName }, () => `deleted app: ${appName}`)
+      emit(
+        io,
+        opts.json,
+        { ok: true, name: appName },
+        () => `${colors.success('✓')} deleted app: ${colors.resource(appName)}`,
+      )
     })
 
   deploy.addCommand(app)
@@ -102,7 +115,13 @@ export function deployCommand(adapters: Adapters, io: Io): Command {
           value,
           scopes,
         })
-        emit(io, opts.json, v, (x) => `set ${x.key} (${x.scopes.join(',')}) on ${p.name}`)
+        emit(
+          io,
+          opts.json,
+          v,
+          (x) =>
+            `${colors.success('✓')} set ${colors.bold(x.key)} ${colors.hint(`(${x.scopes.join(',')})`)} on ${colors.resource(p.name)}`,
+        )
       },
     )
 
@@ -116,7 +135,10 @@ export function deployCommand(adapters: Adapters, io: Io): Command {
       if (!p) throw new NotFoundError('deploy app', projectName)
       const list = await provider.listEnv({ projectId: p.id })
       emit(io, opts.json, list, (rows) =>
-        table(rows.map((v) => ({ key: v.key, scopes: v.scopes.join(',') }))),
+        table(
+          rows.map((v) => ({ key: v.key, scopes: v.scopes.join(',') })),
+          colors,
+        ),
       )
     })
 
@@ -143,7 +165,8 @@ export function deployCommand(adapters: Adapters, io: Io): Command {
           io,
           opts.json,
           d,
-          (x) => `added domain: ${x.name}${x.branch ? ` (branch: ${x.branch})` : ''}`,
+          (x) =>
+            `${colors.success('✓')} added domain: ${colors.resource(x.name)}${x.branch ? ` ${colors.hint(`(branch: ${x.branch})`)}` : ''}`,
         )
       },
     )
@@ -161,14 +184,19 @@ export function deployCommand(adapters: Adapters, io: Io): Command {
         const ok = await confirmDestructive(
           io,
           opts,
-          `Remove domain "${hostname}" from project "${projectName}"?`,
+          `Remove domain ${colors.resource(`"${hostname}"`)} from app ${colors.resource(`"${projectName}"`)}?`,
         )
         if (!ok) {
-          io.stdout('aborted.')
+          io.stdout(colors.hint('aborted.'))
           return
         }
         await provider.removeDomain({ projectId: p.id, hostname })
-        emit(io, opts.json, { ok: true, hostname }, () => `removed domain: ${hostname}`)
+        emit(
+          io,
+          opts.json,
+          { ok: true, hostname },
+          () => `${colors.success('✓')} removed domain: ${colors.resource(hostname)}`,
+        )
       },
     )
 

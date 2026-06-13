@@ -11,6 +11,12 @@
 ```bash
 cd /Users/archives/Code/rando/rando
 
+# 0. Install workspace deps + link the rando CLI on your PATH
+pnpm install
+pnpm setup:cli        # symlinks `rando` into ~/.local/bin (idempotent)
+# verify: `rando --help` should work from any directory now
+# (see packages/cli/README.md if ~/.local/bin isn't on your PATH)
+
 # 1. Start Postgres + PostGIS
 docker compose up -d
 # (Optional — to expose the API publicly for Clerk webhooks etc., also start

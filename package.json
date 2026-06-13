@@ -15,6 +15,7 @@
     "test": "turbo run test",
     "clean": "turbo run clean && rm -rf node_modules",
     "rando": "packages/cli/bin/rando.mjs",
+    "setup:cli": "node scripts/setup-cli.mjs",
     "prepare": "husky"
   },
   "devDependencies": {

@@ -15,6 +15,7 @@ function parseType(raw: string): DnsRecordType {
 }
 
 export function dnsCommand(adapters: Adapters, io: Io): Command {
+  const { colors } = io
   const dns = new Command('dns').description('DNS record operations')
 
   const record = new Command('record').description('Manage DNS records')
@@ -43,7 +44,13 @@ export function dnsCommand(adapters: Adapters, io: Io): Command {
           ttl,
           proxied: opts.proxied,
         })
-        emit(io, opts.json, r, (x) => `added ${x.type} ${x.name} → ${x.content}`)
+        emit(
+          io,
+          opts.json,
+          r,
+          (x) =>
+            `${colors.success('✓')} added ${colors.bold(x.type)} ${colors.resource(x.name)} → ${colors.hint(x.content)}`,
+        )
       },
     )
 
@@ -63,6 +70,7 @@ export function dnsCommand(adapters: Adapters, io: Io): Command {
             ttl: r.ttl.toString(),
             proxied: r.proxied ? 'yes' : 'no',
           })),
+          colors,
         ),
       )
     })
@@ -76,14 +84,19 @@ export function dnsCommand(adapters: Adapters, io: Io): Command {
       const ok = await confirmDestructive(
         io,
         opts,
-        `Remove DNS record "${recordId}" from zone "${zone}"?`,
+        `Remove DNS record ${colors.resource(`"${recordId}"`)} from zone ${colors.resource(`"${zone}"`)}?`,
       )
       if (!ok) {
-        io.stdout('aborted.')
+        io.stdout(colors.hint('aborted.'))
         return
       }
       await adapters.dns().removeRecord({ zone, recordId })
-      emit(io, opts.json, { ok: true }, () => `removed record: ${recordId}`)
+      emit(
+        io,
+        opts.json,
+        { ok: true },
+        () => `${colors.success('✓')} removed record: ${colors.resource(recordId)}`,
+      )
     })
 
   dns.addCommand(record)

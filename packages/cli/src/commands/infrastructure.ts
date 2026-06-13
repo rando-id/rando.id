@@ -1,7 +1,7 @@
 import { Command } from 'commander'
 import { resolve } from 'node:path'
 import type { Adapters } from '../config'
-import type { Io } from '../output'
+import type { Io, IoSpinner } from '../output'
 import {
   ProductionDestroyForbiddenError,
   runDestroy,
@@ -36,20 +36,19 @@ export function infrastructureCommand(adapters: Adapters, io: Io): Command {
       const configPath = resolve(process.cwd(), opts.config)
       const config = loadSetupConfig(configPath)
 
-      io.stdout(`config: ${configPath}`)
-      io.stdout(`project: ${config.project}`)
-      io.stdout(`envs:    ${envs.join(', ')}`)
-      io.stdout(
-        `apps:    ${apps.length ? apps.join(', ') : config.apps.map((a) => a.name).join(', ')}`,
-      )
-      io.stdout('')
+      printPlan(io, {
+        configPath,
+        project: config.project,
+        envs: envs.join(', '),
+        apps: apps.length ? apps.join(', ') : config.apps.map((a) => a.name).join(', '),
+      })
 
       if (opts.dryRun) {
-        io.stdout('--dry-run: stopping before any API calls')
+        io.stdout(io.colors.hint('--dry-run: stopping before any API calls'))
         return
       }
 
-      const emit = (event: SetupEvent) => io.stdout(formatEvent(event))
+      const emit = makeEventRenderer(io)
       await runSetup(
         {
           db: adapters.db(),
@@ -60,7 +59,7 @@ export function infrastructureCommand(adapters: Adapters, io: Io): Command {
         { config, envs, apps, emit },
       )
       io.stdout('')
-      io.stdout('infrastructure setup complete.')
+      io.stdout(io.colors.success('infrastructure setup complete.'))
     })
 
   infra
@@ -91,28 +90,29 @@ export function infrastructureCommand(adapters: Adapters, io: Io): Command {
         const config = loadSetupConfig(configPath)
 
         const appNames = apps.length ? apps : config.apps.map((a) => a.name)
-        io.stdout(`config: ${configPath}`)
-        io.stdout(`project: ${config.project}`)
-        io.stdout(`env:     ${env}`)
-        io.stdout(`apps:    ${appNames.join(', ')}`)
-        io.stdout('')
+        printPlan(io, {
+          configPath,
+          project: config.project,
+          envs: env,
+          apps: appNames.join(', '),
+        })
 
         if (opts.dryRun) {
-          io.stdout('--dry-run: stopping before any API calls')
+          io.stdout(io.colors.hint('--dry-run: stopping before any API calls'))
           return
         }
 
         const ok = await confirmDestructive(
           io,
           { yes: opts.yes },
-          `Destroy ${env} infrastructure for "${config.project}" (apps: ${appNames.join(', ')})?`,
+          `Destroy ${io.colors.warn(env)} infrastructure for ${io.colors.resource(config.project)} (apps: ${appNames.join(', ')})?`,
         )
         if (!ok) {
-          io.stdout('aborted.')
+          io.stdout(io.colors.hint('aborted.'))
           return
         }
 
-        const emit = (event: SetupEvent) => io.stdout(formatEvent(event))
+        const emit = makeEventRenderer(io)
         await runDestroy(
           {
             db: adapters.db(),
@@ -123,7 +123,7 @@ export function infrastructureCommand(adapters: Adapters, io: Io): Command {
           { config, env, apps, emit },
         )
         io.stdout('')
-        io.stdout('infrastructure destroy complete.')
+        io.stdout(io.colors.success('infrastructure destroy complete.'))
       },
     )
 
@@ -148,10 +148,63 @@ function parseEnvs(raw: string): SetupEnv[] {
   })
 }
 
-function formatEvent(event: SetupEvent): string {
-  if (event.kind === 'step-start') return `… ${event.message}`
-  if (event.kind === 'step-done') return `✓ ${event.message}`
-  if (event.kind === 'step-skip') return `↺ ${event.message}`
-  if (event.kind === 'note') return `  ${event.message}`
-  return event satisfies never
+function printPlan(
+  io: Io,
+  plan: { configPath: string; project: string; envs: string; apps: string },
+): void {
+  io.stdout(`${io.colors.hint('config:')}  ${plan.configPath}`)
+  io.stdout(`${io.colors.hint('project:')} ${io.colors.resource(plan.project)}`)
+  io.stdout(`${io.colors.hint('envs:')}    ${plan.envs}`)
+  io.stdout(`${io.colors.hint('apps:')}    ${plan.apps}`)
+  io.stdout('')
+}
+
+/**
+ * Translate an orchestrator event stream into live spinner state. The
+ * orchestrator emits step-start → (async work) → step-done|step-skip|note,
+ * which maps cleanly onto the spinner lifecycle:
+ *  - step-start  opens a spinner
+ *  - step-done   resolves with ✓ (success color)
+ *  - step-skip   resolves with ℹ (warn color) — "already exists" outcomes
+ *  - note        prints a dim auxiliary line under the current spinner
+ *
+ * A step-done|skip with no preceding step-start prints a plain line —
+ * some phases (vercel domain add inside the per-app loop) emit done
+ * events directly without a paired step-start. Spinners stay clean
+ * either way.
+ */
+export function makeEventRenderer(io: Io): (event: SetupEvent) => void {
+  let active: IoSpinner | null = null
+  const resolve = (kind: 'succeed' | 'info', text: string) => {
+    if (active) {
+      active[kind](text)
+      active = null
+    } else {
+      const symbol = kind === 'succeed' ? io.colors.success('✓') : io.colors.warn('↺')
+      io.stdout(`${symbol} ${text}`)
+    }
+  }
+  return (event: SetupEvent) => {
+    switch (event.kind) {
+      case 'step-start':
+        if (active) active.stop()
+        active = io.spinner(event.message)
+        return
+      case 'step-done':
+        resolve('succeed', event.message)
+        return
+      case 'step-skip':
+        resolve('info', event.message)
+        return
+      case 'note':
+        if (active) {
+          active.stop()
+          active = null
+        }
+        io.stdout(`  ${io.colors.hint(event.message)}`)
+        return
+      default:
+        return event satisfies never
+    }
+  }
 }

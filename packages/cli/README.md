@@ -5,17 +5,42 @@ deploy, DNS) without touching vendor dashboards. Architecturally
 port-and-adapter: domain interfaces describe the verbs, vendor adapters
 implement them.
 
-## Install
-
-The bin lives at `packages/cli/bin/rando.mjs` and is wired so you can run it
-from anywhere in the workspace:
+## Quickstart (first clone)
 
 ```bash
-pnpm rando <subcommand>            # from repo root (preferred)
-./packages/cli/bin/rando.mjs <cmd> # explicit path
+git clone <repo> && cd rando
+pnpm install                       # installs all deps, including tsx + chalk + ora
+pnpm setup:cli                     # symlinks `rando` into ~/.local/bin
+cp .env.example .env               # fill in tokens — see "Configuration" below
+rando --help                       # verify
+rando doctor                       # confirm color + spinner support
 ```
 
-Node 22+ is required (Bun-style `--import=tsx/esm` shebang).
+Node 22+ is required. `pnpm setup:cli` is idempotent — re-run any time.
+If `~/.local/bin` isn't on your PATH, the script will tell you what to add
+to your shell rc.
+
+## Invoking the CLI
+
+After `pnpm setup:cli`:
+
+```bash
+rando <subcommand>                  # works from any directory
+rando                               # bare → interactive menu
+rando doctor                        # diagnostic — runs colors + a spinner
+```
+
+Without the symlink, two fallbacks still work:
+
+```bash
+pnpm rando <subcommand>             # via root package.json script
+./packages/cli/bin/rando.mjs <cmd>  # explicit path
+```
+
+The bin (`packages/cli/bin/rando.mjs`) is a tiny Node wrapper that locates
+the repo root from its own path, then re-execs Node with absolute paths to
+`tsx` and `.env`. Result: `rando` works regardless of your current working
+directory.
 
 ## Configuration
 

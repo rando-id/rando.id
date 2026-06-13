@@ -8,7 +8,9 @@ import { dbCommand } from './commands/db'
 import { tunnelCommand } from './commands/tunnel'
 import { deployCommand } from './commands/deploy'
 import { dnsCommand } from './commands/dns'
+import { doctorCommand } from './commands/doctor'
 import { infrastructureCommand } from './commands/infrastructure'
+import { isInteractiveCandidate, pickFromMenu } from './menu'
 import { SetupConfigError } from './setup-config'
 import { MissingConfigError, NotFoundError, ProviderApiError } from './domain/errors'
 
@@ -37,6 +39,20 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<voi
   program.addCommand(deployCommand(adapters, io))
   program.addCommand(dnsCommand(adapters, io))
   program.addCommand(infrastructureCommand(adapters, io))
+  program.addCommand(doctorCommand(io))
+
+  // Interactive discovery: bare `rando` or `rando <group>` drops the user
+  // into a select menu. Skipped in non-TTY contexts (CI, pipes) — those
+  // get commander's normal --help output.
+  const candidate = isInteractiveCandidate(argv)
+  if (candidate && process.stdout.isTTY) {
+    try {
+      argv = await pickFromMenu(io, candidate.group)
+    } catch (e) {
+      handleError(e, io, exit)
+      return
+    }
+  }
 
   try {
     await program.parseAsync(['node', 'rando', ...argv])
@@ -46,25 +62,29 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<voi
 }
 
 function handleError(error: unknown, io: Io, exit: (code: number) => never): void {
+  const errLabel = io.colors.error('error:')
+  const hintLabel = io.colors.hint('hint:')
   if (error instanceof MissingConfigError) {
-    io.stderr(`error: ${error.message}`)
-    io.stderr(`hint: set ${error.variable} in your environment (see .env.example)`)
+    io.stderr(`${errLabel} ${error.message}`)
+    io.stderr(
+      `${hintLabel} set ${io.colors.bold(error.variable)} in your environment (see .env.example)`,
+    )
     exit(2)
   }
   if (error instanceof SetupConfigError) {
-    io.stderr(`error: ${error.message}`)
+    io.stderr(`${errLabel} ${error.message}`)
     io.stderr(
-      `hint: check that rando.config.json exists at the repo root and matches the schema in packages/cli/README.md`,
+      `${hintLabel} check that rando.config.json exists at the repo root and matches the schema in packages/cli/README.md`,
     )
     exit(2)
   }
   if (error instanceof NotFoundError) {
-    io.stderr(`error: ${error.message}`)
+    io.stderr(`${errLabel} ${error.message}`)
     exit(3)
   }
   if (error instanceof ProviderApiError) {
-    io.stderr(`error: ${error.provider} API ${error.status}`)
-    io.stderr(error.body)
+    io.stderr(`${errLabel} ${io.colors.bold(error.provider)} API ${error.status}`)
+    io.stderr(io.colors.hint(error.body))
     exit(4)
   }
   // Commander throws CommanderError for things like --help and invalid args.
@@ -74,9 +94,9 @@ function handleError(error: unknown, io: Io, exit: (code: number) => never): voi
     exit(exitCode || 0)
   }
   if (error instanceof Error) {
-    io.stderr(`error: ${error.message}`)
+    io.stderr(`${errLabel} ${error.message}`)
     exit(1)
   }
-  io.stderr(`error: ${String(error)}`)
+  io.stderr(`${errLabel} ${String(error)}`)
   exit(1)
 }

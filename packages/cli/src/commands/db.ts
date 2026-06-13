@@ -16,15 +16,23 @@ export function dbCommand(adapters: Adapters, io: Io): Command {
     .option('--json', 'Emit raw JSON', false)
     .action(async (name: string, opts: { region?: string; yes: boolean; json: boolean }) => {
       io.stderr(
-        'note: this is an escape-hatch command. For the Rando stack, `rando infra setup` creates the Neon project from rando.config.json.',
+        io.colors.warn(
+          'note: this is an escape-hatch command. For the Rando stack, `rando infra setup` creates the Neon project from rando.config.json.',
+        ),
       )
       const ok = await confirmDestructive(io, opts, `Create a new Neon project named "${name}"?`)
       if (!ok) {
-        io.stdout('aborted.')
+        io.stdout(io.colors.hint('aborted.'))
         return
       }
       const result = await adapters.db().createProject({ name, region: opts.region })
-      emit(io, opts.json, result, (p) => `created project: ${p.name} (${p.id})`)
+      emit(
+        io,
+        opts.json,
+        result,
+        (p) =>
+          `${io.colors.success('✓')} created project: ${io.colors.resource(p.name)} ${io.colors.hint(`(${p.id})`)}`,
+      )
     })
 
   project
@@ -33,7 +41,12 @@ export function dbCommand(adapters: Adapters, io: Io): Command {
     .option('--json', 'Emit raw JSON', false)
     .action(async (opts: { json: boolean }) => {
       const projects = await adapters.db().listProjects()
-      emit(io, opts.json, projects, (list) => table(list.map((p) => ({ id: p.id, name: p.name }))))
+      emit(io, opts.json, projects, (list) =>
+        table(
+          list.map((p) => ({ id: p.id, name: p.name })),
+          io.colors,
+        ),
+      )
     })
 
   project
@@ -45,19 +58,26 @@ export function dbCommand(adapters: Adapters, io: Io): Command {
     .option('--json', 'Emit raw JSON', false)
     .action(async (projectId: string, opts: { yes: boolean; json: boolean }) => {
       io.stderr(
-        'note: this is an escape-hatch command. The Rando Neon project should be torn down via the Neon dashboard, not the CLI.',
+        io.colors.warn(
+          'note: this is an escape-hatch command. The Rando Neon project should be torn down via the Neon dashboard, not the CLI.',
+        ),
       )
       const ok = await confirmDestructive(
         io,
         opts,
-        `Delete db project "${projectId}" and all of its data?`,
+        `Delete db project ${io.colors.resource(`"${projectId}"`)} and all of its data?`,
       )
       if (!ok) {
-        io.stdout('aborted.')
+        io.stdout(io.colors.hint('aborted.'))
         return
       }
       await adapters.db().deleteProject({ projectId })
-      emit(io, opts.json, { ok: true, projectId }, () => `deleted project: ${projectId}`)
+      emit(
+        io,
+        opts.json,
+        { ok: true, projectId },
+        () => `${io.colors.success('✓')} deleted project: ${io.colors.resource(projectId)}`,
+      )
     })
 
   db.addCommand(project)
@@ -71,7 +91,13 @@ export function dbCommand(adapters: Adapters, io: Io): Command {
     .option('--json', 'Emit raw JSON', false)
     .action(async (projectId: string, name: string, opts: { from?: string; json: boolean }) => {
       const b = await adapters.db().createBranch({ projectId, name, fromBranchId: opts.from })
-      emit(io, opts.json, b, (br) => `created branch: ${br.name} (${br.id})`)
+      emit(
+        io,
+        opts.json,
+        b,
+        (br) =>
+          `${io.colors.success('✓')} created branch: ${io.colors.resource(br.name)} ${io.colors.hint(`(${br.id})`)}`,
+      )
     })
 
   branch
@@ -88,6 +114,7 @@ export function dbCommand(adapters: Adapters, io: Io): Command {
             parent: b.parentId ?? '',
             createdAt: b.createdAt,
           })),
+          io.colors,
         ),
       )
     })
@@ -101,14 +128,19 @@ export function dbCommand(adapters: Adapters, io: Io): Command {
       const ok = await confirmDestructive(
         io,
         opts,
-        `Delete db branch "${branchId}" on project "${projectId}"?`,
+        `Delete db branch ${io.colors.resource(`"${branchId}"`)} on project ${io.colors.resource(`"${projectId}"`)}?`,
       )
       if (!ok) {
-        io.stdout('aborted.')
+        io.stdout(io.colors.hint('aborted.'))
         return
       }
       await adapters.db().deleteBranch({ projectId, branchId })
-      emit(io, opts.json, { ok: true, branchId }, () => `deleted branch: ${branchId}`)
+      emit(
+        io,
+        opts.json,
+        { ok: true, branchId },
+        () => `${io.colors.success('✓')} deleted branch: ${io.colors.resource(branchId)}`,
+      )
     })
 
   db.addCommand(branch)
@@ -136,7 +168,8 @@ export function dbCommand(adapters: Adapters, io: Io): Command {
           io,
           opts.json,
           { ok: true, extension },
-          () => `enabled extension "${extension}" on ${branchId}`,
+          () =>
+            `${io.colors.success('✓')} enabled extension ${io.colors.resource(`"${extension}"`)} on ${io.colors.resource(branchId)}`,
         )
       },
     )

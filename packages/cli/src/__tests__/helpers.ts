@@ -1,32 +1,106 @@
-// Shared test helpers — capture stdout/stderr and stub fetch.
+// Shared test helpers — capture stdout/stderr, stub fetch, fake interactive Io.
 
 import { vi, type Mock } from 'vitest'
-import type { Io } from '../output'
+import type { Io, IoSpinner, SelectChoice } from '../output'
+
+export interface CapturedSpinner {
+  /** Final text on this spinner (start text overwritten by setText/resolvers). */
+  text: string
+  /** Sequence of state transitions on this spinner. */
+  events: Array<{ type: 'succeed' | 'fail' | 'info' | 'warn' | 'stop'; text?: string }>
+}
 
 export interface CapturedIo {
   io: Io
   stdout: string[]
   stderr: string[]
   confirmCalls: string[]
+  spinners: CapturedSpinner[]
+  selectCalls: Array<{ message: string; choices: SelectChoice<unknown>[] }>
+  inputCalls: Array<{ message: string; default?: string }>
 }
 
-export function captureIo(options: { confirm?: boolean } = {}): CapturedIo {
+export interface CaptureOptions {
+  /** Return value for any `io.confirm(...)` call. Defaults to `true`. */
+  confirm?: boolean
+  /** FIFO queue of values to return from `io.select(...)` calls. */
+  selectResponses?: unknown[]
+  /** FIFO queue of values to return from `io.input(...)` calls. */
+  inputResponses?: string[]
+}
+
+export function captureIo(options: CaptureOptions = {}): CapturedIo {
   const stdout: string[] = []
   const stderr: string[] = []
   const confirmCalls: string[] = []
-  return {
-    stdout,
-    stderr,
-    confirmCalls,
-    io: {
-      stdout: (line) => stdout.push(line),
-      stderr: (line) => stderr.push(line),
-      confirm: async (message) => {
-        confirmCalls.push(message)
-        return options.confirm ?? true
-      },
+  const spinners: CapturedSpinner[] = []
+  const selectCalls: CapturedIo['selectCalls'] = []
+  const inputCalls: CapturedIo['inputCalls'] = []
+  let selectIdx = 0
+  let inputIdx = 0
+
+  const io: Io = {
+    stdout: (line) => stdout.push(line),
+    stderr: (line) => stderr.push(line),
+    confirm: async (message) => {
+      confirmCalls.push(message)
+      return options.confirm ?? true
+    },
+    colors: {
+      // Identity functions — tests assert on plain text without ANSI noise.
+      success: (s) => s,
+      error: (s) => s,
+      warn: (s) => s,
+      hint: (s) => s,
+      bold: (s) => s,
+      resource: (s) => s,
+    },
+    spinner: (text) => {
+      const captured: CapturedSpinner = { text, events: [] }
+      spinners.push(captured)
+      const handle: IoSpinner = {
+        succeed: (t) => {
+          captured.events.push({ type: 'succeed', text: t })
+          if (t) captured.text = t
+        },
+        fail: (t) => {
+          captured.events.push({ type: 'fail', text: t })
+          if (t) captured.text = t
+        },
+        info: (t) => {
+          captured.events.push({ type: 'info', text: t })
+          if (t) captured.text = t
+        },
+        warn: (t) => {
+          captured.events.push({ type: 'warn', text: t })
+          if (t) captured.text = t
+        },
+        stop: () => {
+          captured.events.push({ type: 'stop' })
+        },
+        setText: (t) => {
+          captured.text = t
+        },
+      }
+      return handle
+    },
+    select: async <T>(message: string, choices: SelectChoice<T>[]) => {
+      selectCalls.push({ message, choices: choices as SelectChoice<unknown>[] })
+      const value = options.selectResponses?.[selectIdx++]
+      if (value === undefined) {
+        throw new Error(`captureIo: no selectResponses[${selectIdx - 1}] provided`)
+      }
+      return value as T
+    },
+    input: async (message, opts) => {
+      inputCalls.push({ message, default: opts?.default })
+      const value = options.inputResponses?.[inputIdx++]
+      if (value === undefined) return opts?.default ?? ''
+      return value
     },
   }
+
+  return { io, stdout, stderr, confirmCalls, spinners, selectCalls, inputCalls }
 }
 
 export interface FetchCall {
