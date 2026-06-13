@@ -14,6 +14,7 @@
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",
     "clean": "turbo run clean && rm -rf node_modules",
+    "rando": "packages/cli/bin/rando.mjs",
     "prepare": "husky"
   },
   "devDependencies": {
@@ -21,6 +22,7 @@
     "husky": "^9.1.7",
     "lint-staged": "^17.0.7",
     "prettier": "^3.4.2",
+    "tsx": "^4.22.4",
     "turbo": "^2.3.3",
     "typescript": "^5.7.2"
   },

@@ -31,18 +31,63 @@ The apex `rando-id.dev` itself isn't used by any app — leave it as a default
 Cloudflare page, redirect it to `staging-web.rando-id.dev`, or use it for an
 internal landing page later.
 
+## Automating setup with the `rando` CLI
+
+The repo ships a `rando` CLI (in [`packages/cli`](./packages/cli/README.md))
+that wraps the Neon, Cloudflare, and Vercel REST APIs so most of the manual
+dashboard work below can be scripted. Each manual step in the rest of this
+doc has an equivalent `rando` command — see the table below.
+
+```bash
+pnpm rando --help            # top-level help
+pnpm rando db --help         # subcommand help
+```
+
+Required env vars (in repo-root `.env`, gitignored):
+
+| Variable                | Used by                     |
+| ----------------------- | --------------------------- |
+| `NEON_API_KEY`          | `rando db ...`              |
+| `CLOUDFLARE_API_TOKEN`  | `rando tunnel`, `rando dns` |
+| `CLOUDFLARE_ACCOUNT_ID` | `rando tunnel`              |
+| `VERCEL_TOKEN`          | `rando deploy`              |
+| `VERCEL_TEAM_ID`        | `rando deploy` (optional)   |
+
+Manual step → `rando` equivalent:
+
+| Manual step                     | `rando` command                                                  |
+| ------------------------------- | ---------------------------------------------------------------- |
+| Cloudflare: add tunnel route    | `rando tunnel route add <tunnel> <host> <service>`               |
+| Cloudflare: list tunnel routes  | `rando tunnel route list <tunnel>`                               |
+| Cloudflare: copy tunnel token   | `rando tunnel token <tunnel>`                                    |
+| Cloudflare: add DNS record      | `rando dns record add <zone> <type> <name> <content>`            |
+| Neon: create project            | `rando db project create <name>`                                 |
+| Neon: create staging branch     | `rando db branch create <project> staging`                       |
+| Neon: enable PostGIS            | `rando db extension-enable <project> <branch> postgis`           |
+| Neon: copy connection string    | `rando db connection-string <project> <branch> --pooled`         |
+| Vercel: create project          | `rando deploy project create <name> --root <path> --repo <repo>` |
+| Vercel: set env var (per scope) | `rando deploy env set <project> <key> <value> --scope ...`       |
+| Vercel: add domain (per branch) | `rando deploy domain add <project> <host> --branch <branch>`     |
+
+The CLI is intentionally vendor-agnostic at the command layer — swapping
+Neon for Supabase, Vercel for Railway, etc., means writing a new adapter
+file, not changing scripts.
+
 ## GitHub
 
 ### Initial repo setup
 
 1. Create a private repo at `github.com/<owner>/rando`.
 2. From this directory:
+
    ```bash
    git remote add origin git@github.com:<owner>/rando.git
    git push -u origin main
    ```
+
 3. Create the `staging` branch (Vercel needs it to exist before you wire the
    staging domain):
+
    ```bash
    git checkout -b staging && git push -u origin staging && git checkout main
    ```
@@ -177,18 +222,21 @@ The Cloudflare Tunnel (defined in [`docker-compose.yml`](./docker-compose.yml))
 exposes your local apps at stable URLs so you can stop typing `localhost` and
 so webhook providers can reach your machine.
 
-In **Zero Trust dashboard → Networks → Tunnels → `rando-dev` → Public
-Hostnames**, configure three entries:
+In **Zero Trust dashboard → Networks → Published Application Routes**, configure
+three entries pointing at the `rando-dev` tunnel (these were called "Tunnel
+Public Hostnames" before Cloudflare unified the UI; some places in the dashboard
+still use the old name):
 
-| Subdomain   | Domain         | Type | URL                         | Routes to          |
-| ----------- | -------------- | ---- | --------------------------- | ------------------ |
-| `dev-web`   | `rando-id.dev` | HTTP | `host.docker.internal:3000` | local `apps/web`   |
-| `dev-admin` | `rando-id.dev` | HTTP | `host.docker.internal:3100` | local `apps/admin` |
-| `dev-api`   | `rando-id.dev` | HTTP | `host.docker.internal:4000` | local `apps/api`   |
+| Subdomain   | Domain         | Type | URL                         | Access policy | Routes to          |
+| ----------- | -------------- | ---- | --------------------------- | ------------- | ------------------ |
+| `dev-web`   | `rando-id.dev` | HTTP | `host.docker.internal:3000` | Bypass        | local `apps/web`   |
+| `dev-admin` | `rando-id.dev` | HTTP | `host.docker.internal:3100` | Bypass        | local `apps/admin` |
+| `dev-api`   | `rando-id.dev` | HTTP | `host.docker.internal:4000` | Bypass        | local `apps/api`   |
 
-> If you have the legacy `api.rando-id.dev` route still pointing at
-> `host.docker.internal:4000`, **remove it** — that namespace is now reserved
-> for Vercel staging under the `staging-*` prefix.
+Application type: **Self-hosted** for each. Access policy must be **Bypass** on
+`dev-api` so Clerk webhooks can reach it; for `dev-web`/`dev-admin`, you can
+optionally add an Access policy later if you want to gate URL access (but
+you'll then get a Cloudflare Access login on every visit).
 
 Cloudflare auto-creates the matching DNS records (CNAMEs to your tunnel).
 
@@ -223,9 +271,11 @@ staging can diverge from prod without affecting it.
    **Branches** tab, create a second branch named `staging` (source: `main`).
 3. **Enable PostGIS on both branches.** In the **SQL Editor**, switch to each
    branch and run:
+
    ```sql
    CREATE EXTENSION IF NOT EXISTS postgis;
    ```
+
 4. From **Connection Details**, copy each branch's **pooled** connection
    string (toggle "Pooled connection" on). You'll plug these into Vercel.
 

@@ -3,6 +3,9 @@ import { withTamagui } from '@tamagui/next-plugin'
 
 const config: NextConfig = {
   reactStrictMode: true,
+  // Allow the dev Cloudflare Tunnel hostnames to reach `next dev` — without
+  // this, Next.js 15+ blocks any request whose Host header isn't localhost.
+  allowedDevOrigins: ['dev-web.rando-id.dev'],
   transpilePackages: [
     '@rando/api-client',
     '@rando/auth',

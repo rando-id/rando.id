@@ -85,15 +85,18 @@ own domain if you're forking.
    - Environment when prompted: **Docker** (we run it inside compose, no need
      to copy the install command shown — we only need the **tunnel token**)
    - Name it `rando-dev` (or similar), copy the token
-2. Open the tunnel → **Public Hostnames** → add **three** entries (one per
-   local app):
+2. Under **Networks → Published Application Routes**, add **three** entries
+   pointing at this tunnel (one per local app). Cloudflare also calls these
+   "Tunnel Public Hostnames" in some places — same feature.
 
-   | Subdomain   | Domain         | Type | URL                         |
-   | ----------- | -------------- | ---- | --------------------------- |
-   | `dev-web`   | `rando-id.dev` | HTTP | `host.docker.internal:3000` |
-   | `dev-admin` | `rando-id.dev` | HTTP | `host.docker.internal:3100` |
-   | `dev-api`   | `rando-id.dev` | HTTP | `host.docker.internal:4000` |
+   | Subdomain   | Domain         | Type | URL                         | Access policy |
+   | ----------- | -------------- | ---- | --------------------------- | ------------- |
+   | `dev-web`   | `rando-id.dev` | HTTP | `host.docker.internal:3000` | Bypass        |
+   | `dev-admin` | `rando-id.dev` | HTTP | `host.docker.internal:3100` | Bypass        |
+   | `dev-api`   | `rando-id.dev` | HTTP | `host.docker.internal:4000` | Bypass        |
 
+   Application type: **Self-hosted**. `dev-api` must be **Bypass** so Clerk
+   webhooks can reach it; the others can optionally be Access-gated later.
    Cloudflare auto-creates the matching DNS records.
 
 ### 2. Per-developer setup

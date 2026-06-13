@@ -2,12 +2,8 @@ import type { NextConfig } from 'next'
 
 const config: NextConfig = {
   reactStrictMode: true,
-  transpilePackages: [
-    '@rando/auth',
-    '@rando/config',
-    '@rando/db',
-    '@rando/observability',
-  ],
+  allowedDevOrigins: ['dev-api.rando-id.dev'],
+  transpilePackages: ['@rando/auth', '@rando/config', '@rando/db', '@rando/observability'],
 }
 
 export default config

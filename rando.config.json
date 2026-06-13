@@ -1,0 +1,27 @@
+{
+  "project": "rando",
+  "repo": "rando-id/rando",
+  "tunnel": "rando-dev",
+  "domains": {
+    "nonProd": "rando-id.dev",
+    "production": "rando.id"
+  },
+  "apps": [
+    {
+      "name": "api",
+      "rootDirectory": "apps/api",
+      "port": 4000
+    },
+    {
+      "name": "web",
+      "rootDirectory": "apps/web",
+      "port": 3000,
+      "prodApex": true
+    },
+    {
+      "name": "admin",
+      "rootDirectory": "apps/admin",
+      "port": 3100
+    }
+  ]
+}

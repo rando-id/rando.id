@@ -2,7 +2,7 @@
 
 Contacts organized by **where you met them**, not by name.
 
-See [SPEC.md](./SPEC.md) for the product spec and locked technical decisions.
+See [specs/apps.md](./specs/apps.md) for the product spec and locked technical decisions.
 
 ## Getting started
 
@@ -55,4 +55,4 @@ tooling/
 - **OpenAPI generation**: `/v1/openapi.json` is a placeholder. Wire `zod-openapi` or `@ts-rest` to make it real.
 - **Storybook + Playwright + CI**: not started.
 
-See [SPEC.md](./SPEC.md) §5 for the phased feature plan.
+See [specs/apps.md](./specs/apps.md) §5 for the phased feature plan.
