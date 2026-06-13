@@ -22,6 +22,10 @@ export type ContactListItem = {
 export type ListContactsQuery = {
   lat?: number
   lng?: number
+  /** Only return favorited contacts. */
+  favorites?: boolean
+  /** Only return contacts that are members of this list id. */
+  listId?: string
 }
 
 export async function listContacts(
@@ -32,6 +36,8 @@ export async function listContacts(
   if (query.lat != null && query.lng != null) {
     params.set('near', `${query.lat},${query.lng}`)
   }
+  if (query.favorites) params.set('favorites', 'true')
+  if (query.listId) params.set('list', query.listId)
   const path = params.toString() ? `/v1/contacts?${params}` : '/v1/contacts'
   return client.request<ContactListItem[]>(path)
 }

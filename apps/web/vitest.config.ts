@@ -26,6 +26,9 @@ export default defineConfig({
         'src/features/contacts/ContactsList.tsx',
         'src/features/contacts/NewContactForm.tsx',
         'src/features/contacts/ContactDetailView.tsx',
+        'src/features/lists/ListsIndex.tsx',
+        'src/features/lists/ListDetailView.tsx',
+        'src/features/lists/FavoritesView.tsx',
       ],
       // Component renders (ContactsList, NewContactForm, ContactDetailView,
       // MapPicker, providers) are excluded — Tamagui-in-jsdom mounts are

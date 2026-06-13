@@ -6,6 +6,8 @@ import { useContacts } from '../lib/hooks'
 export interface ContactsScreenProps {
   /** Optional handler for the "+ New" button in the header. */
   onNew?: () => void
+  /** Optional handler for tapping a contact row. */
+  onOpen?: (id: string) => void
 }
 
 function displayName(c: ContactListItem): string {
@@ -22,9 +24,17 @@ function formatDistance(meters: number): string {
   return `${(meters / 1000).toFixed(1)} km`
 }
 
-function ContactRow({ contact }: { contact: ContactListItem }) {
+function ContactRow({ contact, onPress }: { contact: ContactListItem; onPress?: () => void }) {
   return (
-    <XStack py="$3" px="$4" items="center" gap="$3">
+    <XStack
+      py="$3"
+      px="$4"
+      items="center"
+      gap="$3"
+      onPress={onPress}
+      pressStyle={{ opacity: 0.6 }}
+      cursor={onPress ? 'pointer' : undefined}
+    >
       <YStack flex={1}>
         <Text fontSize="$5" fontWeight="600">
           {contact.favorite ? '★ ' : ''}
@@ -43,7 +53,7 @@ function ContactRow({ contact }: { contact: ContactListItem }) {
   )
 }
 
-export function ContactsScreen({ onNew }: ContactsScreenProps = {}) {
+export function ContactsScreen({ onNew, onOpen }: ContactsScreenProps = {}) {
   const geo = useGeolocation()
   const near = geo.status === 'ready' ? { lat: geo.lat, lng: geo.lng } : undefined
   const {
@@ -93,7 +103,7 @@ export function ContactsScreen({ onNew }: ContactsScreenProps = {}) {
         ) : (
           contacts.map((c, i) => (
             <YStack key={c.id}>
-              <ContactRow contact={c} />
+              <ContactRow contact={c} onPress={onOpen ? () => onOpen(c.id) : undefined} />
               {i < contacts.length - 1 ? <Separator /> : null}
             </YStack>
           ))

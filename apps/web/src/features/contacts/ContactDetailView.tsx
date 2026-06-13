@@ -14,7 +14,7 @@ import {
   type EditContactDraft,
   validateEditContactDraft,
 } from './helpers'
-import { useContact, useUpdateContact } from './hooks'
+import { useAddListMember, useContact, useLists, useUpdateContact } from './hooks'
 
 export interface ContactDetailViewProps {
   id: string
@@ -35,6 +35,24 @@ export function ContactDetailView({ id }: ContactDetailViewProps) {
   })
   const [error, setError] = useState<string | null>(null)
   const busy = updateMutation.isPending
+  // "Add to list" UI: dropdown of lists + add button. We don't yet know
+  // which lists this contact is already on; the addListMember mutation
+  // is idempotent (server returns `added: false` if already a member).
+  const lists = useLists()
+  const [selectedListId, setSelectedListId] = useState<string>('')
+  const addMember = useAddListMember(selectedListId)
+  const [addToast, setAddToast] = useState<string | null>(null)
+  async function handleAddToList() {
+    if (!selectedListId) return
+    setAddToast(null)
+    try {
+      const result = await addMember.mutateAsync({ contactId: id })
+      const listName = lists.data?.find((l) => l.id === selectedListId)?.name ?? 'the list'
+      setAddToast(result.added ? `Added to ${listName}.` : `Already in ${listName}.`)
+    } catch (e) {
+      setAddToast(e instanceof ApiError ? `API ${e.status}: ${e.message}` : String(e))
+    }
+  }
 
   // Seed the edit-draft when the contact loads or changes.
   useEffect(() => {
@@ -183,6 +201,49 @@ export function ContactDetailView({ id }: ContactDetailViewProps) {
               {error}
             </Text>
           ) : null}
+
+          <YStack gap="$2" mt="$2">
+            <Text fontSize="$3" fontWeight="600">
+              Add to list
+            </Text>
+            <XStack gap="$2" items="center">
+              {/* Plain native select — Tamagui's Select is heavy and
+                  this surface is small. Easy to swap later. */}
+              <select
+                value={selectedListId}
+                onChange={(e) => setSelectedListId(e.target.value)}
+                style={{ flex: 1, padding: '8px 12px' }}
+              >
+                <option value="">— Pick a list —</option>
+                {(lists.data ?? []).map((l) => (
+                  <option key={l.id} value={l.id}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+              <Button
+                onPress={handleAddToList}
+                disabled={!selectedListId || addMember.isPending}
+                theme="accent"
+              >
+                Add
+              </Button>
+            </XStack>
+            {addToast ? (
+              <Text fontSize="$2" color="$colorPress">
+                {addToast}
+              </Text>
+            ) : null}
+            {lists.data && lists.data.length === 0 ? (
+              <Text fontSize="$2" color="$colorPress">
+                No lists yet —{' '}
+                <Link href="/lists" style={{ textDecoration: 'underline' }}>
+                  create one
+                </Link>
+                .
+              </Text>
+            ) : null}
+          </YStack>
         </YStack>
       )}
     </YStack>

@@ -9,6 +9,7 @@ import { tokenCache } from './src/lib/token-cache'
 import { SignInScreen } from './src/screens/SignInScreen'
 import { ContactsScreen } from './src/screens/ContactsScreen'
 import { AddContactScreen } from './src/screens/AddContactScreen'
+import { ContactDetailScreen } from './src/screens/ContactDetailScreen'
 
 // Single shared TanStack Query client for the native app. Defaults
 // mirror the web's QueryProvider — see apps/web/src/providers/QueryProvider.tsx.
@@ -26,7 +27,7 @@ const queryClient = new QueryClient({
 
 const PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY
 
-type Route = { kind: 'list' } | { kind: 'new' }
+type Route = { kind: 'list' } | { kind: 'new' } | { kind: 'detail'; id: string }
 
 function SignedInRoot() {
   const [route, setRoute] = useState<Route>({ kind: 'list' })
@@ -34,10 +35,18 @@ function SignedInRoot() {
   if (route.kind === 'new') {
     return <AddContactScreen onDone={() => setRoute({ kind: 'list' })} />
   }
+  if (route.kind === 'detail') {
+    return <ContactDetailScreen id={route.id} onDone={() => setRoute({ kind: 'list' })} />
+  }
   // Mutations in the hooks layer invalidate the list query so the
   // ContactsScreen automatically refetches when we come back from
-  // AddContactScreen. No more `key` remount trick.
-  return <ContactsScreen onNew={() => setRoute({ kind: 'new' })} />
+  // AddContactScreen or ContactDetailScreen.
+  return (
+    <ContactsScreen
+      onNew={() => setRoute({ kind: 'new' })}
+      onOpen={(id) => setRoute({ kind: 'detail', id })}
+    />
+  )
 }
 
 export default function App() {

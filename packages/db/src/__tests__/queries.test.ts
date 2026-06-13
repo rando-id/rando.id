@@ -13,10 +13,17 @@ import { sql } from 'drizzle-orm'
 import { createDb } from '../client'
 import { users } from '../schema'
 import {
+  addListMember,
   createContactWithLocation,
+  createList,
+  deleteList,
   getContactById,
   getContactsNearby,
+  getListById,
+  listLists,
+  removeListMember,
   updateContact,
+  updateListName,
 } from '../queries'
 
 const TEST_URL = process.env.DATABASE_URL_TEST
@@ -262,6 +269,128 @@ describe.skipIf(!TEST_URL)('queries (PostGIS)', () => {
       })
       const row = await getContactById(db, userId, contactId, { lat: 33.94, lng: -118.41 })
       expect(row?.meters).toBeLessThan(1)
+    })
+  })
+
+  describe('lists', () => {
+    it('createList + listLists round-trip', async () => {
+      const created = await createList(db, userId, 'School pickup')
+      expect(created.name).toBe('School pickup')
+      expect(created.kind).toBe('custom')
+      const all = await listLists(db, userId)
+      expect(all).toHaveLength(1)
+      expect(all[0]?.id).toBe(created.id)
+      expect(all[0]?.memberCount).toBe(0)
+    })
+
+    it('lists are owner-scoped — other users do not see them', async () => {
+      await createList(db, userId, 'Mine')
+      const other = (
+        await db
+          .insert(users)
+          .values({ clerkId: `o_${Date.now()}_${Math.random()}`, displayName: 'X' })
+          .returning({ id: users.id })
+      )[0]
+      if (!other) throw new Error('other user insert failed')
+      const otherLists = await listLists(db, other.id)
+      expect(otherLists).toHaveLength(0)
+    })
+
+    it('updateListName + deleteList both return affected counts', async () => {
+      const { id } = await createList(db, userId, 'Old name')
+      expect(await updateListName(db, userId, id, 'New name')).toBe(1)
+      const fresh = await getListById(db, userId, id)
+      expect(fresh?.name).toBe('New name')
+
+      expect(await deleteList(db, userId, id)).toBe(1)
+      expect(await getListById(db, userId, id)).toBeNull()
+    })
+
+    it('cross-user updates / deletes return 0', async () => {
+      const { id } = await createList(db, userId, 'Mine')
+      const other = (
+        await db
+          .insert(users)
+          .values({ clerkId: `o_${Date.now()}_${Math.random()}`, displayName: 'X' })
+          .returning({ id: users.id })
+      )[0]
+      if (!other) throw new Error('other user insert failed')
+      expect(await updateListName(db, other.id, id, 'Stolen')).toBe(0)
+      expect(await deleteList(db, other.id, id)).toBe(0)
+    })
+
+    it('addListMember + removeListMember + memberCount roll up', async () => {
+      const { id: listId } = await createList(db, userId, 'Squad')
+      const { contactId } = await createContactWithLocation(db, {
+        ownerUserId: userId,
+        firstName: 'Jane',
+        location: { lat: 33.94, lng: -118.41, name: 'Wilson Park' },
+      })
+
+      expect(await addListMember(db, userId, listId, contactId)).toBe(true)
+      // Idempotent — re-add returns false.
+      expect(await addListMember(db, userId, listId, contactId)).toBe(false)
+
+      const all = await listLists(db, userId)
+      expect(all[0]?.memberCount).toBe(1)
+
+      expect(await removeListMember(db, userId, listId, contactId)).toBe(1)
+      const afterRemove = await listLists(db, userId)
+      expect(afterRemove[0]?.memberCount).toBe(0)
+    })
+
+    it('addListMember refuses to graft cross-user lists or contacts', async () => {
+      const other = (
+        await db
+          .insert(users)
+          .values({ clerkId: `o_${Date.now()}_${Math.random()}`, displayName: 'X' })
+          .returning({ id: users.id })
+      )[0]
+      if (!other) throw new Error('other user insert failed')
+      const { id: theirList } = await createList(db, other.id, 'Theirs')
+      const { contactId: mine } = await createContactWithLocation(db, {
+        ownerUserId: userId,
+        firstName: 'Mine',
+        location: { lat: 33.94, lng: -118.41, name: 'Wilson Park' },
+      })
+      // I cannot add my contact to their list.
+      expect(await addListMember(db, userId, theirList, mine)).toBe(false)
+    })
+  })
+
+  describe('getContactsNearby filters', () => {
+    it('favorites=true returns only favorited contacts', async () => {
+      await createContactWithLocation(db, {
+        ownerUserId: userId,
+        firstName: 'Yes',
+        favorite: true,
+        location: { lat: 33.94, lng: -118.41, name: 'Wilson Park' },
+      })
+      await createContactWithLocation(db, {
+        ownerUserId: userId,
+        firstName: 'No',
+        favorite: false,
+        location: { lat: 33.94, lng: -118.41, name: 'Wilson Park' },
+      })
+      const favorites = await getContactsNearby(db, userId, null, { favorites: true })
+      expect(favorites.map((r) => r.first_name)).toEqual(['Yes'])
+    })
+
+    it('listId filter scopes to members of that list', async () => {
+      const { id: listId } = await createList(db, userId, 'Squad')
+      const { contactId: included } = await createContactWithLocation(db, {
+        ownerUserId: userId,
+        firstName: 'In',
+        location: { lat: 33.94, lng: -118.41, name: 'Wilson Park' },
+      })
+      await createContactWithLocation(db, {
+        ownerUserId: userId,
+        firstName: 'Out',
+        location: { lat: 33.94, lng: -118.41, name: 'Wilson Park' },
+      })
+      await addListMember(db, userId, listId, included)
+      const onList = await getContactsNearby(db, userId, null, { listId })
+      expect(onList.map((r) => r.first_name)).toEqual(['In'])
     })
   })
 })

@@ -64,17 +64,46 @@ describe('GET /v1/contacts', () => {
         location: { id: 'l_1', name: 'Wilson Park', lat: 33.94, lng: -118.41, meters: 12 },
       },
     ])
-    expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', { lat: 33.94, lng: -118.41 })
+    expect(listMock).toHaveBeenCalledWith(
+      expect.anything(),
+      'u_1',
+      { lat: 33.94, lng: -118.41 },
+      { favorites: false, listId: undefined },
+    )
   })
 
   it('passes null `near` when the query string is missing or malformed', async () => {
     listMock.mockResolvedValue([])
     await GET(new Request('http://localhost/v1/contacts'))
-    expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null)
+    expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
+      favorites: false,
+      listId: undefined,
+    })
 
     listMock.mockClear()
     await GET(new Request('http://localhost/v1/contacts?near=not-a-pair'))
-    expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null)
+    expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
+      favorites: false,
+      listId: undefined,
+    })
+  })
+
+  it('threads favorites=true filter through', async () => {
+    listMock.mockResolvedValue([])
+    await GET(new Request('http://localhost/v1/contacts?favorites=true'))
+    expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
+      favorites: true,
+      listId: undefined,
+    })
+  })
+
+  it('threads list=<id> filter through', async () => {
+    listMock.mockResolvedValue([])
+    await GET(new Request('http://localhost/v1/contacts?list=l_42'))
+    expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
+      favorites: false,
+      listId: 'l_42',
+    })
   })
 
   it('flattens row to `location: null` when the contact has no interaction yet', async () => {

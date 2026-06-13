@@ -1,11 +1,7 @@
-// View-model layer for the contacts feature. TanStack Query hooks wrap
-// the @rando/api-client calls so screens don't repeat the
+// View-model layer for contacts + lists. TanStack Query hooks wrap the
+// @rando/api-client calls so screens don't repeat the
 // useEffect+useState dance and so updates in one screen reflect
-// everywhere (shared cache).
-//
-// Query keys live in `contactKeys` so invalidations stay in sync as the
-// API surface grows. Mutations invalidate the list cache so newly-
-// created or edited contacts appear without a manual refresh.
+// everywhere via the shared cache.
 
 'use client'
 
@@ -17,35 +13,64 @@ import {
   type UseQueryResult,
 } from '@tanstack/react-query'
 import {
+  addListMember,
   createContact,
+  createList,
+  deleteList,
   getContact,
+  getList,
   listContacts,
+  listLists,
+  removeListMember,
   updateContact,
+  updateList,
   type ContactListItem,
   type CreateContactInput,
   type CreateContactResult,
+  type ListItem,
+  type ListWithMembers,
   type UpdateContactInput,
 } from '@rando/api-client'
 import { useApiClient } from '../../lib/client-api'
 
 export type Near = { lat: number; lng: number } | undefined
+export type ContactsFilter = { favorites?: boolean; listId?: string }
 
 export const contactKeys = {
   all: ['contacts'] as const,
-  list: (near?: Near) => ['contacts', 'list', near ?? null] as const,
+  list: (near?: Near, filter?: ContactsFilter) =>
+    ['contacts', 'list', near ?? null, filter ?? null] as const,
   detail: (id: string, near?: Near) => ['contacts', 'detail', id, near ?? null] as const,
 }
 
-/** Read: list of contacts sorted by distance (or alphabetical if `near` undefined). */
-export function useContacts(near?: Near): UseQueryResult<ContactListItem[], Error> {
+export const listKeys = {
+  all: ['lists'] as const,
+  list: () => ['lists', 'list'] as const,
+  detail: (id: string, near?: Near) => ['lists', 'detail', id, near ?? null] as const,
+}
+
+// ── Contacts ──────────────────────────────────────────────────────────────
+
+export function useContacts(
+  near?: Near,
+  filter?: ContactsFilter,
+): UseQueryResult<ContactListItem[], Error> {
   const api = useApiClient()
   return useQuery({
-    queryKey: contactKeys.list(near),
-    queryFn: () => listContacts(api, near ?? {}),
+    queryKey: contactKeys.list(near, filter),
+    queryFn: () =>
+      listContacts(api, {
+        ...(near ?? {}),
+        ...(filter ?? {}),
+      }),
   })
 }
 
-/** Read: a single contact by id. */
+/** Convenience: contacts filtered to favorites. */
+export function useFavorites(near?: Near): UseQueryResult<ContactListItem[], Error> {
+  return useContacts(near, { favorites: true })
+}
+
 export function useContact(id: string, near?: Near): UseQueryResult<ContactListItem, Error> {
   const api = useApiClient()
   return useQuery({
@@ -55,7 +80,6 @@ export function useContact(id: string, near?: Near): UseQueryResult<ContactListI
   })
 }
 
-/** Write: create a new contact. Invalidates list queries on success. */
 export function useCreateContact(): UseMutationResult<
   CreateContactResult,
   Error,
@@ -66,14 +90,11 @@ export function useCreateContact(): UseMutationResult<
   return useMutation({
     mutationFn: (input: CreateContactInput) => createContact(api, input),
     onSuccess: () => {
-      // Any list view (with any `near`) is now stale. Drop the whole
-      // "contacts" subtree so list + detail revalidate on next read.
       void queryClient.invalidateQueries({ queryKey: contactKeys.all })
     },
   })
 }
 
-/** Write: update an existing contact. Invalidates list + detail caches. */
 export function useUpdateContact(
   id: string,
   near?: Near,
@@ -83,10 +104,91 @@ export function useUpdateContact(
   return useMutation({
     mutationFn: (patch: UpdateContactInput) => updateContact(api, id, patch, near),
     onSuccess: (updated) => {
-      // Seed the detail cache with the fresh row so the view re-renders
-      // without an extra round trip.
       queryClient.setQueryData(contactKeys.detail(id, near), updated)
-      // Lists may have changed (favorite, name) — invalidate them.
+      void queryClient.invalidateQueries({ queryKey: ['contacts', 'list'] })
+    },
+  })
+}
+
+// ── Lists ────────────────────────────────────────────────────────────────
+
+export function useLists(): UseQueryResult<ListItem[], Error> {
+  const api = useApiClient()
+  return useQuery({
+    queryKey: listKeys.list(),
+    queryFn: () => listLists(api),
+  })
+}
+
+export function useList(id: string, near?: Near): UseQueryResult<ListWithMembers, Error> {
+  const api = useApiClient()
+  return useQuery({
+    queryKey: listKeys.detail(id, near),
+    queryFn: () => getList(api, id, near ? { lat: near.lat, lng: near.lng } : undefined),
+    enabled: !!id,
+  })
+}
+
+export function useCreateList(): UseMutationResult<ListItem, Error, { name: string }> {
+  const api = useApiClient()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name }: { name: string }) => createList(api, name),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: listKeys.list() })
+    },
+  })
+}
+
+export function useUpdateList(id: string): UseMutationResult<ListItem, Error, { name: string }> {
+  const api = useApiClient()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ name }: { name: string }) => updateList(api, id, { name }),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: listKeys.list() })
+      void queryClient.invalidateQueries({ queryKey: ['lists', 'detail', id] })
+    },
+  })
+}
+
+export function useDeleteList(): UseMutationResult<{ ok: true }, Error, { id: string }> {
+  const api = useApiClient()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ id }: { id: string }) => deleteList(api, id),
+    onSuccess: (_data, { id }) => {
+      queryClient.removeQueries({ queryKey: ['lists', 'detail', id] })
+      void queryClient.invalidateQueries({ queryKey: listKeys.list() })
+    },
+  })
+}
+
+export function useAddListMember(
+  listId: string,
+): UseMutationResult<{ ok: true; added: boolean }, Error, { contactId: string }> {
+  const api = useApiClient()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ contactId }: { contactId: string }) => addListMember(api, listId, contactId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['lists', 'detail', listId] })
+      void queryClient.invalidateQueries({ queryKey: listKeys.list() })
+      void queryClient.invalidateQueries({ queryKey: ['contacts', 'list'] })
+    },
+  })
+}
+
+export function useRemoveListMember(
+  listId: string,
+): UseMutationResult<{ ok: true }, Error, { contactId: string }> {
+  const api = useApiClient()
+  const queryClient = useQueryClient()
+  return useMutation({
+    mutationFn: ({ contactId }: { contactId: string }) => removeListMember(api, listId, contactId),
+    onSuccess: () => {
+      void queryClient.invalidateQueries({ queryKey: ['lists', 'detail', listId] })
+      void queryClient.invalidateQueries({ queryKey: listKeys.list() })
       void queryClient.invalidateQueries({ queryKey: ['contacts', 'list'] })
     },
   })

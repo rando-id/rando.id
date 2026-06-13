@@ -1,6 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm'
 import type { Db } from './client'
-import { contacts, interactions, locations } from './schema'
+import { contacts, interactions, lists, locations } from './schema'
 
 /** How close (meters) a new pin has to be to an existing location to reuse it. */
 const LOCATION_DEDUP_RADIUS_M = 50
@@ -207,11 +207,30 @@ export async function updateContact(
   return result.length
 }
 
+export interface ListContactsFilter {
+  /** Only return contacts where `favorite = true`. */
+  favorites?: boolean
+  /** Only return contacts that are members of the given list. */
+  listId?: string
+}
+
 export async function getContactsNearby(
   db: Db,
   userId: string,
   near: { lat: number; lng: number } | null,
+  filter: ListContactsFilter = {},
 ): Promise<ContactNearbyRow[]> {
+  const favoritesClause = filter.favorites ? sql`AND c.favorite = TRUE` : sql``
+  const listClause = filter.listId
+    ? sql`AND EXISTS (
+        SELECT 1 FROM list_members lm
+        JOIN lists l ON l.id = lm.list_id
+        WHERE lm.contact_id = c.id
+          AND lm.list_id = ${filter.listId}
+          AND l.owner_user_id = ${userId}
+      )`
+    : sql``
+
   // Without GPS coords we still return the contact list but with null
   // distance so the caller can fall back to alphabetical sorting.
   if (!near) {
@@ -231,6 +250,8 @@ export async function getContactsNearby(
         NULL::float8 AS meters
       FROM contacts c
       WHERE c.owner_user_id = ${userId}
+        ${favoritesClause}
+        ${listClause}
       ORDER BY c.last_name NULLS LAST, c.first_name NULLS LAST
     `)
     return rows as unknown as ContactNearbyRow[]
@@ -264,7 +285,182 @@ export async function getContactsNearby(
     LEFT JOIN location_aliases la
       ON la.location_id = loc.id AND la.user_id = c.owner_user_id
     WHERE c.owner_user_id = ${userId}
+      ${favoritesClause}
+      ${listClause}
     ORDER BY meters ASC NULLS LAST, c.last_name NULLS LAST
   `)
   return rows as unknown as ContactNearbyRow[]
+}
+
+// ── Lists ───────────────────────────────────────────────────────────────
+
+export type ListKind = 'custom' | 'location' | 'group' | 'favorites' | 'promoted'
+
+export interface ListRow {
+  id: string
+  ownerUserId: string
+  name: string
+  kind: ListKind
+  coverImage: string | null
+  createdAt: Date
+  updatedAt: Date
+  /** Cached member count — only populated by `listLists`. */
+  memberCount?: number
+}
+
+/** All lists for a user, with their current member count. */
+export async function listLists(db: Db, userId: string): Promise<ListRow[]> {
+  const rows = await db.execute<{
+    id: string
+    owner_user_id: string
+    name: string
+    kind: ListKind
+    cover_image: string | null
+    created_at: string
+    updated_at: string
+    member_count: number
+  }>(sql`
+    SELECT
+      l.id, l.owner_user_id, l.name, l.kind, l.cover_image, l.created_at, l.updated_at,
+      COALESCE(lm_count.c, 0)::int AS member_count
+    FROM lists l
+    LEFT JOIN LATERAL (
+      SELECT COUNT(*)::int AS c FROM list_members WHERE list_id = l.id
+    ) lm_count ON TRUE
+    WHERE l.owner_user_id = ${userId}
+    ORDER BY l.created_at ASC
+  `)
+  return (
+    rows as unknown as Array<{
+      id: string
+      owner_user_id: string
+      name: string
+      kind: ListKind
+      cover_image: string | null
+      created_at: string
+      updated_at: string
+      member_count: number
+    }>
+  ).map((r) => ({
+    id: r.id,
+    ownerUserId: r.owner_user_id,
+    name: r.name,
+    kind: r.kind,
+    coverImage: r.cover_image,
+    createdAt: new Date(r.created_at),
+    updatedAt: new Date(r.updated_at),
+    memberCount: r.member_count,
+  }))
+}
+
+export async function createList(
+  db: Db,
+  userId: string,
+  name: string,
+  kind: ListKind = 'custom',
+): Promise<ListRow> {
+  const inserted = await db.insert(lists).values({ ownerUserId: userId, name, kind }).returning()
+  const row = inserted[0]
+  if (!row) throw new Error('list insert returned no row')
+  return {
+    id: row.id,
+    ownerUserId: row.ownerUserId,
+    name: row.name,
+    kind: row.kind,
+    coverImage: row.coverImage,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+    memberCount: 0,
+  }
+}
+
+export async function getListById(db: Db, userId: string, listId: string): Promise<ListRow | null> {
+  const rows = await db
+    .select()
+    .from(lists)
+    .where(and(eq(lists.id, listId), eq(lists.ownerUserId, userId)))
+    .limit(1)
+  const row = rows[0]
+  if (!row) return null
+  return {
+    id: row.id,
+    ownerUserId: row.ownerUserId,
+    name: row.name,
+    kind: row.kind,
+    coverImage: row.coverImage,
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  }
+}
+
+export async function updateListName(
+  db: Db,
+  userId: string,
+  listId: string,
+  name: string,
+): Promise<number> {
+  const result = await db
+    .update(lists)
+    .set({ name, updatedAt: new Date() })
+    .where(and(eq(lists.id, listId), eq(lists.ownerUserId, userId)))
+    .returning({ id: lists.id })
+  return result.length
+}
+
+export async function deleteList(db: Db, userId: string, listId: string): Promise<number> {
+  const result = await db
+    .delete(lists)
+    .where(and(eq(lists.id, listId), eq(lists.ownerUserId, userId)))
+    .returning({ id: lists.id })
+  return result.length
+}
+
+/**
+ * Add a contact to a list. Verifies the user owns BOTH the list and the
+ * contact in a single SQL statement so cross-user grafting is impossible.
+ * Returns true if a new membership was created, false if the row already
+ * existed or ownership failed.
+ */
+export async function addListMember(
+  db: Db,
+  userId: string,
+  listId: string,
+  contactId: string,
+): Promise<boolean> {
+  // Use INSERT … SELECT so the existence checks happen in the same
+  // statement, avoiding TOCTOU between two separate verifications.
+  const result = await db.execute<{ list_id: string }>(sql`
+    INSERT INTO list_members (list_id, contact_id)
+    SELECT ${listId}::uuid, ${contactId}::uuid
+    WHERE EXISTS (
+      SELECT 1 FROM lists WHERE id = ${listId}::uuid AND owner_user_id = ${userId}::uuid
+    )
+      AND EXISTS (
+        SELECT 1 FROM contacts WHERE id = ${contactId}::uuid AND owner_user_id = ${userId}::uuid
+      )
+    ON CONFLICT DO NOTHING
+    RETURNING list_id
+  `)
+  return (result as unknown as Array<{ list_id: string }>).length > 0
+}
+
+export async function removeListMember(
+  db: Db,
+  userId: string,
+  listId: string,
+  contactId: string,
+): Promise<number> {
+  // Delete only if the user owns the list. Contact ownership doesn't
+  // matter for removal — if it's on the user's list, removing it is
+  // their right.
+  const result = await db.execute<{ list_id: string }>(sql`
+    DELETE FROM list_members
+    WHERE list_id = ${listId}::uuid
+      AND contact_id = ${contactId}::uuid
+      AND EXISTS (
+        SELECT 1 FROM lists WHERE id = ${listId}::uuid AND owner_user_id = ${userId}::uuid
+      )
+    RETURNING list_id
+  `)
+  return (result as unknown as Array<{ list_id: string }>).length
 }

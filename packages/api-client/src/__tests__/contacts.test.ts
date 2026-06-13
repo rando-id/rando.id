@@ -85,6 +85,18 @@ describe('listContacts', () => {
     expect(calls[0]?.url).toBe('https://api.test/v1/contacts?near=33.94%2C-118.41')
   })
 
+  it('passes favorites=true through as a query param', async () => {
+    const calls = stub([{ body: [] }])
+    await listContacts(client(), { favorites: true })
+    expect(calls[0]?.url).toBe('https://api.test/v1/contacts?favorites=true')
+  })
+
+  it('passes listId through as a `list` query param', async () => {
+    const calls = stub([{ body: [] }])
+    await listContacts(client(), { listId: 'l_42' })
+    expect(calls[0]?.url).toBe('https://api.test/v1/contacts?list=l_42')
+  })
+
   it('returns the parsed JSON body', async () => {
     stub([
       {

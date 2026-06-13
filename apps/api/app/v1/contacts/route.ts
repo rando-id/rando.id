@@ -20,8 +20,13 @@ export async function GET(req: Request) {
     const user = await requireCurrentUser()
     const url = new URL(req.url)
     const near = parseNear(url.searchParams.get('near'))
+    const favorites = url.searchParams.get('favorites') === 'true'
+    const listId = url.searchParams.get('list') || undefined
 
-    const rows = await getContactsNearby(getDb(), user.id, near)
+    const rows = await getContactsNearby(getDb(), user.id, near, {
+      favorites,
+      listId,
+    })
 
     const body: ContactListItem[] = rows.map((r) => ({
       id: r.id,
