@@ -68,3 +68,47 @@ export async function createContact(
     body: JSON.stringify(input),
   })
 }
+
+export type GetContactQuery = { lat?: number; lng?: number }
+
+export async function getContact(
+  client: ApiClient,
+  id: string,
+  query: GetContactQuery = {},
+): Promise<ContactListItem> {
+  const params = new URLSearchParams()
+  if (query.lat != null && query.lng != null) {
+    params.set('near', `${query.lat},${query.lng}`)
+  }
+  const path = params.toString()
+    ? `/v1/contacts/${encodeURIComponent(id)}?${params}`
+    : `/v1/contacts/${encodeURIComponent(id)}`
+  return client.request<ContactListItem>(path)
+}
+
+export type UpdateContactInput = {
+  firstName?: string | null
+  lastName?: string | null
+  company?: string | null
+  notes?: string | null
+  favorite?: boolean
+}
+
+export async function updateContact(
+  client: ApiClient,
+  id: string,
+  patch: UpdateContactInput,
+  query: GetContactQuery = {},
+): Promise<ContactListItem> {
+  const params = new URLSearchParams()
+  if (query.lat != null && query.lng != null) {
+    params.set('near', `${query.lat},${query.lng}`)
+  }
+  const path = params.toString()
+    ? `/v1/contacts/${encodeURIComponent(id)}?${params}`
+    : `/v1/contacts/${encodeURIComponent(id)}`
+  return client.request<ContactListItem>(path, {
+    method: 'PATCH',
+    body: JSON.stringify(patch),
+  })
+}

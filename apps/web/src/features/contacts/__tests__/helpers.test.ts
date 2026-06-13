@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { displayName, formatDistance, validateNewContactDraft } from '../helpers'
+import {
+  buildContactPatch,
+  displayName,
+  formatDistance,
+  validateEditContactDraft,
+  validateNewContactDraft,
+} from '../helpers'
 
 describe('displayName', () => {
   it('joins first + last when both present', () => {
@@ -62,5 +68,55 @@ describe('validateNewContactDraft', () => {
     expect(
       validateNewContactDraft({ firstName: 'Jane', lastName: '', locationName: '   ' }),
     ).toMatch(/location a name/)
+  })
+})
+
+describe('validateEditContactDraft', () => {
+  it('passes when at least one name is present', () => {
+    expect(validateEditContactDraft({ firstName: 'Jane', lastName: '', notes: '' })).toBeNull()
+    expect(validateEditContactDraft({ firstName: '', lastName: 'S', notes: '' })).toBeNull()
+  })
+
+  it('rejects when both names are blank — location is not part of edit', () => {
+    expect(validateEditContactDraft({ firstName: ' ', lastName: '', notes: 'just notes' })).toMatch(
+      /first or last name/,
+    )
+  })
+})
+
+describe('buildContactPatch', () => {
+  const current = { firstName: 'Jane', lastName: 'Smith', notes: 'baseball mom' }
+
+  it('returns an empty object when nothing has changed', () => {
+    expect(
+      buildContactPatch(current, { firstName: 'Jane', lastName: 'Smith', notes: 'baseball mom' }),
+    ).toEqual({})
+  })
+
+  it('returns only the changed field', () => {
+    expect(
+      buildContactPatch(current, { firstName: 'Jane', lastName: 'Smith', notes: 'updated note' }),
+    ).toEqual({ notes: 'updated note' })
+  })
+
+  it('normalizes whitespace and treats trimmed-blank as null', () => {
+    expect(
+      buildContactPatch(current, { firstName: 'Jane', lastName: '   ', notes: 'baseball mom' }),
+    ).toEqual({ lastName: null })
+  })
+
+  it('detects all three fields changing at once', () => {
+    expect(
+      buildContactPatch(current, { firstName: 'Janet', lastName: 'Doe', notes: 'updated' }),
+    ).toEqual({ firstName: 'Janet', lastName: 'Doe', notes: 'updated' })
+  })
+
+  it('treats null current and "" draft as equivalent (no patch)', () => {
+    expect(
+      buildContactPatch(
+        { firstName: null, lastName: 'X', notes: null },
+        { firstName: '', lastName: 'X', notes: '' },
+      ),
+    ).toEqual({})
   })
 })

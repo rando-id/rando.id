@@ -1,8 +1,13 @@
 import { useEffect, useState } from 'react'
-import { ScrollView, Separator, Text, XStack, YStack } from 'tamagui'
+import { Button, ScrollView, Separator, Text, XStack, YStack } from 'tamagui'
 import { listContacts, type ContactListItem } from '@rando/api-client'
 import { useApiClient } from '../lib/client-api'
 import { useGeolocation } from '../lib/use-geolocation'
+
+export interface ContactsScreenProps {
+  /** Optional handler for the "+ New" button in the header. */
+  onNew?: () => void
+}
 
 function displayName(c: ContactListItem): string {
   const first = c.firstName?.trim()
@@ -38,7 +43,7 @@ function ContactRow({ contact }: { contact: ContactListItem }) {
   )
 }
 
-export function ContactsScreen() {
+export function ContactsScreen({ onNew }: ContactsScreenProps = {}) {
   const api = useApiClient()
   const geo = useGeolocation()
   const [contacts, setContacts] = useState<ContactListItem[] | null>(null)
@@ -72,6 +77,16 @@ export function ContactsScreen() {
   return (
     <ScrollView flex={1}>
       <YStack flex={1}>
+        {onNew ? (
+          <XStack p="$3" justify="space-between" items="center">
+            <Text fontSize="$6" fontWeight="700">
+              Contacts
+            </Text>
+            <Button theme="accent" size="$3" onPress={onNew}>
+              + New
+            </Button>
+          </XStack>
+        ) : null}
         {geo.status !== 'ready' ? (
           <Text p="$3" fontSize="$2" color="$colorPress">
             Location unavailable — showing contacts alphabetically.
@@ -79,7 +94,7 @@ export function ContactsScreen() {
         ) : null}
         {contacts.length === 0 ? (
           <YStack p="$4">
-            <Text>No contacts yet.</Text>
+            <Text>No contacts yet — tap &quot;+ New&quot; to add your first.</Text>
           </YStack>
         ) : (
           contacts.map((c, i) => (

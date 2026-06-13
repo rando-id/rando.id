@@ -10,28 +10,33 @@ import { displayName, formatDistance } from './helpers'
 
 function ContactRow({ contact }: { contact: ContactListItem }) {
   return (
-    <XStack
-      py="$3"
-      px="$4"
-      borderBottomWidth={1}
-      borderBottomColor="$borderColor"
-      items="center"
-      gap="$3"
-    >
-      <YStack flex={1}>
-        <Text fontSize="$5" fontWeight="600">
-          {displayName(contact)}
-        </Text>
-        <Text fontSize="$2" color="$colorPress">
-          {contact.location ? contact.location.name : 'No location yet'}
-        </Text>
-      </YStack>
-      {contact.location ? (
-        <Text fontSize="$2" color="$colorPress">
-          {formatDistance(contact.location.meters)}
-        </Text>
-      ) : null}
-    </XStack>
+    <Link href={`/contacts/${contact.id}`} style={{ textDecoration: 'none', color: 'inherit' }}>
+      <XStack
+        py="$3"
+        px="$4"
+        borderBottomWidth={1}
+        borderBottomColor="$borderColor"
+        items="center"
+        gap="$3"
+        hoverStyle={{ bg: '$backgroundHover' }}
+        cursor="pointer"
+      >
+        <YStack flex={1}>
+          <Text fontSize="$5" fontWeight="600">
+            {contact.favorite ? '★ ' : ''}
+            {displayName(contact)}
+          </Text>
+          <Text fontSize="$2" color="$colorPress">
+            {contact.location ? contact.location.name : 'No location yet'}
+          </Text>
+        </YStack>
+        {contact.location ? (
+          <Text fontSize="$2" color="$colorPress">
+            {formatDistance(contact.location.meters)}
+          </Text>
+        ) : null}
+      </XStack>
+    </Link>
   )
 }
 

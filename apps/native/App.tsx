@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { StatusBar } from 'expo-status-bar'
 import { ClerkProvider, SignedIn, SignedOut } from '@clerk/clerk-expo'
 import { SafeAreaView } from 'react-native-safe-area-context'
@@ -6,8 +7,31 @@ import { tamaguiConfig } from '@rando/ui'
 import { tokenCache } from './src/lib/token-cache'
 import { SignInScreen } from './src/screens/SignInScreen'
 import { ContactsScreen } from './src/screens/ContactsScreen'
+import { AddContactScreen } from './src/screens/AddContactScreen'
 
 const PUBLISHABLE_KEY = process.env.EXPO_PUBLIC_CLERK_PUBLISHABLE_KEY
+
+type Route = { kind: 'list' } | { kind: 'new' }
+
+function SignedInRoot() {
+  const [route, setRoute] = useState<Route>({ kind: 'list' })
+  // Bump a counter to force ContactsScreen to refresh after a create —
+  // it re-fetches on `key` change. Tiny "navigation" until we adopt
+  // React Navigation or Expo Router properly.
+  const [refresh, setRefresh] = useState(0)
+
+  if (route.kind === 'new') {
+    return (
+      <AddContactScreen
+        onDone={() => {
+          setRefresh((n) => n + 1)
+          setRoute({ kind: 'list' })
+        }}
+      />
+    )
+  }
+  return <ContactsScreen key={refresh} onNew={() => setRoute({ kind: 'new' })} />
+}
 
 export default function App() {
   if (!PUBLISHABLE_KEY) {
@@ -29,7 +53,7 @@ export default function App() {
       <TamaguiProvider config={tamaguiConfig} defaultTheme="light">
         <SafeAreaView style={{ flex: 1 }}>
           <SignedIn>
-            <ContactsScreen />
+            <SignedInRoot />
           </SignedIn>
           <SignedOut>
             <SignInScreen />

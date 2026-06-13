@@ -22,10 +22,10 @@ export default defineConfig({
         'app/**/layout.tsx',
         'app/**/error.tsx',
       ],
-      // ~89% baseline. Threshold set a few points below to allow small
-      // refactors without immediate CI failure; regressions are still
-      // caught.
-      thresholds: { lines: 85, functions: 80, branches: 80, statements: 85 },
+      // ~90% lines / 92% functions baseline. Threshold a few points
+      // below current floor — small refactors have buffer, real
+      // regressions fail CI.
+      thresholds: { lines: 88, functions: 88, branches: 80, statements: 88 },
     },
   },
   resolve: {

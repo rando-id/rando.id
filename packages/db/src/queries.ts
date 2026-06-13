@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm'
+import { and, eq, sql } from 'drizzle-orm'
 import type { Db } from './client'
 import { contacts, interactions, locations } from './schema'
 
@@ -113,6 +113,98 @@ export async function createContactWithLocation(
 
     return { contactId: contactRow.id, locationId, locationReused }
   })
+}
+
+/**
+ * Fetch a single contact by id, scoped to its owner so cross-user reads
+ * fail with `not found` rather than leaking. Returns the same row shape
+ * as `getContactsNearby` for API parity — `near` chooses the nearest
+ * interaction, or alphabetical fallback when null.
+ */
+export async function getContactById(
+  db: Db,
+  userId: string,
+  contactId: string,
+  near: { lat: number; lng: number } | null,
+): Promise<ContactNearbyRow | null> {
+  if (!near) {
+    const rows = await db.execute<ContactNearbyRow>(sql`
+      SELECT
+        c.id, c.first_name, c.last_name,
+        c.avatar_kind, c.avatar_value, c.favorite, c.promoted,
+        NULL::uuid AS location_id,
+        NULL::text AS location_name,
+        NULL::float8 AS lat,
+        NULL::float8 AS lng,
+        NULL::float8 AS meters
+      FROM contacts c
+      WHERE c.owner_user_id = ${userId} AND c.id = ${contactId}
+    `)
+    return (rows as unknown as ContactNearbyRow[])[0] ?? null
+  }
+
+  const point = sql`ST_SetSRID(ST_MakePoint(${near.lng}, ${near.lat}), 4326)::geography`
+  const rows = await db.execute<ContactNearbyRow>(sql`
+    SELECT
+      c.id, c.first_name, c.last_name,
+      c.avatar_kind, c.avatar_value, c.favorite, c.promoted,
+      loc.id AS location_id,
+      COALESCE(la.nickname, loc.canonical_name) AS location_name,
+      ST_Y(loc.geo::geometry) AS lat,
+      ST_X(loc.geo::geometry) AS lng,
+      ST_Distance(loc.geo, ${point}) AS meters
+    FROM contacts c
+    LEFT JOIN LATERAL (
+      SELECT l.id, l.geo, l.canonical_name
+      FROM interactions i
+      JOIN locations l ON l.id = i.location_id
+      WHERE i.contact_id = c.id
+      ORDER BY ST_Distance(l.geo, ${point}) ASC
+      LIMIT 1
+    ) loc ON TRUE
+    LEFT JOIN location_aliases la
+      ON la.location_id = loc.id AND la.user_id = c.owner_user_id
+    WHERE c.owner_user_id = ${userId} AND c.id = ${contactId}
+  `)
+  return (rows as unknown as ContactNearbyRow[])[0] ?? null
+}
+
+export interface UpdateContactInput {
+  firstName?: string | null
+  lastName?: string | null
+  company?: string | null
+  notes?: string | null
+  favorite?: boolean
+}
+
+/**
+ * Update mutable fields on a contact, scoped to the owner. Returns the
+ * number of rows affected so the caller can distinguish "not found / not
+ * owned" (0) from a successful update (1).
+ */
+export async function updateContact(
+  db: Db,
+  userId: string,
+  contactId: string,
+  patch: UpdateContactInput,
+): Promise<number> {
+  const updates: Record<string, unknown> = { updatedAt: new Date() }
+  if (patch.firstName !== undefined) updates.firstName = patch.firstName
+  if (patch.lastName !== undefined) updates.lastName = patch.lastName
+  if (patch.company !== undefined) updates.company = patch.company
+  if (patch.notes !== undefined) updates.notes = patch.notes
+  if (patch.favorite !== undefined) updates.favorite = patch.favorite
+
+  // No-op when only updatedAt would change — short-circuit so we don't
+  // bump the timestamp on an empty patch.
+  if (Object.keys(updates).length === 1) return 0
+
+  const result = await db
+    .update(contacts)
+    .set(updates)
+    .where(and(eq(contacts.id, contactId), eq(contacts.ownerUserId, userId)))
+    .returning({ id: contacts.id })
+  return result.length
 }
 
 export async function getContactsNearby(

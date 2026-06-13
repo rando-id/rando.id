@@ -12,11 +12,14 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "db:generate": "drizzle-kit generate",
     "db:migrate": "tsx src/migrate.ts",
-    "db:seed":    "tsx src/seed.ts",
+    "db:seed": "tsx src/seed.ts",
     "db:studio": "drizzle-kit studio",
-    "db:reset":   "tsx src/reset.ts && pnpm db:migrate && pnpm db:seed"
+    "db:reset": "tsx src/reset.ts && pnpm db:migrate && pnpm db:seed"
   },
   "dependencies": {
     "drizzle-orm": "^0.38.3",
@@ -25,8 +28,10 @@
   "devDependencies": {
     "@rando/tsconfig": "workspace:*",
     "@types/node": "^22.10.2",
+    "@vitest/coverage-v8": "^2.1.9",
     "drizzle-kit": "^0.30.1",
     "tsx": "^4.19.2",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.9"
   }
 }

@@ -4,7 +4,7 @@
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { ApiError, createApiClient } from '../client'
-import { createContact, listContacts } from '../contacts'
+import { createContact, getContact, listContacts, updateContact } from '../contacts'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -150,5 +150,62 @@ describe('createContact', () => {
         location: { lat: 999, lng: 0, name: 'X' },
       }),
     ).rejects.toBeInstanceOf(ApiError)
+  })
+})
+
+const CONTACT = {
+  id: 'c_1',
+  firstName: 'Jane',
+  lastName: null,
+  avatarKind: 'monogram' as const,
+  avatarValue: null,
+  favorite: false,
+  promoted: false,
+  location: null,
+}
+
+describe('getContact', () => {
+  it('GETs /v1/contacts/<id>', async () => {
+    const calls = stub([{ body: CONTACT }])
+    const out = await getContact(client(), 'c_1')
+    expect(calls[0]?.method).toBe('GET')
+    expect(calls[0]?.url).toBe('https://api.test/v1/contacts/c_1')
+    expect(out.id).toBe('c_1')
+  })
+
+  it('passes lat/lng through as `near`', async () => {
+    const calls = stub([{ body: CONTACT }])
+    await getContact(client(), 'c_1', { lat: 33.94, lng: -118.41 })
+    expect(calls[0]?.url).toBe('https://api.test/v1/contacts/c_1?near=33.94%2C-118.41')
+  })
+
+  it('URL-encodes weird ids', async () => {
+    const calls = stub([{ body: CONTACT }])
+    await getContact(client(), 'a/b c')
+    expect(calls[0]?.url).toBe('https://api.test/v1/contacts/a%2Fb%20c')
+  })
+})
+
+describe('updateContact', () => {
+  it('PATCHes with the JSON patch body', async () => {
+    const calls = stub([{ body: { ...CONTACT, favorite: true } }])
+    const out = await updateContact(client(), 'c_1', { favorite: true })
+    expect(calls[0]?.method).toBe('PATCH')
+    expect(calls[0]?.url).toBe('https://api.test/v1/contacts/c_1')
+    expect(calls[0]?.body).toEqual({ favorite: true })
+    expect(out.favorite).toBe(true)
+  })
+
+  it('passes lat/lng through as `near` for the post-patch lookup', async () => {
+    const calls = stub([{ body: CONTACT }])
+    await updateContact(client(), 'c_1', { notes: 'hi' }, { lat: 33.94, lng: -118.41 })
+    expect(calls[0]?.url).toBe('https://api.test/v1/contacts/c_1?near=33.94%2C-118.41')
+  })
+
+  it('surfaces 404 as ApiError', async () => {
+    stub([{ status: 404, body: { error: 'not found' } }])
+    await expect(updateContact(client(), 'c_missing', { favorite: true })).rejects.toBeInstanceOf(
+      ApiError,
+    )
   })
 })

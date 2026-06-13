@@ -20,12 +20,20 @@ export default defineConfig({
         'src/features/contacts/MapPicker.tsx',
         // Tamagui provider is a thin Next.js wrapper with no logic.
         'src/providers/**',
+        // Component renders excluded; their pure logic lives in helpers.ts
+        // and IS tested. Tamagui-in-jsdom mounts are brittle and add
+        // little signal.
+        'src/features/contacts/ContactsList.tsx',
+        'src/features/contacts/NewContactForm.tsx',
+        'src/features/contacts/ContactDetailView.tsx',
       ],
-      // ~30% lines but 84%/89% functions/branches. Low lines is because
-      // ContactsList + NewContactForm component renders aren't unit-tested
-      // (Tamagui in jsdom is brittle). The pure logic those components
-      // delegate to is at 100%. Threshold reflects that reality.
-      thresholds: { lines: 28, functions: 80, branches: 85, statements: 28 },
+      // Component renders (ContactsList, NewContactForm, ContactDetailView,
+      // MapPicker, providers) are excluded — Tamagui-in-jsdom mounts are
+      // brittle and the pure logic they delegate to lives in helpers.ts
+      // and is fully tested. What remains here IS at 100%, so the
+      // threshold locks that in. Any new file added to `src/` without
+      // a test (and without a justified exclude) will fail this gate.
+      thresholds: { lines: 95, functions: 95, branches: 90, statements: 95 },
     },
   },
 })
