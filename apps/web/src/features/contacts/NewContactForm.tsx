@@ -7,21 +7,21 @@
 import { useEffect, useRef, useState } from 'react'
 import { useRouter } from 'next/navigation'
 import { Button, Input, Label, Paragraph, Text, XStack, YStack } from 'tamagui'
-import { ApiError, createContact } from '@rando/api-client'
-import { useApiClient } from '../../lib/client-api'
+import { ApiError } from '@rando/api-client'
 import { useGeolocation } from './use-geolocation'
 import { MapPicker } from './MapPicker'
 import { reverseGeocode } from './geocode'
 import { validateNewContactDraft } from './helpers'
+import { useCreateContact } from './hooks'
 
 // Reasonable fallback if the user denies geolocation (downtown Los Angeles).
 const FALLBACK_LAT = 34.0522
 const FALLBACK_LNG = -118.2437
 
 export function NewContactForm() {
-  const api = useApiClient()
   const router = useRouter()
   const geo = useGeolocation()
+  const createMutation = useCreateContact()
 
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -33,8 +33,8 @@ export function NewContactForm() {
   const [locationName, setLocationName] = useState('')
   const [locationNameTouched, setLocationNameTouched] = useState(false)
   const [geocoding, setGeocoding] = useState(false)
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const submitting = createMutation.isPending
 
   // Once the device returns coordinates, jump the pin to the user and
   // (if the user hasn't typed a name yet) reverse-geocode for a default.
@@ -70,9 +70,8 @@ export function NewContactForm() {
       setError(validationError)
       return
     }
-    setSubmitting(true)
     try {
-      await createContact(api, {
+      await createMutation.mutateAsync({
         firstName: firstName.trim() || null,
         lastName: lastName.trim() || null,
         notes: notes.trim() || null,
@@ -80,9 +79,7 @@ export function NewContactForm() {
       })
       router.push('/contacts')
     } catch (e) {
-      const msg = e instanceof ApiError ? `API ${e.status}: ${e.message}` : String(e)
-      setError(msg)
-      setSubmitting(false)
+      setError(e instanceof ApiError ? `API ${e.status}: ${e.message}` : String(e))
     }
   }
 

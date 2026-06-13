@@ -7,9 +7,9 @@
 import { useEffect, useState } from 'react'
 import * as Location from 'expo-location'
 import { Button, Input, Label, Paragraph, Text, XStack, YStack } from 'tamagui'
-import { ApiError, createContact } from '@rando/api-client'
+import { ApiError } from '@rando/api-client'
 import { osmAdapter } from '@rando/maps'
-import { useApiClient } from '../lib/client-api'
+import { useCreateContact } from '../lib/hooks'
 
 const FALLBACK_LAT = 34.0522
 const FALLBACK_LNG = -118.2437
@@ -20,7 +20,7 @@ export interface AddContactScreenProps {
 }
 
 export function AddContactScreen({ onDone }: AddContactScreenProps) {
-  const api = useApiClient()
+  const createMutation = useCreateContact()
 
   const [firstName, setFirstName] = useState('')
   const [lastName, setLastName] = useState('')
@@ -30,8 +30,8 @@ export function AddContactScreen({ onDone }: AddContactScreenProps) {
   const [locationName, setLocationName] = useState('')
   const [locationNameTouched, setLocationNameTouched] = useState(false)
   const [locating, setLocating] = useState(true)
-  const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const submitting = createMutation.isPending
 
   // Capture GPS on mount. expo-location asks for permission and resolves
   // with the current position; on denial we keep the fallback and let
@@ -106,9 +106,8 @@ export function AddContactScreen({ onDone }: AddContactScreenProps) {
       setError('Give the location a name.')
       return
     }
-    setSubmitting(true)
     try {
-      await createContact(api, {
+      await createMutation.mutateAsync({
         firstName: firstName.trim() || null,
         lastName: lastName.trim() || null,
         notes: notes.trim() || null,
@@ -117,7 +116,6 @@ export function AddContactScreen({ onDone }: AddContactScreenProps) {
       onDone()
     } catch (e) {
       setError(e instanceof ApiError ? `API ${e.status}: ${e.message}` : String(e))
-      setSubmitting(false)
     }
   }
 

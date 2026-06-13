@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { ClerkProvider, SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/nextjs'
 import { TamaguiProviderClient } from '../src/providers/Tamagui'
+import { QueryProvider } from '../src/providers/QueryProvider'
 
 export const metadata = {
   title: 'Rando',
@@ -13,24 +14,26 @@ export default function RootLayout({ children }: { children: ReactNode }) {
       <html lang="en" suppressHydrationWarning>
         <body>
           <TamaguiProviderClient>
-            <header
-              style={{
-                display: 'flex',
-                justifyContent: 'flex-end',
-                alignItems: 'center',
-                padding: '12px 24px',
-                borderBottom: '1px solid #eee',
-                gap: 12,
-              }}
-            >
-              <SignedOut>
-                <SignInButton mode="modal" />
-              </SignedOut>
-              <SignedIn>
-                <UserButton afterSignOutUrl="/sign-in" />
-              </SignedIn>
-            </header>
-            {children}
+            <QueryProvider>
+              <header
+                style={{
+                  display: 'flex',
+                  justifyContent: 'flex-end',
+                  alignItems: 'center',
+                  padding: '12px 24px',
+                  borderBottom: '1px solid #eee',
+                  gap: 12,
+                }}
+              >
+                <SignedOut>
+                  <SignInButton mode="modal" />
+                </SignedOut>
+                <SignedIn>
+                  <UserButton afterSignOutUrl="/sign-in" />
+                </SignedIn>
+              </header>
+              {children}
+            </QueryProvider>
           </TamaguiProviderClient>
         </body>
       </html>

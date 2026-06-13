@@ -1,32 +1,31 @@
 'use client'
 
 // Contact detail page. View mode shows the fields + a favorite toggle;
-// Edit mode swaps to inputs for name + notes. Map of where you met
-// them is intentionally deferred to a follow-up — this is the minimal
-// read/write surface.
+// Edit mode swaps to inputs for name + notes. Read/write both go through
+// the TanStack Query hooks layer so list and detail views stay in sync.
 
 import { useEffect, useState } from 'react'
 import Link from 'next/link'
 import { Button, Input, Label, Paragraph, Text, XStack, YStack } from 'tamagui'
-import { ApiError, getContact, updateContact, type ContactListItem } from '@rando/api-client'
-import { useApiClient } from '../../lib/client-api'
+import { ApiError } from '@rando/api-client'
 import {
   buildContactPatch,
   displayName,
   type EditContactDraft,
   validateEditContactDraft,
 } from './helpers'
+import { useContact, useUpdateContact } from './hooks'
 
 export interface ContactDetailViewProps {
   id: string
 }
 
 export function ContactDetailView({ id }: ContactDetailViewProps) {
-  const api = useApiClient()
-  const [contact, setContact] = useState<ContactListItem | null>(null)
+  const { data: contact, isLoading, error: loadError } = useContact(id)
+  const updateMutation = useUpdateContact(id)
   // Detail page tracks `notes` separately because the list endpoint
-  // doesn't surface it. We GET the row and trust the server's value;
-  // edit-mode reads from this state.
+  // doesn't surface it. When we add a "with details" flag to the API,
+  // the hook can carry it. For now `notes` starts blank on load.
   const [notes, setNotes] = useState<string>('')
   const [editing, setEditing] = useState(false)
   const [draft, setDraft] = useState<EditContactDraft>({
@@ -34,46 +33,26 @@ export function ContactDetailView({ id }: ContactDetailViewProps) {
     lastName: '',
     notes: '',
   })
-  const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const busy = updateMutation.isPending
 
+  // Seed the edit-draft when the contact loads or changes.
   useEffect(() => {
-    let cancelled = false
-    setError(null)
-    getContact(api, id)
-      .then((c) => {
-        if (cancelled) return
-        setContact(c)
-        // ContactListItem doesn't include notes — fetch fully via the API
-        // when we add a "with details" flag. For now `notes` is blank on
-        // load; the user can still edit it.
-        setNotes('')
-        setDraft({
-          firstName: c.firstName ?? '',
-          lastName: c.lastName ?? '',
-          notes: '',
-        })
-      })
-      .catch((e: unknown) => {
-        if (cancelled) return
-        setError(e instanceof Error ? e.message : String(e))
-      })
-    return () => {
-      cancelled = true
-    }
-  }, [api, id])
+    if (!contact) return
+    setDraft({
+      firstName: contact.firstName ?? '',
+      lastName: contact.lastName ?? '',
+      notes,
+    })
+  }, [contact, notes])
 
   async function toggleFavorite() {
     if (!contact || busy) return
-    setBusy(true)
     setError(null)
     try {
-      const updated = await updateContact(api, id, { favorite: !contact.favorite })
-      setContact(updated)
+      await updateMutation.mutateAsync({ favorite: !contact.favorite })
     } catch (e) {
       setError(e instanceof ApiError ? `API ${e.status}: ${e.message}` : String(e))
-    } finally {
-      setBusy(false)
     }
   }
 
@@ -84,20 +63,16 @@ export function ContactDetailView({ id }: ContactDetailViewProps) {
       setError(validationError)
       return
     }
-    setBusy(true)
     setError(null)
     const patch = buildContactPatch({ ...contact, notes }, draft)
     try {
       if (Object.keys(patch).length > 0) {
-        const updated = await updateContact(api, id, patch)
-        setContact(updated)
+        await updateMutation.mutateAsync(patch)
       }
       setNotes(draft.notes)
       setEditing(false)
     } catch (e) {
       setError(e instanceof ApiError ? `API ${e.status}: ${e.message}` : String(e))
-    } finally {
-      setBusy(false)
     }
   }
 
@@ -112,18 +87,18 @@ export function ContactDetailView({ id }: ContactDetailViewProps) {
     setError(null)
   }
 
-  if (error && !contact) {
+  if (loadError) {
     return (
       <YStack p="$4" gap="$3">
         <Link href="/contacts" style={{ textDecoration: 'none' }}>
           <Button size="$2">← Back</Button>
         </Link>
-        <Text color="$red10">Couldn&apos;t load contact: {error}</Text>
+        <Text color="$red10">Couldn&apos;t load contact: {loadError.message}</Text>
       </YStack>
     )
   }
 
-  if (!contact) {
+  if (isLoading || !contact) {
     return (
       <YStack p="$4">
         <Text>Loading…</Text>

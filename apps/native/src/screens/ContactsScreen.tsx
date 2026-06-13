@@ -1,8 +1,7 @@
-import { useEffect, useState } from 'react'
 import { Button, ScrollView, Separator, Text, XStack, YStack } from 'tamagui'
-import { listContacts, type ContactListItem } from '@rando/api-client'
-import { useApiClient } from '../lib/client-api'
+import { type ContactListItem } from '@rando/api-client'
 import { useGeolocation } from '../lib/use-geolocation'
+import { useContacts } from '../lib/hooks'
 
 export interface ContactsScreenProps {
   /** Optional handler for the "+ New" button in the header. */
@@ -28,6 +27,7 @@ function ContactRow({ contact }: { contact: ContactListItem }) {
     <XStack py="$3" px="$4" items="center" gap="$3">
       <YStack flex={1}>
         <Text fontSize="$5" fontWeight="600">
+          {contact.favorite ? '★ ' : ''}
           {displayName(contact)}
         </Text>
         <Text fontSize="$2" color="$colorPress">
@@ -44,21 +44,15 @@ function ContactRow({ contact }: { contact: ContactListItem }) {
 }
 
 export function ContactsScreen({ onNew }: ContactsScreenProps = {}) {
-  const api = useApiClient()
   const geo = useGeolocation()
-  const [contacts, setContacts] = useState<ContactListItem[] | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const near = geo.status === 'ready' ? { lat: geo.lat, lng: geo.lng } : undefined
+  const {
+    data: contacts,
+    isLoading,
+    error,
+  } = useContacts(geo.status === 'pending' ? undefined : near)
 
-  useEffect(() => {
-    if (geo.status === 'pending') return
-    const near = geo.status === 'ready' ? { lat: geo.lat, lng: geo.lng } : {}
-    setError(null)
-    listContacts(api, near)
-      .then(setContacts)
-      .catch((e: unknown) => setError(e instanceof Error ? e.message : String(e)))
-  }, [api, geo])
-
-  if (geo.status === 'pending' || contacts === null) {
+  if (geo.status === 'pending' || isLoading || contacts == null) {
     return (
       <YStack p="$4">
         <Text>Loading…</Text>
@@ -69,7 +63,7 @@ export function ContactsScreen({ onNew }: ContactsScreenProps = {}) {
   if (error) {
     return (
       <YStack p="$4">
-        <Text color="$red10">Couldn&apos;t load contacts: {error}</Text>
+        <Text color="$red10">Couldn&apos;t load contacts: {error.message}</Text>
       </YStack>
     )
   }
