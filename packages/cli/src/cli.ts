@@ -7,6 +7,7 @@ import { defaultIo, type Io } from './output'
 import { dbCommand } from './commands/db'
 import { tunnelCommand } from './commands/tunnel'
 import { deployCommand } from './commands/deploy'
+import { completionCommand } from './commands/completion'
 import { devCommand } from './commands/dev'
 import { dnsCommand } from './commands/dns'
 import { doctorCommand } from './commands/doctor'
@@ -33,7 +34,11 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<voi
   const adapters = options.adapters ?? createAdapters()
   const exit = options.exit ?? ((code: number) => process.exit(code))
 
-  const program = new Command('rando').description('Rando.id infrastructure CLI').exitOverride() // throw instead of process.exit so we control teardown
+  const program = new Command('rando')
+    .description('Rando.id infrastructure CLI')
+    .exitOverride() // throw instead of process.exit so we control teardown
+    .showSuggestionAfterError() // commander prints "did you mean ..." on typos
+    .showHelpAfterError() // and shows --help so users see options after errors
 
   program.addCommand(dbCommand(adapters, io))
   program.addCommand(tunnelCommand(adapters, io))
@@ -42,6 +47,7 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<voi
   program.addCommand(infrastructureCommand(adapters, io))
   program.addCommand(devCommand(io))
   program.addCommand(doctorCommand(io))
+  program.addCommand(completionCommand(io))
 
   // Interactive discovery: bare `rando` or `rando <group>` drops the user
   // into a select menu. Skipped in non-TTY contexts (CI, pipes) — those

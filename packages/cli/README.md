@@ -28,6 +28,7 @@ After `pnpm setup:cli`:
 rando <subcommand>                  # works from any directory
 rando                               # bare → interactive menu
 rando doctor                        # diagnostic — runs colors + a spinner
+rando completion zsh > _rando       # shell tab-completion (bash | zsh | fish)
 ```
 
 Without the symlink, two fallbacks still work:
@@ -41,6 +42,44 @@ The bin (`packages/cli/bin/rando.mjs`) is a tiny Node wrapper that locates
 the repo root from its own path, then re-execs Node with absolute paths to
 `tsx` and `.env`. Result: `rando` works regardless of your current working
 directory.
+
+### Interactive prompts for missing args
+
+Every destructive/list-able command will prompt for any positional
+argument you don't pass on the command line, in a terminal context:
+
+```bash
+# All three of these prompt for "which project?" then "which branch?":
+rando db branch delete
+rando db connection-string
+rando db sync                       # prompts for --from then --to
+
+# Pre-fill any subset and only the rest get prompted:
+rando db branch delete p1            # only prompts for branchId
+rando db sync --from main            # only prompts for --to
+```
+
+Resource selectors (project IDs, branch names, app names, tunnel names,
+DNS record IDs) show a typed list from the provider — no opaque IDs to
+remember. Free-text args (new resource names) use a simple input prompt.
+Non-TTY contexts (CI, pipes) fail loudly with `Missing required argument
+<name>` instead of hanging.
+
+### Tab completion
+
+```bash
+# bash: source from your .bashrc
+rando completion bash > ~/.rando-completion.bash
+echo 'source ~/.rando-completion.bash' >> ~/.bashrc
+
+# zsh: drop into your fpath
+rando completion zsh > "${fpath[1]}/_rando"
+
+# fish:
+rando completion fish > ~/.config/fish/completions/rando.fish
+```
+
+Typos surface "Did you mean…?" suggestions (`rando dbb` → `(Did you mean db?)`).
 
 ## Configuration
 
@@ -252,6 +291,7 @@ rando db branch delete <projectId> <branchId>                    [-y/--yes]
 rando db connection-string <projectId> <branchId> [--pooled]
 rando db extension-enable <projectId> <branchId> <extension>
 rando db sync --from <branch> --to <branch>                      [-y/--yes]
+rando db copy --from-conn <url> --to-conn <url> [--schema-only]   [-y/--yes]
 ```
 
 `db sync` resets one Neon branch to match another (e.g. `--from main
@@ -259,6 +299,20 @@ rando db sync --from <branch> --to <branch>                      [-y/--yes]
 destination branch is overwritten in place. Neon preserves the previous
 state under an automatic snapshot. Loud `WARNING` printed when
 `--to=main` since that overwrites production.
+
+`db copy` is the cross-project escape hatch — pipes `pg_dump |
+pg_restore` between two arbitrary Postgres connection strings. Use when
+`db sync` doesn't apply (different Neon projects, or copying out to a
+non-Neon Postgres). Requires `pg_dump`/`pg_restore` on PATH at Postgres
+16+ (Neon's server version). `--schema-only` for DDL-only copies;
+`--no-clean` skips the default `pg_restore --clean --if-exists`. Common
+recipe:
+
+```bash
+SRC=$(rando db connection-string $SRC_PROJ $SRC_BR --pooled --json | jq -r .url)
+DST=$(rando db connection-string $DST_PROJ $DST_BR --pooled --json | jq -r .url)
+rando db copy --from-conn "$SRC" --to-conn "$DST"
+```
 
 ⚠ **`db project create` / `db project delete` are escape-hatch commands.**
 The Rando Neon project is bootstrapped by `rando infra setup` reading
@@ -289,7 +343,7 @@ rando deploy env set <app> <key> <value> --scope <production|preview|development
 rando deploy env list <app>
 rando deploy domain add <app> <hostname> [--branch <branch>]
 rando deploy domain remove <app> <hostname>                      [-y/--yes]
-rando deploy branch [<branch>] [--apps <names>] [--no-wait]
+rando deploy branch [<branch>] [--apps <names>] [--no-wait] [-s/--stable-url]
 ```
 
 `--scope` accepts a comma-separated list — e.g. `--scope production,preview`.
@@ -301,6 +355,7 @@ rando deploy branch                       # current git branch, all apps
 rando deploy branch feat/something        # specific branch
 rando deploy branch main --apps web       # subset
 rando deploy branch main --no-wait        # trigger and exit, don't poll
+rando deploy branch feat/x --stable-url   # plus stable CNAMEs
 ```
 
 For each configured app in `rando.config.json`, triggers a Vercel preview
@@ -308,6 +363,83 @@ deployment from the named branch, polls until the build is ready (or
 errors out), and prints the preview URL. Defaults to the current git
 branch when no argument is passed. Triggers and polls in parallel — wall
 time is bounded by the slowest single build, not the sum.
+
+**`--stable-url` / `-s`** — after the build is ready, ensures a custom
+Vercel domain `<branch-slug>-<app>.<nonProd-zone>` exists pinned to the
+branch, and adds a matching Cloudflare CNAME → `cname.vercel-dns.com`.
+Result: a stable URL that follows the latest deploy of that branch (so
+you can share `feat-x-web.rando-id.dev` and it always points at the
+current build). Both calls are idempotent — re-running is safe. Branch
+names are slugified for DNS: `feat/x` → `feat-x`.
+
+#### `deploy teardown` — PR cleanup
+
+```
+rando deploy teardown [<branch>] [--apps <names>] [-y/--yes]
+```
+
+Inverse of `deploy branch --stable-url`: for each app, removes the
+Vercel custom domain and the Cloudflare CNAME for `<branch-slug>-<app>.<nonProd>`.
+Idempotent (missing resources are treated as already-gone) so it's safe
+to run from a PR-close GitHub Actions job. The preview deployments
+themselves are left alone — Vercel auto-GCs them on its own retention
+schedule.
+
+```yaml
+# .github/workflows/preview.yml
+name: PR preview
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+jobs:
+  preview:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: 'pnpm' }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm setup:cli
+      # Optional: spin up a fresh Neon branch off main for this PR.
+      - run: rando db branch create $RANDO_PROJECT pr-${{ github.event.number }} --from main
+      - run: rando deploy branch ${{ github.head_ref }} --stable-url --yes
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+
+  teardown:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with: { node-version: 22, cache: 'pnpm' }
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm setup:cli
+      - run: rando deploy teardown ${{ github.head_ref }} --yes
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      - run: rando db branch delete $RANDO_PROJECT pr-${{ github.event.number }} --yes
+        env:
+          NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+```
+
+Result: each PR gets its own preview URLs at predictable
+`<branch-slug>-<app>.rando-id.dev` and (optionally) a fresh Neon branch.
+Both vanish on PR close.
+
+The repo ships this workflow at [`.github/workflows/preview.yml`](../../.github/workflows/preview.yml) —
+the Neon-branch steps are commented out by default; uncomment + set
+`RANDO_NEON_PROJECT_ID` as a repo variable to enable per-PR Neon
+branches.
 
 ### `dev` — local dev orchestrator
 
@@ -351,6 +483,19 @@ rando dns record remove <zone> <recordId>                        [-y/--yes]
 `<type>` is one of `A`, `AAAA`, `CNAME`, `TXT`, `MX` (case-insensitive).
 TTL `1` = "auto".
 
+### `doctor` and `completion`
+
+```
+rando doctor                              # env/color/spinner diagnostic
+rando completion <bash|zsh|fish>          # shell tab-completion script
+```
+
+`doctor` reports the current `isTTY`, `TERM`, `chalk.level`, and prints a
+color + spinner sample so you can verify visually that your terminal
+renders ANSI escapes. `completion` emits a tab-completion script for the
+named shell — pipe into your shell's completion path (see "Tab
+completion" above).
+
 ### Destructive commands
 
 Every command that deletes or removes a resource prompts for confirmation
@@ -365,6 +510,10 @@ section below.
 rando infrastructure setup [--env <envs>] [--apps <names>] [--config <path>] [--dry-run]
 rando infra setup …             # alias
 ```
+
+Both `setup` and `destroy` print a timing summary at the end
+(`infrastructure setup complete. (4m12s)`) — handy for tracking how long
+your infra changes actually take across the providers.
 
 Reads `rando.config.json` at the repo root and provisions everything: Neon
 project + branches, Cloudflare Tunnel + routes, Vercel projects + domains,

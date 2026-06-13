@@ -9,6 +9,7 @@ import {
   type SetupEvent,
 } from '../orchestrate'
 import { ALL_ENVS, loadSetupConfig, type SetupEnv } from '../setup-config'
+import { formatDuration, startTimer } from '../timing'
 import { confirmDestructive } from './_confirm'
 
 const DEFAULT_CONFIG_PATH = 'rando.config.json'
@@ -49,6 +50,7 @@ export function infrastructureCommand(adapters: Adapters, io: Io): Command {
       }
 
       const emit = makeEventRenderer(io)
+      const elapsed = startTimer()
       await runSetup(
         {
           db: adapters.db(),
@@ -59,7 +61,9 @@ export function infrastructureCommand(adapters: Adapters, io: Io): Command {
         { config, envs, apps, emit },
       )
       io.stdout('')
-      io.stdout(io.colors.success('infrastructure setup complete.'))
+      io.stdout(
+        `${io.colors.success('infrastructure setup complete.')} ${io.colors.hint(`(${formatDuration(elapsed())})`)}`,
+      )
     })
 
   infra
@@ -113,6 +117,7 @@ export function infrastructureCommand(adapters: Adapters, io: Io): Command {
         }
 
         const emit = makeEventRenderer(io)
+        const elapsed = startTimer()
         await runDestroy(
           {
             db: adapters.db(),
@@ -123,7 +128,9 @@ export function infrastructureCommand(adapters: Adapters, io: Io): Command {
           { config, env, apps, emit },
         )
         io.stdout('')
-        io.stdout(io.colors.success('infrastructure destroy complete.'))
+        io.stdout(
+          `${io.colors.success('infrastructure destroy complete.')} ${io.colors.hint(`(${formatDuration(elapsed())})`)}`,
+        )
       },
     )
 

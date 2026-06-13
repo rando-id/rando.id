@@ -1,18 +1,30 @@
 import { Command } from 'commander'
 import type { Adapters } from '../config'
 import { NotFoundError } from '../domain/errors'
-import { emit, table, type Io } from '../output'
+import { emit, table, type Io, type SelectChoice } from '../output'
 import { confirmDestructive } from './_confirm'
+import { askOr, pickOr } from './_interactive'
 
 export function tunnelCommand(adapters: Adapters, io: Io): Command {
   const { colors } = io
   const tunnel = new Command('tunnel').description('Dev tunnel operations')
 
+  // Loaders for select-from-list prompts.
+  const tunnelChoices = async (): Promise<SelectChoice<string>[]> => {
+    const list = await adapters.tunnel().listTunnels()
+    return list.map((t) => ({ name: t.name, value: t.name, description: t.id }))
+  }
+  const routeChoices = async (tunnelId: string): Promise<SelectChoice<string>[]> => {
+    const list = await adapters.tunnel().listRoutes({ tunnelId })
+    return list.map((r) => ({ name: r.hostname, value: r.hostname, description: r.service }))
+  }
+
   tunnel
-    .command('create <name>')
+    .command('create [name]')
     .description('Create a new dev tunnel')
     .option('--json', 'Emit raw JSON', false)
-    .action(async (name: string, opts: { json: boolean }) => {
+    .action(async (nameArg: string | undefined, opts: { json: boolean }) => {
+      const name = await askOr(io, nameArg, 'New tunnel name:', 'name')
       const t = await adapters.tunnel().createTunnel({ name })
       emit(
         io,
@@ -38,12 +50,13 @@ export function tunnelCommand(adapters: Adapters, io: Io): Command {
     })
 
   tunnel
-    .command('delete <name>')
+    .command('delete [name]')
     .description('Delete a tunnel (cascade removes routes + tunnel DNS).')
     .option('-y, --yes', 'Skip the confirmation prompt', false)
     .option('--json', 'Emit raw JSON', false)
-    .action(async (name: string, opts: { yes: boolean; json: boolean }) => {
+    .action(async (nameArg: string | undefined, opts: { yes: boolean; json: boolean }) => {
       const provider = adapters.tunnel()
+      const name = await pickOr(io, nameArg, tunnelChoices, 'Which tunnel to delete?', 'name')
       const t = await provider.getTunnelByName({ name })
       if (!t) throw new NotFoundError('tunnel', name)
       const ok = await confirmDestructive(
@@ -65,11 +78,12 @@ export function tunnelCommand(adapters: Adapters, io: Io): Command {
     })
 
   tunnel
-    .command('token <name>')
+    .command('token [name]')
     .description('Print the connector token for a tunnel')
     .option('--json', 'Emit raw JSON', false)
-    .action(async (name: string, opts: { json: boolean }) => {
+    .action(async (nameArg: string | undefined, opts: { json: boolean }) => {
       const provider = adapters.tunnel()
+      const name = await pickOr(io, nameArg, tunnelChoices, "Which tunnel's token?", 'name')
       const t = await provider.getTunnelByName({ name })
       if (!t) throw new NotFoundError('tunnel', name)
       const token = await provider.getTunnelToken({ tunnelId: t.id })
@@ -79,14 +93,32 @@ export function tunnelCommand(adapters: Adapters, io: Io): Command {
   const route = new Command('route').description('Manage tunnel routes')
 
   route
-    .command('add <tunnel> <hostname> <service>')
+    .command('add [tunnel] [hostname] [service]')
     .description('Add a hostname → service route to a tunnel')
     .option('--json', 'Emit raw JSON', false)
     .action(
-      async (tunnelName: string, hostname: string, service: string, opts: { json: boolean }) => {
+      async (
+        tunnelNameArg: string | undefined,
+        hostnameArg: string | undefined,
+        serviceArg: string | undefined,
+        opts: { json: boolean },
+      ) => {
         const provider = adapters.tunnel()
+        const tunnelName = await pickOr(io, tunnelNameArg, tunnelChoices, 'Which tunnel?', 'tunnel')
         const t = await provider.getTunnelByName({ name: tunnelName })
         if (!t) throw new NotFoundError('tunnel', tunnelName)
+        const hostname = await askOr(
+          io,
+          hostnameArg,
+          'Public hostname (e.g. dev-api.rando-id.dev):',
+          'hostname',
+        )
+        const service = await askOr(
+          io,
+          serviceArg,
+          'Local service URL (e.g. http://host.docker.internal:4000):',
+          'service',
+        )
         const r = await provider.addRoute({ tunnelId: t.id, hostname, service })
         emit(
           io,
@@ -99,11 +131,12 @@ export function tunnelCommand(adapters: Adapters, io: Io): Command {
     )
 
   route
-    .command('list <tunnel>')
+    .command('list [tunnel]')
     .description('List routes on a tunnel')
     .option('--json', 'Emit raw JSON', false)
-    .action(async (tunnelName: string, opts: { json: boolean }) => {
+    .action(async (tunnelNameArg: string | undefined, opts: { json: boolean }) => {
       const provider = adapters.tunnel()
+      const tunnelName = await pickOr(io, tunnelNameArg, tunnelChoices, 'Which tunnel?', 'tunnel')
       const t = await provider.getTunnelByName({ name: tunnelName })
       if (!t) throw new NotFoundError('tunnel', tunnelName)
       const list = await provider.listRoutes({ tunnelId: t.id })
@@ -116,31 +149,45 @@ export function tunnelCommand(adapters: Adapters, io: Io): Command {
     })
 
   route
-    .command('remove <tunnel> <hostname>')
+    .command('remove [tunnel] [hostname]')
     .description('Remove a hostname route from a tunnel')
     .option('-y, --yes', 'Skip the confirmation prompt', false)
     .option('--json', 'Emit raw JSON', false)
-    .action(async (tunnelName: string, hostname: string, opts: { yes: boolean; json: boolean }) => {
-      const provider = adapters.tunnel()
-      const t = await provider.getTunnelByName({ name: tunnelName })
-      if (!t) throw new NotFoundError('tunnel', tunnelName)
-      const ok = await confirmDestructive(
-        io,
-        opts,
-        `Remove route ${colors.resource(`"${hostname}"`)} from tunnel ${colors.resource(`"${tunnelName}"`)}?`,
-      )
-      if (!ok) {
-        io.stdout(colors.hint('aborted.'))
-        return
-      }
-      await provider.removeRoute({ tunnelId: t.id, routeId: hostname })
-      emit(
-        io,
-        opts.json,
-        { ok: true },
-        () => `${colors.success('✓')} removed route: ${colors.resource(hostname)}`,
-      )
-    })
+    .action(
+      async (
+        tunnelNameArg: string | undefined,
+        hostnameArg: string | undefined,
+        opts: { yes: boolean; json: boolean },
+      ) => {
+        const provider = adapters.tunnel()
+        const tunnelName = await pickOr(io, tunnelNameArg, tunnelChoices, 'Which tunnel?', 'tunnel')
+        const t = await provider.getTunnelByName({ name: tunnelName })
+        if (!t) throw new NotFoundError('tunnel', tunnelName)
+        const hostname = await pickOr(
+          io,
+          hostnameArg,
+          () => routeChoices(t.id),
+          'Which route to remove?',
+          'hostname',
+        )
+        const ok = await confirmDestructive(
+          io,
+          opts,
+          `Remove route ${colors.resource(`"${hostname}"`)} from tunnel ${colors.resource(`"${tunnelName}"`)}?`,
+        )
+        if (!ok) {
+          io.stdout(colors.hint('aborted.'))
+          return
+        }
+        await provider.removeRoute({ tunnelId: t.id, routeId: hostname })
+        emit(
+          io,
+          opts.json,
+          { ok: true },
+          () => `${colors.success('✓')} removed route: ${colors.resource(hostname)}`,
+        )
+      },
+    )
 
   tunnel.addCommand(route)
   return tunnel

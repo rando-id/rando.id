@@ -1,0 +1,96 @@
+name: PR preview
+
+# Spins up a Vercel preview deploy for every PR with a stable
+# `<branch-slug>-<app>.rando-id.dev` URL, and tears it down on close.
+#
+# Required repo secrets (Settings → Secrets and variables → Actions):
+#   NEON_API_KEY            — only if you uncomment the Neon-branch steps below
+#   VERCEL_TOKEN            — Vercel personal/team token
+#   CLOUDFLARE_API_TOKEN    — scoped token (see packages/cli/README.md)
+#   CLOUDFLARE_ACCOUNT_ID   — your Cloudflare account id
+#
+# Optional repo variables (Settings → Secrets and variables → Actions → Variables):
+#   RANDO_NEON_PROJECT_ID   — needed only by the optional per-PR Neon branch steps
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+concurrency:
+  # Serialize per-PR so a quick close-after-open doesn't race the preview job.
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  preview:
+    if: github.event.action != 'closed'
+    name: Deploy preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm setup:cli
+
+      # Optional: spin up a per-PR Neon branch off main so migrations and
+      # seed data are isolated. Requires RANDO_NEON_PROJECT_ID variable.
+      # - name: Create Neon branch
+      #   if: vars.RANDO_NEON_PROJECT_ID != ''
+      #   run: rando db branch create ${{ vars.RANDO_NEON_PROJECT_ID }} pr-${{ github.event.pull_request.number }} --from main
+      #   env:
+      #     NEON_API_KEY: ${{ secrets.NEON_API_KEY }}
+
+      - name: Trigger preview deploys
+        run: rando deploy branch '${{ github.head_ref }}' --stable-url --yes
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          FORCE_COLOR: '1'
+
+  teardown:
+    if: github.event.action == 'closed'
+    name: Teardown preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - run: pnpm setup:cli
+
+      - name: Remove stable URLs
+        run: rando deploy teardown '${{ github.head_ref }}' --yes
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          FORCE_COLOR: '1'
+
+      # Optional: drop the per-PR Neon branch.
+      # - name: Delete Neon branch
+      #   if: vars.RANDO_NEON_PROJECT_ID != ''
+      #   run: rando db branch delete ${{ vars.RANDO_NEON_PROJECT_ID }} pr-${{ github.event.pull_request.number }} --yes
+      #   env:
+      #     NEON_API_KEY: ${{ secrets.NEON_API_KEY }}

@@ -87,6 +87,11 @@ const GROUPS: MenuGroup[] = [
         description: 'Reset one branch to match another (e.g. main → staging)',
         argv: ['db', 'sync'],
       },
+      {
+        label: 'copy',
+        description: 'Copy a Postgres DB via pg_dump | pg_restore (cross-project)',
+        argv: ['db', 'copy'],
+      },
     ],
   },
   {
@@ -159,6 +164,11 @@ const GROUPS: MenuGroup[] = [
         label: 'branch',
         description: 'Trigger Vercel preview deploys for a git branch',
         argv: ['deploy', 'branch'],
+      },
+      {
+        label: 'teardown',
+        description: 'Inverse of `branch --stable-url` — remove per-branch domains + DNS',
+        argv: ['deploy', 'teardown'],
       },
     ],
   },
