@@ -35,3 +35,36 @@ export async function listContacts(
   const path = params.toString() ? `/v1/contacts?${params}` : '/v1/contacts'
   return client.request<ContactListItem[]>(path)
 }
+
+export type CreateContactInput = {
+  firstName?: string | null
+  lastName?: string | null
+  company?: string | null
+  notes?: string | null
+  favorite?: boolean
+  location: {
+    lat: number
+    lng: number
+    name: string
+    address?: string | null
+  }
+  interaction?: {
+    metAt?: string // ISO timestamp
+    notes?: string | null
+  }
+}
+
+export type CreateContactResult = {
+  contact: ContactListItem
+  locationReused: boolean
+}
+
+export async function createContact(
+  client: ApiClient,
+  input: CreateContactInput,
+): Promise<CreateContactResult> {
+  return client.request<CreateContactResult>('/v1/contacts', {
+    method: 'POST',
+    body: JSON.stringify(input),
+  })
+}

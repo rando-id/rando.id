@@ -10,11 +10,16 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "generate": "echo 'TODO: openapi-typescript --input ../api/openapi.json --output src/generated.ts'"
   },
   "devDependencies": {
     "@rando/tsconfig": "workspace:*",
+    "@vitest/coverage-v8": "^2.1.9",
     "openapi-typescript": "^7.4.5",
-    "typescript": "^5.7.2"
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.9"
   }
 }

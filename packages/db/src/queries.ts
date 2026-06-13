@@ -1,5 +1,9 @@
 import { sql } from 'drizzle-orm'
 import type { Db } from './client'
+import { contacts, interactions, locations } from './schema'
+
+/** How close (meters) a new pin has to be to an existing location to reuse it. */
+const LOCATION_DEDUP_RADIUS_M = 50
 
 export type ContactNearbyRow = {
   id: string
@@ -14,6 +18,101 @@ export type ContactNearbyRow = {
   lat: number | null
   lng: number | null
   meters: number | null
+}
+
+export interface CreateContactInput {
+  ownerUserId: string
+  firstName?: string | null
+  lastName?: string | null
+  company?: string | null
+  notes?: string | null
+  favorite?: boolean
+  location: {
+    lat: number
+    lng: number
+    /** Human-readable name shown in the UI (e.g. "Wilson Park"). */
+    name: string
+    /** Optional geocoded address. */
+    address?: string | null
+  }
+  interaction?: {
+    metAt?: Date
+    notes?: string | null
+  }
+}
+
+export interface CreateContactResult {
+  contactId: string
+  locationId: string
+  /** True if we reused an existing nearby location instead of inserting a new one. */
+  locationReused: boolean
+}
+
+/**
+ * Insert a contact + interaction in a single transaction. Locations are
+ * de-duplicated: if any location already exists within
+ * LOCATION_DEDUP_RADIUS_M of the given lat/lng, we reuse it instead of
+ * creating a duplicate (matches the spec's "shared canonical row" model).
+ */
+export async function createContactWithLocation(
+  db: Db,
+  input: CreateContactInput,
+): Promise<CreateContactResult> {
+  return await db.transaction(async (tx) => {
+    const point = sql`ST_SetSRID(ST_MakePoint(${input.location.lng}, ${input.location.lat}), 4326)::geography`
+
+    const nearby = await tx.execute<{ id: string }>(sql`
+      SELECT id FROM locations
+      WHERE ST_DWithin(geo, ${point}, ${LOCATION_DEDUP_RADIUS_M})
+      ORDER BY ST_Distance(geo, ${point}) ASC
+      LIMIT 1
+    `)
+    const existingRow = (nearby as unknown as Array<{ id: string }>)[0]
+    let locationId: string
+    let locationReused = false
+    if (existingRow) {
+      locationId = existingRow.id
+      locationReused = true
+    } else {
+      const inserted = await tx
+        .insert(locations)
+        .values({
+          // Drizzle's customType emits the WKT bytes; we go through SQL
+          // directly so PostGIS does the SRID conversion server-side.
+          geo: sql`ST_SetSRID(ST_MakePoint(${input.location.lng}, ${input.location.lat}), 4326)::geography` as never,
+          canonicalName: input.location.name,
+          geocodedAddress: input.location.address ?? null,
+          source: 'user',
+        })
+        .returning({ id: locations.id })
+      const row = inserted[0]
+      if (!row) throw new Error('location insert returned no row')
+      locationId = row.id
+    }
+
+    const contactInserted = await tx
+      .insert(contacts)
+      .values({
+        ownerUserId: input.ownerUserId,
+        firstName: input.firstName ?? null,
+        lastName: input.lastName ?? null,
+        company: input.company ?? null,
+        notes: input.notes ?? null,
+        favorite: input.favorite ?? false,
+      })
+      .returning({ id: contacts.id })
+    const contactRow = contactInserted[0]
+    if (!contactRow) throw new Error('contact insert returned no row')
+
+    await tx.insert(interactions).values({
+      contactId: contactRow.id,
+      locationId,
+      metAt: input.interaction?.metAt ?? new Date(),
+      notes: input.interaction?.notes ?? null,
+    })
+
+    return { contactId: contactRow.id, locationId, locationReused }
+  })
 }
 
 export async function getContactsNearby(

@@ -1,24 +1,12 @@
 'use client'
 
 import { useEffect, useState } from 'react'
-import { Text, XStack, YStack } from 'tamagui'
+import Link from 'next/link'
+import { Button, Text, XStack, YStack } from 'tamagui'
 import { listContacts, type ContactListItem } from '@rando/api-client'
 import { useApiClient } from '../../lib/client-api'
 import { useGeolocation } from './use-geolocation'
-
-function displayName(c: ContactListItem): string {
-  const first = c.firstName?.trim()
-  const last = c.lastName?.trim()
-  if (first && last) return `${first} ${last}`
-  if (first) return first
-  if (last) return last
-  return 'Unnamed'
-}
-
-function formatDistance(meters: number): string {
-  if (meters < 1000) return `${Math.round(meters)} m`
-  return `${(meters / 1000).toFixed(1)} km`
-}
+import { displayName, formatDistance } from './helpers'
 
 function ContactRow({ contact }: { contact: ContactListItem }) {
   return (
@@ -80,6 +68,16 @@ export function ContactsList() {
 
   return (
     <YStack flex={1}>
+      <XStack p="$3" justify="space-between" items="center">
+        <Text fontSize="$6" fontWeight="700">
+          Contacts
+        </Text>
+        <Link href="/contacts/new" style={{ textDecoration: 'none' }}>
+          <Button theme="accent" size="$3">
+            + New
+          </Button>
+        </Link>
+      </XStack>
       {geo.status !== 'ready' ? (
         <Text p="$3" fontSize="$2" color="$colorPress">
           Location unavailable — showing contacts alphabetically.
@@ -87,7 +85,7 @@ export function ContactsList() {
       ) : null}
       {contacts.length === 0 ? (
         <YStack p="$4">
-          <Text>No contacts yet.</Text>
+          <Text>No contacts yet — tap &quot;+ New&quot; to add your first.</Text>
         </YStack>
       ) : (
         contacts.map((c) => <ContactRow key={c.id} contact={c} />)
