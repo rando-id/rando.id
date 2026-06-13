@@ -1,9 +1,16 @@
+import { execSync } from 'node:child_process'
+import { resolve } from 'node:path'
 import { Command } from 'commander'
 import type { Adapters } from '../config'
-import type { DeployEnvScope } from '../domain/deploy'
+import type { DeployEnvScope, DeployProvider, Deployment } from '../domain/deploy'
 import { NotFoundError } from '../domain/errors'
 import { emit, table, type Io } from '../output'
+import { loadSetupConfig, vercelProjectName } from '../setup-config'
 import { confirmDestructive } from './_confirm'
+
+const DEFAULT_CONFIG_PATH = 'rando.config.json'
+const POLL_INTERVAL_MS = 2000
+const POLL_TIMEOUT_MS = 5 * 60 * 1000 // 5 minutes
 
 const SCOPES: DeployEnvScope[] = ['production', 'preview', 'development']
 
@@ -202,5 +209,148 @@ export function deployCommand(adapters: Adapters, io: Io): Command {
 
   deploy.addCommand(domain)
 
+  deploy
+    .command('branch [branch]')
+    .description('Trigger Vercel preview deploys for each configured app on a git branch')
+    .option('--apps <names>', 'Comma-separated app names (default: all apps in config)', '')
+    .option(
+      '--config <path>',
+      'Path to rando.config.json (default: repo root)',
+      DEFAULT_CONFIG_PATH,
+    )
+    .option('--no-wait', 'Trigger and exit without polling for ready state')
+    .option('--json', 'Emit raw JSON', false)
+    .action(
+      async (
+        branchArg: string | undefined,
+        opts: { apps: string; config: string; wait: boolean; json: boolean },
+      ) => {
+        const branch = branchArg ?? getCurrentGitBranch()
+        const configPath = resolve(process.cwd(), opts.config)
+        const config = loadSetupConfig(configPath)
+        const requested = opts.apps ? opts.apps.split(',').map((s) => s.trim()) : []
+        const apps = requested.length
+          ? config.apps.filter((a) => requested.includes(a.name))
+          : config.apps
+        if (apps.length === 0) {
+          throw new Error(
+            `No matching apps in config. Requested: ${requested.join(', ')}. ` +
+              `Available: ${config.apps.map((a) => a.name).join(', ')}`,
+          )
+        }
+
+        io.stdout(`${colors.hint('branch:')} ${colors.resource(branch)}`)
+        io.stdout(`${colors.hint('apps:')}   ${apps.map((a) => a.name).join(', ')}`)
+        io.stdout('')
+
+        const provider = adapters.deploy()
+
+        // Trigger every app's deployment in parallel — the API calls are
+        // independent and each one returns a deployment id immediately.
+        const sp = io.spinner(`Triggering ${apps.length} deployments…`)
+        const triggered = await Promise.all(
+          apps.map(async (app) => {
+            const projectName = vercelProjectName(config, app)
+            const project = await provider.getProjectByName({ name: projectName })
+            if (!project) throw new NotFoundError('deploy app', projectName)
+            const deployment = await provider.triggerDeployment({
+              projectId: project.id,
+              branch,
+            })
+            return { projectName, deployment }
+          }),
+        )
+        sp.succeed(`Triggered ${apps.length} deployments`)
+
+        if (opts.wait === false) {
+          io.stdout('')
+          emitBranchResults(io, triggered, opts.json, 'triggered')
+          return
+        }
+
+        // Poll each deployment in parallel and update a single shared spinner
+        // with completion progress. Sequential polling would block on the
+        // slowest build for every other app.
+        let completed = 0
+        const waitSp = io.spinner(`Building 0/${triggered.length}…`)
+        const results = await Promise.all(
+          triggered.map(async (t) => {
+            const final = await pollUntilSettled(provider, t.deployment.id)
+            completed += 1
+            waitSp.setText(`Building ${completed}/${triggered.length}…`)
+            return { projectName: t.projectName, deployment: final }
+          }),
+        )
+        const anyFailed = results.some((r) => r.deployment.state !== 'ready')
+        if (anyFailed) waitSp.fail(`Finished — some deployments failed`)
+        else waitSp.succeed(`All ${triggered.length} deployments ready`)
+
+        io.stdout('')
+        emitBranchResults(io, results, opts.json, 'ready')
+      },
+    )
+
   return deploy
+}
+
+function getCurrentGitBranch(): string {
+  try {
+    return execSync('git rev-parse --abbrev-ref HEAD', { encoding: 'utf8' }).trim()
+  } catch {
+    throw new Error(
+      'Could not determine current git branch — pass one explicitly: `rando deploy branch <branch>`.',
+    )
+  }
+}
+
+async function pollUntilSettled(
+  provider: DeployProvider,
+  deploymentId: string,
+): Promise<Deployment> {
+  const start = Date.now()
+  while (true) {
+    const d = await provider.getDeployment({ deploymentId })
+    if (d.state === 'ready' || d.state === 'error' || d.state === 'canceled') return d
+    if (Date.now() - start > POLL_TIMEOUT_MS) {
+      throw new Error(
+        `Polling deployment ${deploymentId} timed out after ${POLL_TIMEOUT_MS / 1000}s — ` +
+          'check the Vercel dashboard for build status.',
+      )
+    }
+    await new Promise((r) => setTimeout(r, POLL_INTERVAL_MS))
+  }
+}
+
+function emitBranchResults(
+  io: Io,
+  results: Array<{ projectName: string; deployment: Deployment }>,
+  asJson: boolean,
+  verb: 'triggered' | 'ready',
+): void {
+  if (asJson) {
+    io.stdout(
+      JSON.stringify(
+        results.map((r) => ({
+          app: r.projectName,
+          ...r.deployment,
+          url: `https://${r.deployment.url}`,
+        })),
+        null,
+        2,
+      ),
+    )
+    return
+  }
+  const { colors } = io
+  const widest = Math.max(...results.map((r) => r.projectName.length))
+  for (const r of results) {
+    const url = `https://${r.deployment.url}`
+    const status =
+      r.deployment.state === 'ready'
+        ? colors.success(`✓ ${verb}`)
+        : r.deployment.state === 'building' || r.deployment.state === 'queued'
+          ? colors.warn(`• ${r.deployment.state}`)
+          : colors.error(`✗ ${r.deployment.state}`)
+    io.stdout(`  ${colors.resource(r.projectName.padEnd(widest))}  ${status}  ${colors.hint(url)}`)
+  }
 }

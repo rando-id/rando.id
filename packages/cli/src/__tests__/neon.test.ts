@@ -132,4 +132,18 @@ describe('NeonDbProvider', () => {
     expect(stub.calls[0]?.method).toBe('DELETE')
     expect(stub.calls[0]?.url).toBe('https://neon.test/api/v2/projects/p1')
   })
+
+  it('resetBranch POSTs to /restore with source_branch_id', async () => {
+    const stub = stubFetch([{ status: 200, body: {} }])
+    await adapter(stub).resetBranch({
+      projectId: 'p1',
+      branchId: 'br_staging',
+      sourceBranchId: 'br_main',
+    })
+    expect(stub.calls[0]?.method).toBe('POST')
+    expect(stub.calls[0]?.url).toBe(
+      'https://neon.test/api/v2/projects/p1/branches/br_staging/restore',
+    )
+    expect(stub.calls[0]?.body).toEqual({ source_branch_id: 'br_main' })
+  })
 })

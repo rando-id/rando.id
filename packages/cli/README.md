@@ -251,7 +251,14 @@ rando db branch list <projectId>
 rando db branch delete <projectId> <branchId>                    [-y/--yes]
 rando db connection-string <projectId> <branchId> [--pooled]
 rando db extension-enable <projectId> <branchId> <extension>
+rando db sync --from <branch> --to <branch>                      [-y/--yes]
 ```
+
+`db sync` resets one Neon branch to match another (e.g. `--from main
+--to staging` refreshes staging from production data). Destructive — the
+destination branch is overwritten in place. Neon preserves the previous
+state under an automatic snapshot. Loud `WARNING` printed when
+`--to=main` since that overwrites production.
 
 ⚠ **`db project create` / `db project delete` are escape-hatch commands.**
 The Rando Neon project is bootstrapped by `rando infra setup` reading
@@ -282,9 +289,56 @@ rando deploy env set <app> <key> <value> --scope <production|preview|development
 rando deploy env list <app>
 rando deploy domain add <app> <hostname> [--branch <branch>]
 rando deploy domain remove <app> <hostname>                      [-y/--yes]
+rando deploy branch [<branch>] [--apps <names>] [--no-wait]
 ```
 
 `--scope` accepts a comma-separated list — e.g. `--scope production,preview`.
+
+#### `deploy branch` — preview deploys
+
+```
+rando deploy branch                       # current git branch, all apps
+rando deploy branch feat/something        # specific branch
+rando deploy branch main --apps web       # subset
+rando deploy branch main --no-wait        # trigger and exit, don't poll
+```
+
+For each configured app in `rando.config.json`, triggers a Vercel preview
+deployment from the named branch, polls until the build is ready (or
+errors out), and prints the preview URL. Defaults to the current git
+branch when no argument is passed. Triggers and polls in parallel — wall
+time is bounded by the slowest single build, not the sum.
+
+### `dev` — local dev orchestrator
+
+```
+rando dev                              # all apps + cloudflared + preflight
+rando dev web                          # api auto-starts as dep, web runs on top
+rando dev web admin                    # same — api auto-starts once
+rando dev api                          # api only
+rando dev web --no-tunnel              # skip cloudflared (if you're not testing webhooks)
+rando dev web --no-preflight           # skip the Docker / env checks
+```
+
+Wraps the muscle-memory of "is Docker up? is cloudflared up? did I run
+`pnpm dev`?" into a single command:
+
+1. **Preflight** — checks the Docker daemon is reachable and
+   `CLOUDFLARE_TUNNEL_TOKEN` is set. Fails fast with actionable hints
+   if either is missing.
+2. **Cloudflared** — spawns `docker compose --profile tunnel up` (your
+   existing compose profile) so localhost is reachable at
+   `dev-*.rando-id.dev`. Skip with `--no-tunnel`.
+3. **Apps** — spawns `pnpm --filter @rando/<app> dev` for each
+   requested app. `web`, `admin`, and `native` all depend on `api` —
+   request any of those and `api` starts automatically.
+4. **Colored log mux** — each child's stdout/stderr is prefixed with
+   `[<name>]` in a distinct color so the multiplexed stream is readable.
+5. **Graceful shutdown** — `Ctrl+C` sends `SIGTERM` to every child and
+   waits for them to exit before the supervisor returns.
+
+If any child exits with a non-zero code, the others are torn down and
+the supervisor exits non-zero too.
 
 ### `dns` — DNS records
 

@@ -48,4 +48,18 @@ export interface DbProvider {
 
   /** Delete an entire project (all branches + data). Irreversible. */
   deleteProject(input: { projectId: string }): Promise<void>
+
+  /**
+   * Reset a branch to match a source branch's current state — analogous to
+   * `git reset --hard` between two branches in the same project. The dest
+   * branch is overwritten in place; its history is preserved by the
+   * provider under a snapshot name. Irreversible from the CLI's POV.
+   */
+  resetBranch(input: {
+    projectId: string
+    /** Branch to overwrite (destination). */
+    branchId: string
+    /** Branch whose state will be copied (source). */
+    sourceBranchId: string
+  }): Promise<void>
 }

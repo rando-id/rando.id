@@ -82,6 +82,11 @@ const GROUPS: MenuGroup[] = [
         description: 'Enable a Postgres extension on a branch',
         argv: ['db', 'extension-enable'],
       },
+      {
+        label: 'sync',
+        description: 'Reset one branch to match another (e.g. main → staging)',
+        argv: ['db', 'sync'],
+      },
     ],
   },
   {
@@ -150,6 +155,11 @@ const GROUPS: MenuGroup[] = [
         description: 'Remove a custom domain from a deploy app',
         argv: ['deploy', 'domain', 'remove'],
       },
+      {
+        label: 'branch',
+        description: 'Trigger Vercel preview deploys for a git branch',
+        argv: ['deploy', 'branch'],
+      },
     ],
   },
   {
@@ -163,6 +173,26 @@ const GROUPS: MenuGroup[] = [
         label: 'record remove',
         description: 'Remove a DNS record by id',
         argv: ['dns', 'record', 'remove'],
+      },
+    ],
+  },
+  {
+    key: 'dev',
+    label: 'dev',
+    description: 'Local dev — preflight + cloudflared + apps with colored logs',
+    items: [
+      { label: 'all', description: 'Run every app + cloudflared', argv: ['dev'] },
+      { label: 'api', description: 'Run just the API', argv: ['dev', 'api'] },
+      { label: 'web', description: 'Run web (api auto-starts as dep)', argv: ['dev', 'web'] },
+      {
+        label: 'admin',
+        description: 'Run admin (api auto-starts as dep)',
+        argv: ['dev', 'admin'],
+      },
+      {
+        label: 'native',
+        description: 'Run native (api auto-starts as dep)',
+        argv: ['dev', 'native'],
       },
     ],
   },

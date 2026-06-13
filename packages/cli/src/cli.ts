@@ -7,6 +7,7 @@ import { defaultIo, type Io } from './output'
 import { dbCommand } from './commands/db'
 import { tunnelCommand } from './commands/tunnel'
 import { deployCommand } from './commands/deploy'
+import { devCommand } from './commands/dev'
 import { dnsCommand } from './commands/dns'
 import { doctorCommand } from './commands/doctor'
 import { infrastructureCommand } from './commands/infrastructure'
@@ -39,6 +40,7 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<voi
   program.addCommand(deployCommand(adapters, io))
   program.addCommand(dnsCommand(adapters, io))
   program.addCommand(infrastructureCommand(adapters, io))
+  program.addCommand(devCommand(io))
   program.addCommand(doctorCommand(io))
 
   // Interactive discovery: bare `rando` or `rando <group>` drops the user

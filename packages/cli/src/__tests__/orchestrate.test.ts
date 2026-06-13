@@ -110,6 +110,7 @@ describe('runSetup — staging env', () => {
       enableExtension: vi.fn(async () => undefined),
       deleteBranch: vi.fn(),
       deleteProject: vi.fn(),
+      resetBranch: vi.fn(),
     }
     const deploy: DeployProvider = {
       createProject: vi.fn(async ({ name, rootDirectory }) => ({
@@ -127,6 +128,8 @@ describe('runSetup — staging env', () => {
       })),
       removeDomain: vi.fn(),
       deleteProject: vi.fn(),
+      triggerDeployment: vi.fn(),
+      getDeployment: vi.fn(),
     }
     const dns: DnsProvider = {
       addRecord: vi.fn(async (input) => ({
@@ -182,6 +185,7 @@ describe('runSetup — staging env', () => {
       enableExtension: vi.fn(async () => undefined),
       deleteBranch: vi.fn(),
       deleteProject: vi.fn(),
+      resetBranch: vi.fn(),
     }
     const deploy: DeployProvider = {
       createProject: vi.fn(),
@@ -194,6 +198,8 @@ describe('runSetup — staging env', () => {
       }),
       removeDomain: vi.fn(),
       deleteProject: vi.fn(),
+      triggerDeployment: vi.fn(),
+      getDeployment: vi.fn(),
     }
     const dns: DnsProvider = {
       addRecord: vi.fn(),
@@ -223,6 +229,7 @@ describe('runSetup — production env', () => {
       enableExtension: vi.fn(async () => undefined),
       deleteBranch: vi.fn(),
       deleteProject: vi.fn(),
+      resetBranch: vi.fn(),
     }
     const deploy: DeployProvider = {
       createProject: vi.fn(async ({ name, rootDirectory }) => ({
@@ -240,6 +247,8 @@ describe('runSetup — production env', () => {
       })),
       removeDomain: vi.fn(),
       deleteProject: vi.fn(),
+      triggerDeployment: vi.fn(),
+      getDeployment: vi.fn(),
     }
     const dns: DnsProvider = {
       addRecord: vi.fn(async (input) => ({
@@ -343,6 +352,7 @@ describe('runDestroy', () => {
       enableExtension: vi.fn(),
       deleteBranch: vi.fn(),
       deleteProject: vi.fn(),
+      resetBranch: vi.fn(),
     }
     const deploy: DeployProvider = {
       createProject: vi.fn(),
@@ -353,6 +363,8 @@ describe('runDestroy', () => {
       addDomain: vi.fn(),
       removeDomain: vi.fn(),
       deleteProject: vi.fn(),
+      triggerDeployment: vi.fn(),
+      getDeployment: vi.fn(),
     }
     const dns: DnsProvider = {
       addRecord: vi.fn(),
@@ -398,6 +410,7 @@ describe('runDestroy', () => {
       enableExtension: vi.fn(),
       deleteBranch: vi.fn(),
       deleteProject: vi.fn(),
+      resetBranch: vi.fn(),
     }
     const deploy: DeployProvider = {
       createProject: vi.fn(),
@@ -408,6 +421,8 @@ describe('runDestroy', () => {
       addDomain: vi.fn(),
       removeDomain: vi.fn(),
       deleteProject: vi.fn(),
+      triggerDeployment: vi.fn(),
+      getDeployment: vi.fn(),
     }
     const dns: DnsProvider = {
       addRecord: vi.fn(),

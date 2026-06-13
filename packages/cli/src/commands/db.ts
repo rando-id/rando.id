@@ -1,7 +1,12 @@
+import { resolve } from 'node:path'
 import { Command } from 'commander'
 import type { Adapters } from '../config'
+import { NotFoundError } from '../domain/errors'
 import { emit, table, type Io } from '../output'
+import { loadSetupConfig } from '../setup-config'
 import { confirmDestructive } from './_confirm'
+
+const DEFAULT_CONFIG_PATH = 'rando.config.json'
 
 export function dbCommand(adapters: Adapters, io: Io): Command {
   const db = new Command('db').description('Database (Postgres) operations')
@@ -155,6 +160,84 @@ export function dbCommand(adapters: Adapters, io: Io): Command {
           .db()
           .getConnectionString({ projectId, branchId, pooled: opts.pooled })
         emit(io, opts.json, conn, (c) => c.url)
+      },
+    )
+
+  db.command('sync')
+    .description(
+      'Reset one Neon branch to match another (e.g. main → staging, staging → dev-<name>). Destructive — the destination branch is overwritten in place.',
+    )
+    .requiredOption('--from <branch>', 'Source branch name')
+    .requiredOption('--to <branch>', 'Destination branch name (will be overwritten)')
+    .option(
+      '--config <path>',
+      'Path to rando.config.json (default: repo root)',
+      DEFAULT_CONFIG_PATH,
+    )
+    .option('-y, --yes', 'Skip the confirmation prompt', false)
+    .option('--json', 'Emit raw JSON', false)
+    .action(
+      async (opts: { from: string; to: string; config: string; yes: boolean; json: boolean }) => {
+        if (opts.from === opts.to) {
+          throw new Error('--from and --to must be different branches')
+        }
+        const configPath = resolve(process.cwd(), opts.config)
+        const config = loadSetupConfig(configPath)
+        const provider = adapters.db()
+
+        const projects = await provider.listProjects()
+        const project = projects.find((p) => p.name === config.project)
+        if (!project) {
+          throw new NotFoundError('Neon project (from rando.config.json)', config.project)
+        }
+        const branches = await provider.listBranches({ projectId: project.id })
+        const source = branches.find((b) => b.name === opts.from)
+        const dest = branches.find((b) => b.name === opts.to)
+        if (!source) throw new NotFoundError('source branch', opts.from)
+        if (!dest) throw new NotFoundError('destination branch', opts.to)
+
+        // Loud warning on the production branch — overwriting `main` is the
+        // worst-case destructive op in this command.
+        if (dest.name === 'main') {
+          io.stderr(
+            io.colors.warn(
+              'WARNING: --to=main overwrites production data. Neon keeps an automatic snapshot of the previous state, but you should be very sure.',
+            ),
+          )
+        }
+
+        const ok = await confirmDestructive(
+          io,
+          opts,
+          `Reset db branch ${io.colors.resource(`"${opts.to}"`)} to match ${io.colors.resource(`"${opts.from}"`)}?`,
+        )
+        if (!ok) {
+          io.stdout(io.colors.hint('aborted.'))
+          return
+        }
+
+        const sp = io.spinner(
+          `Resetting ${io.colors.resource(opts.to)} → ${io.colors.resource(opts.from)}…`,
+        )
+        try {
+          await provider.resetBranch({
+            projectId: project.id,
+            branchId: dest.id,
+            sourceBranchId: source.id,
+          })
+          sp.succeed(`${io.colors.resource(opts.to)} now matches ${io.colors.resource(opts.from)}`)
+        } catch (e) {
+          sp.fail(`sync failed`)
+          throw e
+        }
+
+        emit(
+          io,
+          opts.json,
+          { ok: true, from: opts.from, to: opts.to },
+          () =>
+            `${io.colors.success('✓')} sync complete: ${io.colors.resource(opts.from)} → ${io.colors.resource(opts.to)}`,
+        )
       },
     )
 

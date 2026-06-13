@@ -3,6 +3,7 @@
 
 import { ProviderApiError } from '../domain/errors'
 import type {
+  Deployment,
   DeployDomain,
   DeployEnvScope,
   DeployEnvVar,
@@ -117,6 +118,39 @@ export class VercelDeployProvider implements DeployProvider {
     await this.request('DELETE', `/v9/projects/${encodeURIComponent(input.projectId)}`)
   }
 
+  async triggerDeployment(input: { projectId: string; branch: string }): Promise<Deployment> {
+    // Vercel's create-deployment endpoint needs the linked GitHub repoId,
+    // which lives on the project's `link` object. Look it up first.
+    const project = await this.request<VercelProjectShape>(
+      'GET',
+      `/v10/projects/${encodeURIComponent(input.projectId)}`,
+    )
+    const repoId = project.link?.repoId
+    if (!repoId) {
+      throw new ProviderApiError(
+        'vercel',
+        400,
+        `project "${project.name}" has no linked GitHub repo`,
+        'Cannot trigger a branch deploy on a project that is not linked to a Git provider. ' +
+          'Link the repo via `rando deploy app create ... --repo <owner/name>` or the Vercel dashboard.',
+      )
+    }
+    const raw = await this.request<VercelDeploymentShape>('POST', '/v13/deployments', {
+      name: project.name,
+      target: 'preview',
+      gitSource: { type: 'github', ref: input.branch, repoId },
+    })
+    return mapDeployment(raw, input.branch)
+  }
+
+  async getDeployment(input: { deploymentId: string }): Promise<Deployment> {
+    const raw = await this.request<VercelDeploymentShape>(
+      'GET',
+      `/v13/deployments/${encodeURIComponent(input.deploymentId)}`,
+    )
+    return mapDeployment(raw, raw.meta?.githubCommitRef ?? null)
+  }
+
   private async request<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
     const url = new URL(path, this.baseUrl)
     if (this.options.teamId) url.searchParams.set('teamId', this.options.teamId)
@@ -142,6 +176,15 @@ interface VercelProjectShape {
   id: string
   name: string
   rootDirectory?: string | null
+  /** Present when the project is linked to a Git provider (we only handle github). */
+  link?: { type?: string; repoId?: number; repo?: string; org?: string } | null
+}
+
+interface VercelDeploymentShape {
+  id: string
+  url: string
+  readyState: 'INITIALIZING' | 'QUEUED' | 'BUILDING' | 'READY' | 'ERROR' | 'CANCELED'
+  meta?: { githubCommitRef?: string }
 }
 
 interface VercelEnvShape {
@@ -169,4 +212,31 @@ function mapEnv(raw: VercelEnvShape): DeployEnvVar {
 
 function mapDomain(raw: VercelDomainShape): DeployDomain {
   return { name: raw.name, branch: raw.gitBranch ?? null }
+}
+
+function mapDeployment(raw: VercelDeploymentShape, branch: string | null): Deployment {
+  // Vercel returns `url` without scheme; we keep it consistent and prepend
+  // https in the command layer when displaying.
+  return {
+    id: raw.id,
+    url: raw.url,
+    branch,
+    state: normalizeState(raw.readyState),
+  }
+}
+
+function normalizeState(s: VercelDeploymentShape['readyState']): Deployment['state'] {
+  switch (s) {
+    case 'INITIALIZING':
+    case 'QUEUED':
+      return 'queued'
+    case 'BUILDING':
+      return 'building'
+    case 'READY':
+      return 'ready'
+    case 'ERROR':
+      return 'error'
+    case 'CANCELED':
+      return 'canceled'
+  }
 }

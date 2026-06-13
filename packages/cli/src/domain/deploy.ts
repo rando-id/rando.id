@@ -22,6 +22,17 @@ export interface DeployDomain {
   branch: string | null
 }
 
+/** A single deployment for a project (one per build/commit). */
+export interface Deployment {
+  id: string
+  /** Vendor-assigned URL — e.g. `<project>-git-<branch>-<scope>.vercel.app`. */
+  url: string
+  /** Git branch / ref this deployment was built from, if known. */
+  branch: string | null
+  /** Lifecycle state — provider strings normalized to a small set. */
+  state: 'queued' | 'building' | 'ready' | 'error' | 'canceled'
+}
+
 export interface DeployProvider {
   /** Create a new project, linking it to a GitHub repo and root directory. */
   createProject(input: {
@@ -55,4 +66,14 @@ export interface DeployProvider {
 
   /** Delete an entire deploy project (deployments + env vars + domains). */
   deleteProject(input: { projectId: string }): Promise<void>
+
+  /**
+   * Trigger a new deployment for a project from a git branch. Returns
+   * immediately with the deployment record — caller polls `getDeployment`
+   * until `state === 'ready'` or `'error'`.
+   */
+  triggerDeployment(input: { projectId: string; branch: string }): Promise<Deployment>
+
+  /** Fetch the current state of a deployment. */
+  getDeployment(input: { deploymentId: string }): Promise<Deployment>
 }

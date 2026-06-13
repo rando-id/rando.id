@@ -105,6 +105,20 @@ export class NeonDbProvider implements DbProvider {
     await this.request('DELETE', `/projects/${input.projectId}`)
   }
 
+  async resetBranch(input: {
+    projectId: string
+    branchId: string
+    sourceBranchId: string
+  }): Promise<void> {
+    // Neon's "Restore branch" endpoint resets the target branch to match the
+    // state of another branch. The previous state is preserved by Neon
+    // under an automatic backup snapshot so the operation is reversible
+    // within Neon, even though we treat it as one-way from the CLI.
+    await this.request('POST', `/projects/${input.projectId}/branches/${input.branchId}/restore`, {
+      source_branch_id: input.sourceBranchId,
+    })
+  }
+
   async enableExtension(input: {
     projectId: string
     branchId: string
