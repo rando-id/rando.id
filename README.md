@@ -6,10 +6,67 @@ See [specs/apps.md](./specs/apps.md) for the product spec and locked technical d
 
 ## Getting started
 
-- [DEVELOPER_SETUP.md](./DEVELOPER_SETUP.md) — prerequisites, env config,
-  local infrastructure, the Clerk webhook tunnel, end-to-end smoke test.
-- [INFRASTRUCTURE.md](./INFRASTRUCTURE.md) — GitHub, Vercel, CI, prod
-  webhooks, deployment.
+**Brand-new machine** (macOS):
+
+```bash
+# One-time prereq — skip if you already have Homebrew.
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Per-clone:
+git clone https://github.com/rando-id/rando.id.git && cd rando.id
+./scripts/bootstrap
+```
+
+`./scripts/bootstrap` chains six idempotent steps into one command:
+
+1. **`brew bundle install`** — system deps from `scripts/Brewfile`
+   (gh, pnpm, node@22, postgresql@16, cloudflared, 1password-cli,
+   orbstack).
+2. **`pnpm install`** — JS deps + husky regenerates the git hook
+   shims via the `prepare` script.
+3. **Symlinks `rando`** into `~/.local/bin` so subsequent commands
+   work without the `pnpm` prefix.
+4. **`docker compose up -d`** — Postgres + PostGIS container.
+5. **`pnpm --filter @rando/db db:migrate`** — applies the schema +
+   enables PostGIS.
+6. **`rando init`** — interactive walkthrough that prompts for each
+   env-var token, validates each by calling the vendor API, writes to
+   `.env`, then ends with a doctor sweep + "next steps" menu.
+
+After `init` finishes:
+
+```bash
+rando dev                          # local orchestrator: tunnel + 3 apps
+pnpm --filter @rando/db db:seed    # (optional) load sample data — 1 user, 5 places, 10 contacts, 2 lists
+rando doctor                       # re-check health anytime
+```
+
+**Linux / Windows**: skip the Brewfile, install equivalents however
+you manage packages, then run the inner steps manually:
+
+```bash
+pnpm install
+node scripts/setup-cli.mjs
+docker compose up -d
+DATABASE_URL=postgres://rando:rando@localhost:5432/rando \
+  pnpm --filter @rando/db db:migrate
+rando init
+```
+
+**Per-app `.env.local` files** (Clerk keys, app-specific config) stay
+manual today — see [DEVELOPER_SETUP.md](./DEVELOPER_SETUP.md) for
+those + the deep details on the Clerk webhook tunnel and the smoke
+test. Folding those into `rando init` is tracked separately.
+
+**Deeper docs:**
+
+- [DEVELOPER_SETUP.md](./DEVELOPER_SETUP.md) — env config, local
+  infrastructure, the Clerk webhook tunnel, end-to-end smoke test.
+- [INFRASTRUCTURE.md](./INFRASTRUCTURE.md) — GitHub, Vercel, CI,
+  prod webhooks, deployment.
+- [packages/cli/README.md](./packages/cli/README.md) — the `rando`
+  CLI surface (`init`, `doctor`, `issues`, `db`, `deploy`, `dev`,
+  `infrastructure`, `tunnel`, `dns`).
 
 ## Layout
 

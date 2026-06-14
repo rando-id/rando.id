@@ -53,3 +53,6 @@ test-results/
 
 # claude code (user-local permissions)
 .claude/settings.local.json
+
+# brew bundle install generates this — versions float, no value in committing
+Brewfile.lock.json

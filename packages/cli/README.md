@@ -7,13 +7,43 @@ implement them.
 
 ## Quickstart (first clone)
 
+**Brand-new machine** (macOS):
+
 ```bash
-git clone <repo> && cd rando
-pnpm install                       # installs all deps, including tsx + chalk + ora
-pnpm setup:cli                     # symlinks `rando` into ~/.local/bin
-cp .env.example .env               # fill in tokens — see "Configuration" below
-rando --help                       # verify
-rando doctor                       # confirm color + spinner support
+# One-time prereq (skip if you already have brew):
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+# Per-clone:
+git clone https://github.com/rando-id/rando.id.git && cd rando.id
+./scripts/bootstrap
+```
+
+That's it. `scripts/bootstrap` is a shell script that:
+
+1. **`brew bundle install`** — installs every system dep listed in
+   `Brewfile` (gh, pnpm, node@22, postgresql@16, cloudflared,
+   1password-cli, orbstack).
+2. **`pnpm install`** — JS deps + husky regenerates the hook shims via
+   the `prepare` script.
+3. **`node scripts/setup-cli.mjs`** — symlinks `rando` into
+   `~/.local/bin` so subsequent commands work without the `pnpm`
+   prefix.
+4. **`rando init`** — interactive walkthrough that prompts for each
+   env-var token, validates the value by calling the vendor API,
+   writes to `.env`, then ends with a doctor sweep + a "next steps"
+   menu.
+
+Idempotent — re-running `./scripts/bootstrap` on an already-
+bootstrapped machine is safe (every step is a no-op when already
+done).
+
+**Linux / Windows**: skip the Brewfile, install equivalents however you
+manage packages, then run the remaining steps manually:
+
+```bash
+pnpm install
+node scripts/setup-cli.mjs
+rando init
 ```
 
 Node 22+ is required. `pnpm setup:cli` is idempotent — re-run any time.
@@ -680,18 +710,47 @@ adapters live in the codebase side-by-side; cached `branch.<name>.
 jira-key` values from the previous tracker stay put (just legacy text
 in git config) and are overwritten by the next picker pick.
 
-### `doctor` and `completion`
+### `init` and `doctor`
 
 ```
-rando doctor                              # env/color/spinner diagnostic
+rando init                                # interactive bootstrap (first clone)
+rando doctor [--skip-tracker]             # full read-only health check
+```
+
+**`rando init`** is what to run the first time you clone the repo —
+or any time you set up the project on a new machine. It:
+
+1. Copies `.env.example` → `.env` if it isn't there yet.
+2. Runs the env-var checks to find what's missing or invalid.
+3. For each unset or invalid token, prompts interactively, validates
+   the value by calling the vendor API, then writes it to `.env`.
+4. Finishes with a full doctor sweep so you see what's still on the
+   table (e.g. local tools like `pg_dump` you might want to install).
+
+**`rando doctor`** is the read-only diagnostic — run it anytime to see
+the current health of the setup. It walks six surfaces:
+
+| Section  | What it checks                                                                                                                              |
+| -------- | ------------------------------------------------------------------------------------------------------------------------------------------- |
+| Env      | Every `*_TOKEN` / `*_API_KEY` from `.env.example` — presence + validity (hits the vendor API).                                              |
+| Config   | `rando.config.json` parses, `repo` is well-formed, `tracker` block present.                                                                 |
+| Hooks    | `.husky/_/` shims exist, `core.hooksPath` is set, all three hook files present + executable.                                                |
+| Local    | Node ≥22, `rando` on PATH, `gh` / `pg_dump` / `docker` installed (warnings, not failures, since each is only needed for specific commands). |
+| Tracker  | Delegates to `rando issues doctor` for auth + lifecycle-map lint.                                                                           |
+| Terminal | `isTTY` + `chalk.level` (preserved from the old terminal-only doctor).                                                                      |
+
+Each row shows `✓` / `⚠` / `✗`. Doctor exits non-zero on any `✗` so you
+can wire it into CI as a setup gate. Use `--skip-tracker` to skip the
+tracker probe in environments where it isn't configured.
+
+### `completion`
+
+```
 rando completion <bash|zsh|fish>          # shell tab-completion script
 ```
 
-`doctor` reports the current `isTTY`, `TERM`, `chalk.level`, and prints a
-color + spinner sample so you can verify visually that your terminal
-renders ANSI escapes. `completion` emits a tab-completion script for the
-named shell — pipe into your shell's completion path (see "Tab
-completion" above).
+Emits a tab-completion script for the named shell — pipe into your
+shell's completion path (see "Tab completion" above).
 
 ### Destructive commands
 

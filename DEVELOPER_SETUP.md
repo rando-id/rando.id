@@ -1,50 +1,80 @@
 # Next steps — running Rando.id locally
 
+## Quickstart
+
+The recommended path is `./scripts/bootstrap` (see the [root README](./README.md) →
+"Getting started"). It handles brew + pnpm + symlink + docker + db:migrate +
+`rando init` in one command, all idempotent.
+
+The sections below cover what's still manual after `bootstrap` finishes
+(per-app `.env.local` files for Clerk keys), and they also document the
+underlying steps for the rare case you want to reproduce bootstrap
+piece-by-piece.
+
 ## Prereqs
 
-- Node 22, pnpm 10 (already installed)
-- Docker Desktop **running**
-- Clerk dev account (free at clerk.com) for keys
+- Node 22, pnpm 10 — installed by `brew bundle install` (Brewfile lives at `scripts/Brewfile`)
+- Docker Desktop / OrbStack — also from the Brewfile
+- Clerk dev account (free at clerk.com) for the per-app `.env.local` keys
 
-## First-time setup
+## What `./scripts/bootstrap` already handles
 
 ```bash
-cd /Users/archives/Code/rando/rando
+# All of this is what `./scripts/bootstrap` runs for you:
+pnpm install                                    # JS deps + husky hooks
+node scripts/setup-cli.mjs                      # ~/.local/bin/rando symlink
+docker compose up -d                            # Postgres + PostGIS
+DATABASE_URL=postgres://rando:rando@localhost:5432/rando \
+  pnpm --filter @rando/db db:migrate            # schema + PostGIS enable
+rando init                                      # walks env vars + final doctor
+```
 
-# 0. Install workspace deps + link the rando CLI on your PATH
-pnpm install
-pnpm setup:cli        # symlinks `rando` into ~/.local/bin (idempotent)
-# verify: `rando --help` should work from any directory now
-# (see packages/cli/README.md if ~/.local/bin isn't on your PATH)
+Re-running `./scripts/bootstrap` is safe — every step is a no-op when
+already done.
 
-# 1. Start Postgres + PostGIS
-docker compose up -d
-# (Optional — to expose the API publicly for Clerk webhooks etc., also start
-# the Cloudflare Tunnel — requires CLOUDFLARE_TUNNEL_TOKEN in root .env. See
-# "Cloudflare Tunnel (dev webhooks)" below.)
-# docker compose --profile tunnel up -d
+## Still manual after bootstrap
 
-# 2. Set DB URL (current shell only, or add to apps/api/.env.local)
-export DATABASE_URL='postgres://rando:rando@localhost:5432/rando'
+### 1. Seed sample data (optional)
 
-# 3. Apply schema (enables PostGIS, runs migration)
-pnpm --filter @rando/db db:migrate
-
-# 4. Seed sample data — 1 user, 5 SoCal locations, 10 contacts, 2 lists
+```bash
 pnpm --filter @rando/db db:seed
+```
 
-# 5. Copy env templates
+1 user, 5 SoCal locations, 10 contacts, 2 lists. Skip if you want
+empty databases.
+
+### 2. Per-app `.env.local` files for Clerk
+
+`rando init` populates the **root** `.env` (used by docker-compose +
+the CLI). The Next.js / Expo apps each need their own `.env.local`
+with Clerk keys:
+
+```bash
 cp apps/api/.env.example   apps/api/.env.local
 cp apps/web/.env.example   apps/web/.env.local
 cp apps/admin/.env.example apps/admin/.env.local
 cp apps/native/.env.example apps/native/.env.local
 ```
 
-Then fill in the `.env.local` files with real values:
+Then fill in:
 
 - `DATABASE_URL=postgres://rando:rando@localhost:5432/rando` → `apps/api/.env.local`
 - Clerk publishable key → every `.env.local`
 - Clerk secret key + webhook secret → `apps/api/.env.local`
+
+(Tracked as a backlog item: have `rando init` prompt for Clerk keys
+and write the per-app `.env.local` files automatically.)
+
+### 3. Optional: expose API for Clerk webhooks
+
+To receive Clerk webhooks against your local API, start the Cloudflare
+Tunnel profile (needs `CLOUDFLARE_TUNNEL_TOKEN` in root `.env`):
+
+```bash
+docker compose --profile tunnel up -d
+```
+
+See "Cloudflare Tunnel (dev webhooks)" below for the full setup.
 
 ## Dev commands
 

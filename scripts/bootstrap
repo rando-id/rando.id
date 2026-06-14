@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Bootstrap a fresh clone in one command.
+#
+# Order matters:
+#   1. brew bundle install        — system deps (gh, pnpm, node@22, postgres, etc.)
+#   2. pnpm install               — JS deps + husky regenerates the hook shims
+#   3. setup-cli.mjs              — symlinks `rando` into ~/.local/bin
+#   4. docker compose up -d       — Postgres + PostGIS container
+#   5. pnpm @rando/db db:migrate  — apply schema (PostGIS enable + migrations)
+#   6. exec rando init            — interactive env-var sweep + final doctor
+#
+# Idempotent — re-running on an already-bootstrapped machine is safe.
+
+set -euo pipefail
+
+# Always run from the repo root regardless of where the user invoked the
+# script from. `scripts/bootstrap` → repo root is one level up.
+cd "$(dirname "$0")/.."
+
+BREWFILE_PATH="scripts/Brewfile"
+
+# ── prereq check ──────────────────────────────────────────────────────
+if [[ "$(uname)" == "Darwin" ]] && ! command -v brew >/dev/null 2>&1; then
+  cat <<'EOF' >&2
+✗ Homebrew is not installed.
+
+Install it once with:
+  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+
+Then re-run ./scripts/bootstrap.
+EOF
+  exit 1
+fi
+
+# ── 1. system deps via brew ──────────────────────────────────────────
+if [[ -f "$BREWFILE_PATH" ]] && command -v brew >/dev/null 2>&1; then
+  echo "▶ brew bundle install --file $BREWFILE_PATH"
+  brew bundle install --file "$BREWFILE_PATH"
+  echo ""
+fi
+
+# ── 2. JS deps + husky hooks ─────────────────────────────────────────
+if ! command -v pnpm >/dev/null 2>&1; then
+  cat <<'EOF' >&2
+✗ pnpm is not on PATH yet.
+
+If brew just installed it, restart your shell or run:
+  eval "$(/opt/homebrew/bin/brew shellenv)"
+
+Then re-run ./scripts/bootstrap.
+EOF
+  exit 1
+fi
+echo "▶ pnpm install"
+pnpm install
+echo ""
+
+# ── 3. rando symlink (~/.local/bin/rando) ────────────────────────────
+echo "▶ symlinking rando into ~/.local/bin"
+node scripts/setup-cli.mjs
+echo ""
+
+# ── 4. Postgres + PostGIS via docker-compose ─────────────────────────
+if command -v docker >/dev/null 2>&1; then
+  echo "▶ docker compose up -d (Postgres + PostGIS)"
+  docker compose up -d
+  echo ""
+
+  # ── 5. apply schema ────────────────────────────────────────────────
+  # DATABASE_URL is deterministic from docker-compose.yml so we inline
+  # it rather than depending on the user having set it in their shell.
+  echo "▶ pnpm --filter @rando/db db:migrate"
+  DATABASE_URL='postgres://rando:rando@localhost:5432/rando' \
+    pnpm --filter @rando/db db:migrate
+  echo ""
+  echo "  (to seed sample data, run \`pnpm --filter @rando/db db:seed\` after init)"
+  echo ""
+else
+  cat <<'EOF' >&2
+⚠  docker is not on PATH — skipping Postgres + db:migrate.
+   Install Docker / OrbStack, then run manually:
+     docker compose up -d
+     DATABASE_URL=postgres://rando:rando@localhost:5432/rando \\
+       pnpm --filter @rando/db db:migrate
+EOF
+  echo ""
+fi
+
+# ── 6. interactive bootstrap ─────────────────────────────────────────
+echo "▶ rando init"
+echo ""
+# Use the bin directly so we don't depend on the just-created symlink
+# being on this shell's PATH yet.
+exec packages/cli/bin/rando.mjs init
