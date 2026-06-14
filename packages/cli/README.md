@@ -85,16 +85,17 @@ Typos surface "Did you mean…?" suggestions (`rando dbb` → `(Did you mean db?
 
 Env vars (set in your shell or in repo-root `.env`):
 
-| Variable                | Used by             |
-| ----------------------- | ------------------- |
-| `NEON_API_KEY`          | `db`                |
-| `CLOUDFLARE_API_TOKEN`  | `tunnel`, `dns`     |
-| `CLOUDFLARE_ACCOUNT_ID` | `tunnel`            |
-| `VERCEL_TOKEN`          | `deploy`            |
-| `VERCEL_TEAM_ID`        | `deploy` (optional) |
-| `JIRA_BASE_URL`         | `jira`              |
-| `JIRA_EMAIL`            | `jira`              |
-| `JIRA_API_TOKEN`        | `jira`              |
+| Variable                | Used by                               |
+| ----------------------- | ------------------------------------- |
+| `NEON_API_KEY`          | `db`                                  |
+| `CLOUDFLARE_API_TOKEN`  | `tunnel`, `dns`                       |
+| `CLOUDFLARE_ACCOUNT_ID` | `tunnel`                              |
+| `VERCEL_TOKEN`          | `deploy`                              |
+| `VERCEL_TEAM_ID`        | `deploy` (optional)                   |
+| `GITHUB_TOKEN`          | `issues` (when tracker.kind="github") |
+| `JIRA_BASE_URL`         | `issues` (when tracker.kind="jira")   |
+| `JIRA_EMAIL`            | `issues` (when tracker.kind="jira")   |
+| `JIRA_API_TOKEN`        | `issues` (when tracker.kind="jira")   |
 
 A repo-root `.env` is auto-loaded via Node's `--env-file-if-exists` flag
 in the bin shebang — no `source .env` needed. Shell-exported vars still
@@ -173,9 +174,29 @@ curl -X GET "https://api.cloudflare.com/client/v4/accounts/${CLOUDFLARE_ACCOUNT_
 
 Reference: <https://vercel.com/docs/rest-api#authentication>
 
-#### `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`
+#### `GITHUB_TOKEN` (default tracker)
 
-Your Jira Cloud workspace URL, the email on your Atlassian account, and a
+Only needed when `tracker.kind` in `rando.config.json` is `"github"` —
+which is the default.
+
+- **Locally**: `gh auth token` if you've signed in with the `gh` CLI;
+  copy it into `.env`. Alternatively generate a fine-grained PAT at
+  <https://github.com/settings/personal-access-tokens/new>, scoped to
+  the target repo with **Read+Write** on **Issues** and **Read** on
+  **Metadata**.
+- **In CI**: nothing to set. `${{ secrets.GITHUB_TOKEN }}` is provided
+  automatically by GitHub Actions and the workflow already wires it.
+
+Verify with:
+
+```bash
+pnpm rando issues doctor
+```
+
+#### `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN` (when tracker.kind="jira")
+
+Only needed when `tracker.kind` in `rando.config.json` is `"jira"`. Your
+Jira Cloud workspace URL, the email on your Atlassian account, and a
 personal API token (NOT your password).
 
 1. **`JIRA_BASE_URL`**: open <https://admin.atlassian.com>, pick your
@@ -190,18 +211,17 @@ personal API token (NOT your password).
    - **Copy** the token immediately; Atlassian only shows it once.
 
 Tokens are per-user, not per-project. They authenticate as you, so they
-inherit your project permissions — a token created by an admin has admin
-scope.
+inherit your project permissions.
 
 Verify by running:
 
 ```bash
-pnpm rando jira doctor
+pnpm rando issues doctor
 ```
 
-Doctor prints your authenticated identity, the configured project, the
-statuses available in that project's workflows, and the lifecycle map
-from `rando.config.json` with any unmapped slots called out.
+Doctor prints your authenticated identity, the configured project /
+repo, the statuses the adapter exposes, and the lifecycle map from
+`rando.config.json` with any unmapped slots called out.
 
 Reference: <https://developer.atlassian.com/cloud/jira/platform/basic-auth-for-rest-apis/>
 
@@ -518,159 +538,145 @@ rando dns record remove <zone> <recordId>                        [-y/--yes]
 `<type>` is one of `A`, `AAAA`, `CNAME`, `TXT`, `MX` (case-insensitive).
 TTL `1` = "auto".
 
-### `jira` — Jira ticket tracker
+### `issues` — issue-tracker integration (GitHub Issues / Jira)
 
 ```
-rando jira list [--project <key>] [--mine] [--all] [--limit <n>]
-rando jira show <KEY>
-rando jira create [summary] [--project <key>] [-d <text>] [-t <type>]
-rando jira transition [KEY] [transition]
-rando jira comment [KEY] [body...]
-rando jira pick [--project <key>] [--limit <n>] [--reset]
-rando jira refs <range> [--json]
-rando jira lifecycle <KEY> <slot> [-m <body>]
-rando jira backfill [--since <sha>] [--apply] [--label <l>] [--limit <n>]
-rando jira doctor [--config <path>] [--issue <KEY>]
+rando issues list [--mine] [--all] [--limit <n>]
+rando issues show <KEY>
+rando issues create [summary] [-d <text>] [--label <label>...]
+rando issues comment [KEY] [body...]
+rando issues pick [--limit <n>] [--reset]
+rando issues refs <range> [--json]
+rando issues lifecycle <KEY> <slot> [-m <body>]
+rando issues backfill [--since <sha>] [--apply] [--label <l>] [--limit <n>]
+rando issues doctor
 ```
 
-The `start`/`ship` local orchestrators are still pending; the CI lane is
-fully wired via `.github/workflows/jira-sync.yml` + the in-review step
-in `preview.yml`.
+The active adapter is picked by `tracker.kind` in `rando.config.json` —
+either `"github"` (default) or `"jira"`. Both implement the same nine
+commands; only the project/repo + auth differ. Issue keys are
+`"#42"`-style for GitHub or `"RANDO-42"`-style for Jira; the CLI doesn't
+care which.
 
-**`list`** defaults to open issues in the project from `rando.config.json`.
+**`list`** defaults to open issues in the configured repo/project.
 `--mine` filters to issues assigned to you. `--all` includes closed.
-`--project KEY` overrides the configured project for ad-hoc lookups.
 
-**`show KEY`** prints a one-issue summary block (status, assignee,
-updated). `--json` emits the raw API response.
+**`show KEY`** prints a one-issue summary (status, assignee, updated,
+URL).
 
-**`create [summary]`** opens a new issue. With `--project` or a configured
-`jira.projectKey`, no flags needed beyond the summary. `-t Bug` to set the
-issue type; default is `Task`. `-d "..."` for a description body.
+**`create [summary]`** opens a new issue. `-d "..."` for body, `--label`
+(repeatable) for vendor labels.
 
-**`transition [KEY] [transition]`** moves an issue through its workflow.
-The transition argument is matched first by id, then by name
-(case-insensitive). Omit it interactively to get a picker of the
-available transitions from the issue's current state.
+**`comment [KEY] [body...]`** appends a comment. Body args are joined
+with spaces:
+`rando issues comment '#7' Deployed to https://staging-web.example.com`.
 
-**`comment [KEY] [body...]`** appends a plain-text comment. Body args are
-joined with spaces so you can write naturally without quoting:
-`rando jira comment RANDO-7 Deployed to https://staging-web.example.com`.
+**`pick`** is what the pre-commit hook calls. Lists your open issues
+plus two extras — `+ Create a new ticket` and `Skip for this branch (no
+ticket)` — and caches the choice in `git config branch.<name>.jira-key`
+(name kept for backward compat with previously-cached values).
+Subsequent commits on the branch reuse the cached key without
+re-prompting. `--reset` clears the cache.
 
-**`pick`** is the picker the prepare-commit-msg hook calls. Lists your
-open tickets in the configured project plus two extras — `+ Create a new
-ticket` and `Skip for this branch (no ticket)` — and caches the choice
-in `git config branch.<name>.jira-key`. Subsequent commits on the branch
-reuse the cached key without re-prompting. `--reset` clears the cache
-for the current branch. You can also run `pick` directly when your
-editor's git integration intercepts the interactive hook (some VS Code
-flows do this).
-
-**`refs <range>`** prints every distinct Jira key referenced by commits
-in the given git range (`base..head` form). Used by CI to discover the
-tickets a PR touches:
+**`refs <range>`** prints every distinct issue key referenced by commits
+in a git range. Used by CI to discover issues touched by a PR:
 
 ```bash
-rando jira refs main..HEAD                # → "RANDO-1\nRANDO-2"
-rando jira refs ${{ base.sha }}..${{ head.sha }} --json
+rando issues refs main..HEAD                # → "#1\n#2" or "RANDO-1\nRANDO-2"
+rando issues refs ${{ base.sha }}..${{ head.sha }} --json
 ```
 
 **`lifecycle <KEY> <slot>`** moves an issue through one of the
-lifecycle slots from `rando.config.json` (`in-progress`, `in-review`,
-`done`). Idempotent — if the configured transition isn't available
-from the issue's current state (it's already past that point), the
-command no-ops with a friendly hint instead of failing. `-m "..."`
-posts a comment alongside the transition (useful for branch-deploy
-URLs); the comment lands even if the transition itself is a no-op.
+lifecycle slots: `in-progress`, `in-review`, `done`. Adapters map these
+to:
+
+- **GitHub**: `in-progress` / `in-review` → `state=open` + the
+  configured `status:*` label (others stripped). `done` → `state=closed`
+  with `state_reason=completed`.
+- **Jira**: looks up the configured transition name/id in
+  `tracker.jira.transitions` and fires it.
+
+Idempotent — when the issue is already in the target state, the
+command no-ops and `-m "..."` (if passed) still posts a comment so the
+deploy-URL message lands on PR-synchronize re-fires.
 
 **`backfill`** walks `git log --first-parent` newest-first and creates
-one ticket per commit, each tagged with a Jira label (`backfill` by
-default) and transitioned straight to Done. Defaults to dry-run — it
-prints what it _would_ create. Pass `--apply` to actually create.
-`--since <sha>` skips everything older than that SHA so you can resume.
-`--limit <n>` caps the count. `--label <name>` swaps the label.
+one issue per commit, labeled `backfill` (overridable) and moved
+straight to the done state. Defaults to dry-run; pass `--apply` to
+actually create. `--since <sha>` skips older commits; `--limit <n>`
+caps the count.
 
-```bash
-# Preview the full backfill plan.
-pnpm rando jira backfill
+**`doctor`** verifies tracker credentials, prints the configured
+repo/project, and lints which lifecycle slots are resolvable.
 
-# Real run — creates one ticket per first-parent commit, in Done state.
-pnpm rando jira backfill --apply
+#### Commit hooks
 
-# Resume from where a previous run stopped.
-pnpm rando jira backfill --apply --since <last-handled-sha>
-```
+Two hooks live under `.husky/`, both committed and auto-installed via
+`husky`'s `prepare` script on `pnpm install`:
 
-Each backfilled ticket's description includes the short SHA, the date,
-the GitHub commit URL (built from `repo` in `rando.config.json`), and
-the commit body. A single ticket failure logs and continues; the final
-summary line shows the success/total ratio.
+- **`.husky/pre-commit`** runs `lint-staged`, then — if a tracker is
+  configured and no issue is cached for the current branch — runs
+  `rando issues pick --from-hook` to prompt. This is the picker step.
+  It lives in pre-commit (not prepare-commit-msg) because lint-staged's
+  stash/restore dance breaks the TTY for later hooks.
+- **`.husky/prepare-commit-msg`** is a 10-line script that just reads
+  `git config branch.<name>.jira-key` and appends `Refs: <KEY>` to the
+  commit message. No prompts, no network, no TTY interaction.
 
-#### Commit-message hook
+What runs on every `git commit`:
 
-The commit hook lives at `.husky/prepare-commit-msg` and is **committed
-to the repo** — `husky` regenerates the `.husky/_/` shim layer on every
-`pnpm install`, which routes the actual git events to our file. No
-manual install step; clone + `pnpm install` is enough.
+1. lint-staged formats/lints staged files.
+2. If `branch.<name>.jira-key` is unset and `rando issues pick --check`
+   says the tracker is configured, the picker runs. Choices: pick an
+   existing issue, `+ Create a new ticket`, or `Skip for this branch
+(no ticket)` (which caches the `skip` sentinel and exits 0).
+3. prepare-commit-msg reads the cache and appends `Refs: <KEY>` —
+   unless the value is `skip`, in which case no footer is added.
 
-What the hook does on every `git commit`:
+**Escape hatches**:
 
-1. Skip programmatic contexts (`--amend`, merge, squash) and any commit
-   that already has a `Refs:` footer.
-2. Skip entirely when `RANDO_NO_JIRA=1` is set — escape hatch for
-   one-off commits (typos, hook tweaks, throwaway WIPs).
-3. Look up `git config branch.<current-branch>.jira-key`. If unset,
-   open `rando jira pick --from-hook` against `/dev/tty` so the prompt
-   bypasses the commit-message stdin pipe.
-4. Append `Refs: RANDO-42` to the commit message file.
+- `RANDO_NO_JIRA=1 git commit ...` — bypasses both hooks. Useful for
+  one-off commits the picker shouldn't apply to (typos, hook tweaks).
+- `git config branch.<name>.jira-key skip` — per-branch opt-out, set
+  once and forgotten. Default for `main` in solo-dev repos.
 
-**Enforcement.** When Jira IS fully configured (env + `jira.projectKey`)
-but no key gets cached for the branch (user dismissed the picker, picker
-errored, etc.), the hook **rejects the commit** with a hint to run
-`rando jira pick` or set `RANDO_NO_JIRA=1`. The probe uses
-`rando jira pick --check` — a zero-side-effect config sniff.
-
-`--from-hook` softens "Jira not configured" and "no projectKey" into a
-silent no-op so a half-configured repo never blocks `git commit` — the
-commit just lands without a `Refs:` footer.
-
-The hook coexists with `.husky/pre-commit` (which runs `lint-staged`) —
-different git events, no interference.
+**Enforcement**: when the tracker IS configured (--check passes) and
+nothing is cached and the picker errors/dismisses, pre-commit exits 1
+and the commit is rejected.
 
 #### CI sync workflows
 
-Two GH Actions workflows handle ticket lifecycle on PR events:
+Two workflows handle the lifecycle on PR events:
 
-- **`.github/workflows/jira-sync.yml`** — on every `pull_request` event,
-  runs `rando jira refs ${{ base.sha }}..${{ head.sha }}` to discover
-  tickets, then `rando jira lifecycle <KEY> in-progress` on open /
-  synchronize / reopen, or `… done --message "Merged in #N (<url>)"`
-  on close-with-merged.
+- **`.github/workflows/issues-sync.yml`** — on every `pull_request`
+  event, runs `rando issues refs base..head` to discover issues, then
+  `rando issues lifecycle <KEY> in-progress` on opened / synchronize /
+  reopened, or `... done --message "Merged in #N (<url>)"` on
+  close-with-merged.
 - **`.github/workflows/preview.yml`** — after the Vercel branch deploy
-  succeeds, runs `rando jira lifecycle <KEY> in-review --message "<urls>"`
-  for each referenced ticket so reviewers see the stable preview URLs
-  right on the ticket.
+  succeeds, runs `rando issues lifecycle <KEY> in-review --message
+"<deploy urls>"` for each referenced issue.
 
-Required repo **secrets**: `JIRA_BASE_URL`, `JIRA_EMAIL`, `JIRA_API_TOKEN`.
+**Auth**: GitHub Issues uses `${{ secrets.GITHUB_TOKEN }}` (auto-
+provided by Actions, no setup). Jira needs `JIRA_BASE_URL`,
+`JIRA_EMAIL`, `JIRA_API_TOKEN` as repo secrets.
 
-Optional repo **variable**: `JIRA_ENABLED=false` disables the Jira
-steps without removing them — useful for forks / contributors who
-don't have access to the secrets. Default is enabled.
+**Disable**: set repo variable `TRACKER_ENABLED=false` to disable
+both workflows without removing them.
 
-Both workflows are tolerant: lifecycle calls fall back to `echo`
-on failure so one tricky ticket doesn't fail the whole job, and the
-idempotency check inside `lifecycle` means re-running on PR
-synchronize won't error out on tickets that are already past
-`In Progress`.
+Both are tolerant: each `lifecycle` call falls back to `echo
+"(non-fatal: $key)"` on failure so one stuck issue doesn't fail the
+whole job, and `lifecycle`'s built-in idempotency means PR
+synchronize re-fires don't error on issues already past the target
+state.
 
-**`doctor`** is your onboarding step: it verifies the `JIRA_*` env vars
-work, prints the configured project + the status values defined in its
-workflows, samples one real issue to pull the _available_ transitions
-(transitions are per-issue, not per-project — they depend on the issue's
-current status), and lints the `jira.transitions` map in
-`rando.config.json` so you can see which lifecycle slots still need a
-value. Pass `--issue RANDO-5` to probe a specific issue when you want
-transitions from a particular state.
+#### Switching trackers
+
+Flip `tracker.kind` in `rando.config.json` between `"github"` and
+`"jira"`, fill in the matching env vars, and you're done. Both
+adapters live in the codebase side-by-side; cached `branch.<name>.
+jira-key` values from the previous tracker stay put (just legacy text
+in git config) and are overwritten by the next picker pick.
 
 ### `doctor` and `completion`
 

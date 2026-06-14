@@ -1,6 +1,6 @@
 {
   "project": "rando",
-  "repo": "rando-id/rando",
+  "repo": "rando-id/rando.id",
   "tunnel": "rando-dev",
   "domains": {
     "nonProd": "rando-id.dev",
@@ -24,12 +24,15 @@
       "port": 3100
     }
   ],
-  "jira": {
-    "projectKey": "RANDO",
-    "transitions": {
-      "inProgress": "In Progress",
-      "inReview": "In Review",
-      "done": "Done"
+  "tracker": {
+    "kind": "github",
+    "jira": {
+      "projectKey": "RANDO",
+      "transitions": {
+        "inProgress": "In Progress",
+        "inReview": "In Review",
+        "done": "Done"
+      }
     }
   }
 }

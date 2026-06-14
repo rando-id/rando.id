@@ -4,7 +4,7 @@ import type { Adapters } from '../config'
 import type { DbProvider } from '../domain/db'
 import type { DeployProvider } from '../domain/deploy'
 import type { DnsProvider } from '../domain/dns'
-import type { JiraProvider } from '../domain/jira'
+import type { IssueTrackerProvider } from '../domain/tracker'
 import type { TunnelProvider } from '../domain/tunnel'
 import { captureIo } from './helpers'
 
@@ -15,7 +15,7 @@ function mockAdapters(
     tunnel: TunnelProvider
     dns: DnsProvider
     deploy: DeployProvider
-    jira: JiraProvider
+    tracker: IssueTrackerProvider
   }>,
 ): Adapters {
   return {
@@ -23,7 +23,7 @@ function mockAdapters(
     tunnel: () => overrides.tunnel ?? notConfigured('tunnel'),
     dns: () => overrides.dns ?? notConfigured('dns'),
     deploy: () => overrides.deploy ?? notConfigured('deploy'),
-    jira: () => overrides.jira ?? notConfigured('jira'),
+    tracker: () => overrides.tracker ?? notConfigured('tracker'),
   }
 }
 

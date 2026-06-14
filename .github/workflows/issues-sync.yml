@@ -1,46 +1,44 @@
-name: Jira sync
+name: Issues sync
 
-# Transitions Jira tickets through their lifecycle based on PR events.
+# Transitions GitHub Issues (or Jira tickets when tracker.kind="jira"
+# in rando.config.json) through their lifecycle based on PR events.
 # Tickets are discovered by scanning the PR's commit range for
-# `Refs: PROJ-N` footers (added automatically by the prepare-commit-msg
-# hook — see packages/cli/README.md → "jira").
+# `Refs: <KEY>` footers (added automatically by the prepare-commit-msg
+# hook — see packages/cli/README.md → "issues").
 #
 # Events:
 #   pull_request: opened, reopened, synchronize → In Progress
 #   pull_request: closed (merged=true)          → Done
 #
 # The branch-deploy → In Review + URL-comment step lives in preview.yml,
-# right next to the deploy itself, so the URL is in scope without an
-# extra round-trip through deployment_status.
+# right next to the deploy itself.
 #
-# Required repo secrets:
-#   JIRA_BASE_URL   — https://<workspace>.atlassian.net
-#   JIRA_EMAIL      — service account / your atlassian email
-#   JIRA_API_TOKEN  — from id.atlassian.com → Security → API tokens
+# Auth: GITHUB_TOKEN is auto-provided by Actions (no repo-secret setup
+# needed). For tracker.kind="jira", add JIRA_BASE_URL / JIRA_EMAIL /
+# JIRA_API_TOKEN to repo secrets too.
 
 on:
   pull_request:
     types: [opened, reopened, synchronize, closed]
 
 concurrency:
-  # Serialize per-PR so out-of-order PR events can't race the
-  # transitions (e.g. a quick close-after-synchronize).
-  group: jira-sync-${{ github.event.pull_request.number }}
+  group: issues-sync-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
   transition:
-    name: Transition referenced tickets
+    name: Transition referenced issues
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    # Skip everything when JIRA_API_TOKEN isn't configured — same
-    # softening as the prepare-commit-msg hook so half-configured repos
-    # don't block PR events.
-    if: ${{ vars.JIRA_ENABLED != 'false' }}
+    # vars.TRACKER_ENABLED=false disables without removing the workflow.
+    if: ${{ vars.TRACKER_ENABLED != 'false' }}
+    permissions:
+      issues: write
+      contents: read
+      pull-requests: read
     steps:
       - uses: actions/checkout@v4
         with:
-          # Need full history to walk the PR's commit range.
           fetch-depth: 0
 
       - uses: pnpm/action-setup@v4
@@ -56,20 +54,15 @@ jobs:
 
       - run: pnpm setup:cli
 
-      - name: Collect Jira keys from the PR's commit range
+      - name: Collect issue keys from the PR's commit range
         id: refs
         run: |
-          KEYS=$(rando jira refs '${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}')
-          # GH Actions multiline outputs use the heredoc form.
+          KEYS=$(rando issues refs '${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}')
           {
             echo "keys<<EOF"
             echo "$KEYS"
             echo "EOF"
           } >> "$GITHUB_OUTPUT"
-        env:
-          JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
-          JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
-          JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
 
       - name: Transition to In Progress (PR opened / synchronize / reopened)
         if: github.event.action != 'closed' && steps.refs.outputs.keys != ''
@@ -77,9 +70,10 @@ jobs:
           echo '${{ steps.refs.outputs.keys }}' | while IFS= read -r key; do
             [ -z "$key" ] && continue
             echo "→ transitioning $key to in-progress"
-            rando jira lifecycle "$key" in-progress || echo "(non-fatal: $key)"
+            rando issues lifecycle "$key" in-progress || echo "(non-fatal: $key)"
           done
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}
@@ -91,11 +85,12 @@ jobs:
           echo '${{ steps.refs.outputs.keys }}' | while IFS= read -r key; do
             [ -z "$key" ] && continue
             echo "→ transitioning $key to done"
-            rando jira lifecycle "$key" done \
+            rando issues lifecycle "$key" done \
               --message "Merged in #${{ github.event.pull_request.number }} (${{ github.event.pull_request.html_url }})" \
               || echo "(non-fatal: $key)"
           done
         env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           JIRA_BASE_URL: ${{ secrets.JIRA_BASE_URL }}
           JIRA_EMAIL: ${{ secrets.JIRA_EMAIL }}
           JIRA_API_TOKEN: ${{ secrets.JIRA_API_TOKEN }}

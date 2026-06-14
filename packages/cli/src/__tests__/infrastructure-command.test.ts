@@ -37,7 +37,7 @@ function fakeAdapters(): Adapters {
     tunnel: () => never('tunnel'),
     deploy: () => never('deploy'),
     dns: () => never('dns'),
-    jira: () => never('jira'),
+    tracker: () => never('tracker'),
   }
 }
 

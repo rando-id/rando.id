@@ -1,27 +1,22 @@
 #!/usr/bin/env sh
-# Append `Refs: <JIRA-KEY>` to every commit so all work ties to a ticket.
-# When Jira is configured but no key is cached for the branch (and the
-# user didn't explicitly opt out), the commit is REJECTED — drop into
-# `rando jira pick` to set one.
+# Append `Refs: <ISSUE-KEY>` to the commit message based on the per-
+# branch cached key set by pre-commit's picker step.
 #
-# See packages/cli/README.md → "jira" for the full design.
+# This script only reads the cache and writes the footer — no prompts,
+# no TTY redirects. The picker logic moved to pre-commit (which owns the
+# TTY before lint-staged's stash/restore wraps the commit flow).
 
 # Args from git:
 #   $1 = commit message file
 #   $2 = source: '' | 'message' | 'template' | 'merge' | 'squash' | 'commit'
-#   $3 = SHA (only for --amend / -c / -C)
 
-# Skip programmatic / non-prompt contexts. --amend, squash, merge already
-# have a final message we don't want to rewrite or re-prompt.
+# Skip programmatic / non-prompt contexts.
 case "$2" in
-merge | squash | commit) exit 0 ;;
+  merge|squash|commit) exit 0 ;;
 esac
 
-# Per-commit escape hatch — for typos, hook tweaks, throwaway WIPs.
 if [ -n "$RANDO_NO_JIRA" ]; then exit 0; fi
 
-# If a Refs: footer already exists, leave it alone (saved template,
-# previous hook run, etc.).
 if grep -qE '^Refs: ' "$1" 2>/dev/null; then exit 0; fi
 
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
@@ -29,36 +24,7 @@ if [ -z "$branch" ] || [ "$branch" = "HEAD" ]; then exit 0; fi
 
 key=$(git config "branch.$branch.jira-key" 2>/dev/null)
 
-# No key cached → run the picker via /dev/tty so prompts work inside
-# the commit-message stdin pipe.
-if [ -z "$key" ]; then
-  if [ -e /dev/tty ]; then
-    if ! "$(git rev-parse --show-toplevel)/packages/cli/bin/rando.mjs" jira pick --from-hook </dev/tty >/dev/tty 2>&1; then
-      exit 1
-    fi
-    key=$(git config "branch.$branch.jira-key" 2>/dev/null)
-  fi
-fi
+# 'skip' sentinel = per-branch opt-out from picker. No footer.
+if [ "$key" = "skip" ] || [ -z "$key" ]; then exit 0; fi
 
-# 'skip' sentinel = user opted this branch out at picker time.
-if [ "$key" = "skip" ]; then exit 0; fi
-
-# We have a key — append the footer and we're done.
-if [ -n "$key" ]; then
-  printf '\nRefs: %s\n' "$key" >>"$1"
-  exit 0
-fi
-
-# No key, no skip. Is Jira even configured? `--check` exits 0 when env +
-# projectKey are present, 4 otherwise. We only enforce when Jira IS
-# configured — a half-configured repo never blocks commits.
-if pnpm --silent rando jira pick --check >/dev/null 2>&1; then
-  printf '\n' >&2
-  printf '✗ Commit blocked: no Jira ticket set for branch %s\n' "$branch" >&2
-  printf '  Run `pnpm rando jira pick` to pick or create one, then re-commit.\n' >&2
-  printf '  Or set RANDO_NO_JIRA=1 for a one-off bypass.\n' >&2
-  exit 1
-fi
-
-# Jira not configured → silently allow.
-exit 0
+printf '\nRefs: %s\n' "$key" >> "$1"

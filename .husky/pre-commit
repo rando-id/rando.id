@@ -1,1 +1,36 @@
+#!/usr/bin/env sh
+# Pre-commit pipeline:
+#   1. lint-staged formats/lints staged files
+#   2. if the current branch has no cached issue key and a tracker is
+#      configured, prompt for one (picker writes to git config)
+#
+# Step 2 used to live in prepare-commit-msg but lint-staged's
+# stash/restore dance disturbs the TTY for that hook, so prompts
+# silently failed. Doing it here — before lint-staged hands off to
+# git's commit-message phase — keeps the picker on a clean TTY.
+
+# 1. lint-staged
 pnpm exec lint-staged
+
+# 2. issue picker
+if [ -n "$RANDO_NO_JIRA" ]; then exit 0; fi
+
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+if [ -z "$branch" ] || [ "$branch" = "HEAD" ]; then exit 0; fi
+
+key=$(git config "branch.$branch.jira-key" 2>/dev/null)
+if [ -n "$key" ]; then exit 0; fi  # already cached — nothing to do
+
+RANDO_BIN="$(git rev-parse --show-toplevel)/packages/cli/bin/rando.mjs"
+
+# Probe: is a tracker even configured? --check exits 0 when yes, non-zero
+# when no. We only enforce when configured.
+if ! "$RANDO_BIN" issues pick --check >/dev/null 2>&1; then
+  exit 0
+fi
+
+# Picker runs in the existing TTY — no /dev/tty redirect needed because
+# pre-commit hasn't been wrapped by lint-staged's stash flow yet.
+if ! "$RANDO_BIN" issues pick --from-hook; then
+  exit 1
+fi

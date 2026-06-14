@@ -18,11 +18,12 @@ export default defineConfig({
         // Setup-config types are pure schema; logic is its parseSetupConfig
         // which is covered.
       ],
-      // ~74% baseline. The drag comes from I/O-heavy modules
-      // (supervisor.ts, dev.ts, doctor.ts, completion.ts, output.ts)
-      // that aren't unit-tested. Threshold set a few points below
-      // baseline to let small refactors pass without immediate failure.
-      thresholds: { lines: 72, functions: 73, branches: 75, statements: 72 },
+      // ~79% baseline after the tracker refactor. The drag comes from
+      // I/O-heavy modules (supervisor.ts, dev.ts, doctor.ts,
+      // completion.ts, output.ts) that aren't unit-tested. Threshold
+      // set a few points below baseline to let small refactors pass
+      // without immediate failure.
+      thresholds: { lines: 76, functions: 78, branches: 76, statements: 76 },
     },
   },
 })

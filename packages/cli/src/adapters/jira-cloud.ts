@@ -1,91 +1,77 @@
-// Jira Cloud (https://<your>.atlassian.net) implementation of JiraProvider.
-// API reference: https://developer.atlassian.com/cloud/jira/platform/rest/v3/
+// Jira Cloud (https://<your>.atlassian.net) implementation of
+// IssueTrackerProvider. API reference:
+//   https://developer.atlassian.com/cloud/jira/platform/rest/v3/
 //
 // Auth: HTTP Basic with `<email>:<api-token>` base64-encoded. The API
-// token is generated at https://id.atlassian.com/manage-profile/security/api-tokens
-// and is per-user, not per-project.
+// token is generated at
+// https://id.atlassian.com/manage-profile/security/api-tokens — per-user,
+// not per-project.
 //
-// Note on description / comment bodies: v3 endpoints take Atlassian
-// Document Format (ADF) — a structured JSON document. We wrap plain
-// strings into a minimal one-paragraph ADF doc so callers don't have
-// to know about it.
+// v3 endpoints take Atlassian Document Format (ADF) — a structured JSON
+// document — for description / comment bodies. Plain strings get wrapped
+// into a minimal one-paragraph ADF doc so callers don't have to know.
+//
+// "Transitions" and "statuses" are Jira-internal concepts that don't
+// leak past this file — applyLifecycle() handles them privately.
 
 import { ProviderApiError } from '../domain/errors'
 import type {
-  JiraIssue,
-  JiraProject,
-  JiraProvider,
-  JiraSearchFilter,
-  JiraStatus,
-  JiraTransition,
-  JiraUser,
-} from '../domain/jira'
+  Issue,
+  IssueSearchFilter,
+  IssueTrackerProvider,
+  LifecycleResult,
+  LifecycleSlot,
+  TrackerDoctorReport,
+  TrackerUser,
+} from '../domain/tracker'
 
 export interface JiraCloudProviderOptions {
   /** Site URL: https://<workspace>.atlassian.net (no trailing slash). */
   baseUrl: string
   /** Atlassian account email. */
   email: string
-  /** API token from https://id.atlassian.com/manage-profile/security/api-tokens. */
+  /** API token. */
   apiToken: string
+  /** Project key (e.g. "RANDO"). The adapter is bound to one project. */
+  projectKey: string
+  /**
+   * Lifecycle slot → transition name (case-insensitive) or transition id.
+   * Slots not in the map can still be invoked but applyLifecycle will
+   * throw a clear "no jira.transitions.<slot> configured" error.
+   */
+  transitions: Partial<Record<LifecycleSlot, string>>
   /** Override for tests. Defaults to global fetch. */
   fetch?: typeof fetch
 }
 
-export class JiraCloudProvider implements JiraProvider {
+const LIFECYCLE_LABELS: Record<LifecycleSlot, string> = {
+  inProgress: 'inProgress',
+  inReview: 'inReview',
+  done: 'done',
+}
+
+export class JiraCloudProvider implements IssueTrackerProvider {
   private readonly fetch: typeof fetch
   private readonly baseUrl: string
   private readonly authHeader: string
+  private readonly projectKey: string
+  private readonly transitions: Partial<Record<LifecycleSlot, string>>
 
   constructor(opts: JiraCloudProviderOptions) {
     this.fetch = opts.fetch ?? globalThis.fetch
     this.baseUrl = opts.baseUrl.replace(/\/+$/, '')
     this.authHeader = `Basic ${Buffer.from(`${opts.email}:${opts.apiToken}`).toString('base64')}`
+    this.projectKey = opts.projectKey
+    this.transitions = opts.transitions
   }
 
-  async getMyself(): Promise<JiraUser> {
+  async getMyself(): Promise<TrackerUser> {
     const raw = await this.request<RawUser>('GET', '/rest/api/3/myself')
     return mapUser(raw)
   }
 
-  async getProject(key: string): Promise<JiraProject> {
-    const raw = await this.request<RawProject>(
-      'GET',
-      `/rest/api/3/project/${encodeURIComponent(key)}`,
-    )
-    return { key: raw.key, id: raw.id, name: raw.name }
-  }
-
-  async listStatuses(projectKey: string): Promise<JiraStatus[]> {
-    // /project/{key}/statuses returns one entry per issue type with its
-    // workflow's statuses. Flatten + dedupe by status id.
-    const raw = await this.request<RawIssueTypeStatuses[]>(
-      'GET',
-      `/rest/api/3/project/${encodeURIComponent(projectKey)}/statuses`,
-    )
-    const byId = new Map<string, JiraStatus>()
-    for (const issueType of raw) {
-      for (const status of issueType.statuses) {
-        if (!byId.has(status.id)) byId.set(status.id, mapStatus(status))
-      }
-    }
-    return [...byId.values()]
-  }
-
-  async listTransitions(issueKey: string): Promise<JiraTransition[]> {
-    const raw = await this.request<{ transitions: RawTransition[] }>(
-      'GET',
-      `/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`,
-    )
-    return raw.transitions.map((t) => ({
-      id: t.id,
-      name: t.name,
-      to: mapStatus(t.to),
-    }))
-  }
-
-  async searchIssues(filter: JiraSearchFilter): Promise<JiraIssue[]> {
-    const jql = buildJql(filter)
+  async searchIssues(filter: IssueSearchFilter): Promise<Issue[]> {
+    const jql = buildJql({ ...filter, projectKey: this.projectKey })
     const params = new URLSearchParams({
       jql,
       fields: 'summary,status,assignee,updated',
@@ -95,28 +81,27 @@ export class JiraCloudProvider implements JiraProvider {
       'GET',
       `/rest/api/3/search/jql?${params.toString()}`,
     )
-    return raw.issues.map(mapIssue)
+    return raw.issues.map((i) => this.mapIssue(i))
   }
 
-  async getIssue(key: string): Promise<JiraIssue> {
+  async getIssue(key: string): Promise<Issue> {
     const params = new URLSearchParams({ fields: 'summary,status,assignee,updated' })
     const raw = await this.request<RawIssue>(
       'GET',
       `/rest/api/3/issue/${encodeURIComponent(key)}?${params.toString()}`,
     )
-    return mapIssue(raw)
+    return this.mapIssue(raw)
   }
 
   async createIssue(input: {
-    projectKey: string
     summary: string
     description?: string
-    issueType?: string
     labels?: string[]
+    issueType?: string
   }): Promise<{ key: string }> {
     const body: Record<string, unknown> = {
       fields: {
-        project: { key: input.projectKey },
+        project: { key: this.projectKey },
         summary: input.summary,
         issuetype: { name: input.issueType ?? 'Task' },
         ...(input.description ? { description: toAdf(input.description) } : {}),
@@ -127,18 +112,121 @@ export class JiraCloudProvider implements JiraProvider {
     return { key: raw.key }
   }
 
-  async transitionIssue(input: { issueKey: string; transitionId: string }): Promise<void> {
-    await this.request(
-      'POST',
-      `/rest/api/3/issue/${encodeURIComponent(input.issueKey)}/transitions`,
-      { transition: { id: input.transitionId } },
+  async applyLifecycle(input: { key: string; slot: LifecycleSlot }): Promise<LifecycleResult> {
+    const configured = this.transitions[input.slot]
+    if (!configured) {
+      throw new Error(
+        `No tracker.jira.transitions.${LIFECYCLE_LABELS[input.slot]} configured in rando.config.json — run \`rando issues doctor\` to see what's available.`,
+      )
+    }
+    // Fetch the available transitions AND the current issue in
+    // parallel — we need both to detect the self-loop case where the
+    // configured transition's target is the current status (default
+    // Jira workflows allow this; firing it would just spam the audit
+    // log).
+    const [transitions, issue] = await Promise.all([
+      this.listTransitions(input.key),
+      this.getIssue(input.key),
+    ])
+
+    const match = transitions.find(
+      (t) => t.id === configured || t.name.toLowerCase() === configured.toLowerCase(),
     )
+
+    if (match && match.to.name.toLowerCase() === issue.status.toLowerCase()) {
+      return { transitioned: false, status: issue.status, via: `already at ${issue.status}` }
+    }
+    if (!match) {
+      return {
+        transitioned: false,
+        status: issue.status,
+        via: `transition "${configured}" not available from ${issue.status}`,
+      }
+    }
+    await this.request('POST', `/rest/api/3/issue/${encodeURIComponent(input.key)}/transitions`, {
+      transition: { id: match.id },
+    })
+    return { transitioned: true, status: match.to.name, via: `via "${match.name}"` }
   }
 
-  async addComment(input: { issueKey: string; body: string }): Promise<void> {
-    await this.request('POST', `/rest/api/3/issue/${encodeURIComponent(input.issueKey)}/comment`, {
+  async addComment(input: { key: string; body: string }): Promise<void> {
+    await this.request('POST', `/rest/api/3/issue/${encodeURIComponent(input.key)}/comment`, {
       body: toAdf(input.body),
     })
+  }
+
+  async doctor(): Promise<TrackerDoctorReport> {
+    const me = await this.getMyself()
+    const project = await this.request<RawProject>(
+      'GET',
+      `/rest/api/3/project/${encodeURIComponent(this.projectKey)}`,
+    )
+    const statuses = await this.fetchStatuses()
+    // Sample one open issue so we can resolve lifecycle slots against
+    // its available transitions (transitions are issue-state-dependent
+    // in Jira).
+    const sample = await this.searchIssues({ openOnly: true, limit: 1 })
+    const sampleKey = sample[0]?.key
+    const availableTransitions = sampleKey ? await this.listTransitions(sampleKey) : []
+
+    const lifecycle: TrackerDoctorReport['lifecycle'] = (
+      ['inProgress', 'inReview', 'done'] as const
+    ).map((slot) => {
+      const value = this.transitions[slot] ?? null
+      if (!value) return { slot, value: null, resolved: false, note: '(unset)' }
+      const byId = availableTransitions.find((t) => t.id === value)
+      if (byId) {
+        return { slot, value, resolved: true, note: `→ ${byId.to.name} (id ${byId.id})` }
+      }
+      const byName = availableTransitions.find((t) => t.name.toLowerCase() === value.toLowerCase())
+      if (byName) {
+        return { slot, value, resolved: true, note: `→ ${byName.to.name} (id ${byName.id})` }
+      }
+      return { slot, value, resolved: false, note: '(no match in available transitions)' }
+    })
+
+    return {
+      authedAs: `${me.displayName} (${me.emailAddress ?? me.id})`,
+      projectLabel: `Project: ${project.key} (${project.name})`,
+      statuses: statuses.map((s) => ({
+        name: s.name,
+        category: mapStatusCategory(s.statusCategory?.key),
+      })),
+      lifecycle,
+    }
+  }
+
+  // ─── internals ─────────────────────────────────────────────────────────
+
+  private async listTransitions(issueKey: string): Promise<RawTransition[]> {
+    const raw = await this.request<{ transitions: RawTransition[] }>(
+      'GET',
+      `/rest/api/3/issue/${encodeURIComponent(issueKey)}/transitions`,
+    )
+    return raw.transitions
+  }
+
+  private async fetchStatuses(): Promise<RawStatus[]> {
+    const raw = await this.request<RawIssueTypeStatuses[]>(
+      'GET',
+      `/rest/api/3/project/${encodeURIComponent(this.projectKey)}/statuses`,
+    )
+    const seen = new Map<string, RawStatus>()
+    for (const it of raw) for (const s of it.statuses) if (!seen.has(s.id)) seen.set(s.id, s)
+    return [...seen.values()]
+  }
+
+  private mapIssue(raw: RawIssue): Issue {
+    return {
+      key: raw.key,
+      id: raw.id,
+      summary: raw.fields.summary,
+      status: raw.fields.status.name,
+      statusCategory: mapStatusCategory(raw.fields.status.statusCategory?.key),
+      assignee: raw.fields.assignee ? mapUser(raw.fields.assignee) : null,
+      updated: raw.fields.updated,
+      url: `${this.baseUrl}/browse/${raw.key}`,
+    }
   }
 
   private async request<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
@@ -162,43 +250,43 @@ export class JiraCloudProvider implements JiraProvider {
   }
 }
 
-// --- JQL builder ----------------------------------------------------------
+// ─── JQL builder ────────────────────────────────────────────────────────
 
-function buildJql(filter: JiraSearchFilter): string {
-  const clauses: string[] = []
-  if (filter.projectKey) clauses.push(`project = ${quote(filter.projectKey)}`)
-  if (filter.assignee === 'currentUser') {
-    clauses.push('assignee = currentUser()')
-  } else if (filter.assignee) {
-    clauses.push(`assignee = ${quote(filter.assignee)}`)
-  }
+function buildJql(filter: IssueSearchFilter & { projectKey: string }): string {
+  const clauses: string[] = [`project = ${quote(filter.projectKey)}`]
+  if (filter.assignee === 'currentUser') clauses.push('assignee = currentUser()')
+  else if (filter.assignee) clauses.push(`assignee = ${quote(filter.assignee)}`)
   if (filter.openOnly) clauses.push('statusCategory != Done')
-  clauses.push('order by updated DESC')
-  return clauses.join(' AND ').replace(' AND order by', ' order by')
+  return `${clauses.join(' AND ')} order by updated DESC`
 }
 
 function quote(s: string): string {
-  // JQL uses double-quotes; escape any embedded ones.
   return `"${s.replace(/"/g, '\\"')}"`
 }
 
-// --- ADF helper -----------------------------------------------------------
+// ─── ADF helper ────────────────────────────────────────────────────────
 
-/** Wrap a plain string into the minimal ADF document Jira v3 expects. */
 function toAdf(text: string): Record<string, unknown> {
   return {
     type: 'doc',
     version: 1,
-    content: [
-      {
-        type: 'paragraph',
-        content: [{ type: 'text', text }],
-      },
-    ],
+    content: [{ type: 'paragraph', content: [{ type: 'text', text }] }],
   }
 }
 
-// --- raw response shapes (narrow — only fields we use) --------------------
+// ─── status category mapping ───────────────────────────────────────────
+
+function mapStatusCategory(key: string | undefined): Issue['statusCategory'] {
+  // Jira's category keys are: new, indeterminate, done, undefined.
+  // We map indeterminate → 'in-progress' as a sensible default; the
+  // CLI only really cares about distinguishing 'done' vs everything else.
+  if (key === 'done') return 'done'
+  if (key === 'new') return 'open'
+  if (key === 'indeterminate') return 'in-progress'
+  return 'other'
+}
+
+// ─── raw response shapes (narrow — only fields we use) ────────────────
 
 interface RawUser {
   accountId: string
@@ -241,28 +329,10 @@ interface RawIssue {
   }
 }
 
-function mapUser(raw: RawUser): JiraUser {
+function mapUser(raw: RawUser): TrackerUser {
   return {
-    accountId: raw.accountId,
+    id: raw.accountId,
     displayName: raw.displayName,
     ...(raw.emailAddress ? { emailAddress: raw.emailAddress } : {}),
-  }
-}
-
-function mapStatus(raw: RawStatus): JiraStatus {
-  const cat = raw.statusCategory?.key
-  const category: JiraStatus['category'] =
-    cat === 'new' || cat === 'indeterminate' || cat === 'done' ? cat : 'unknown'
-  return { id: raw.id, name: raw.name, category }
-}
-
-function mapIssue(raw: RawIssue): JiraIssue {
-  return {
-    key: raw.key,
-    id: raw.id,
-    summary: raw.fields.summary,
-    status: mapStatus(raw.fields.status),
-    assignee: raw.fields.assignee ? mapUser(raw.fields.assignee) : null,
-    updated: raw.fields.updated,
   }
 }

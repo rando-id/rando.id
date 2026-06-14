@@ -43,31 +43,60 @@ export const SetupConfigSchema = z.object({
     .min(1),
 
   /**
-   * Jira ticket-tracker integration. Optional — when absent, `rando jira`
-   * commands and the commit hook still work but they can't auto-transition
-   * tickets through the Rando-specific lifecycle (PR open → In Progress,
-   * branch deploy → In Review, merge → Done) because those statuses are
-   * per-project and not predictable.
+   * Issue-tracker integration. Optional — when absent, `rando issues`
+   * commands and the commit hook still work but they can't auto-
+   * transition tickets through the Rando lifecycle (PR open → In
+   * Progress, branch deploy → In Review, merge → Done).
    *
-   * Run `rando jira doctor` to discover what's available in your project,
-   * then fill in `transitions` with the matching transition names or ids.
+   * `tracker.kind` picks the adapter; the matching sub-block carries
+   * the adapter-specific config. Run `rando issues doctor` after
+   * filling this in to verify the wiring.
    */
-  jira: z
+  tracker: z
     .object({
-      /** Project key, e.g. "RANDO". */
-      projectKey: z.string().min(1),
-      /**
-       * Map from semantic lifecycle state → Jira transition name OR id.
-       * Either works; the doctor command shows both.
-       */
-      transitions: z
+      kind: z.enum(['github', 'jira']).default('github'),
+      /** Required when kind is "github". Defaults give sensible label names. */
+      github: z
         .object({
-          inProgress: z.string().min(1).optional(),
-          inReview: z.string().min(1).optional(),
-          done: z.string().min(1).optional(),
+          /**
+           * Lifecycle slot → label name. The adapter adds the slot's
+           * label and removes the others (and any other label starting
+           * with `status:`) when applyLifecycle fires.
+           */
+          labels: z
+            .object({
+              inProgress: z.string().min(1).default('status:in-progress'),
+              inReview: z.string().min(1).default('status:in-review'),
+            })
+            .default({
+              inProgress: 'status:in-progress',
+              inReview: 'status:in-review',
+            }),
         })
-        .partial()
-        .default({}),
+        .default({
+          labels: {
+            inProgress: 'status:in-progress',
+            inReview: 'status:in-review',
+          },
+        }),
+      /** Required when kind is "jira". */
+      jira: z
+        .object({
+          projectKey: z.string().min(1),
+          /**
+           * Map from semantic lifecycle state → Jira transition name OR
+           * id. Either works; the doctor command shows both.
+           */
+          transitions: z
+            .object({
+              inProgress: z.string().min(1).optional(),
+              inReview: z.string().min(1).optional(),
+              done: z.string().min(1).optional(),
+            })
+            .partial()
+            .default({}),
+        })
+        .optional(),
     })
     .optional(),
 })
