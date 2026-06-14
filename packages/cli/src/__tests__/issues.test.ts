@@ -509,6 +509,18 @@ describe('issues create', () => {
     )
     expect(JSON.parse(io.stdout.join(''))).toEqual({ key: '#99' })
   })
+
+  it('threads --milestone through to createIssue', async () => {
+    const p = provider()
+    await run(
+      ['create', 'X', '-m', 'v0.1 — Feature parity'],
+      mockAdapters(() => p),
+      captureIo(),
+      fakeGitConfig().git,
+    )
+    const call = (p.createIssue as ReturnType<typeof vi.fn>).mock.calls[0]?.[0]
+    expect(call?.milestone).toBe('v0.1 — Feature parity')
+  })
 })
 
 // ─── comment ─────────────────────────────────────────────────────────

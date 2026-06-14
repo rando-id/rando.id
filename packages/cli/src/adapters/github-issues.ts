@@ -105,16 +105,39 @@ export class GitHubIssuesProvider implements IssueTrackerProvider {
     summary: string
     description?: string
     labels?: string[]
+    milestone?: string
   }): Promise<{ key: string }> {
     const body: Record<string, unknown> = { title: input.summary }
     if (input.description) body.body = input.description
     if (input.labels?.length) body.labels = input.labels
+    if (input.milestone) {
+      body.milestone = await this.resolveMilestone(input.milestone)
+    }
     const raw = await this.request<RawIssue>(
       'POST',
       `/repos/${this.owner}/${this.repoName}/issues`,
       body,
     )
     return { key: `#${raw.number}` }
+  }
+
+  /**
+   * Resolve a milestone reference (numeric id OR title, case-insensitive)
+   * to the numeric id the GitHub API expects in the issue body.
+   */
+  private async resolveMilestone(ref: string): Promise<number> {
+    if (/^\d+$/.test(ref)) return parseInt(ref, 10)
+    const milestones = await this.request<Array<{ number: number; title: string }>>(
+      'GET',
+      `/repos/${this.owner}/${this.repoName}/milestones?state=all&per_page=100`,
+    )
+    const match = milestones.find((m) => m.title.toLowerCase() === ref.toLowerCase())
+    if (!match) {
+      throw new Error(
+        `Milestone "${ref}" not found in ${this.owner}/${this.repoName}. Use the numeric id or an exact title.`,
+      )
+    }
+    return match.number
   }
 
   async applyLifecycle(input: { key: string; slot: LifecycleSlot }): Promise<LifecycleResult> {

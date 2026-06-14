@@ -121,6 +121,37 @@ describe('GitHubIssuesProvider', () => {
     await expect(adapter(stub).getIssue('other/repo#7')).rejects.toThrow(/bound to/)
   })
 
+  it('createIssue resolves milestone by numeric id (no extra API call)', async () => {
+    const stub = stubFetch([{ status: 201, body: { ...ISSUE_OPEN_RAW, number: 50 } }])
+    await adapter(stub).createIssue({ summary: 'X', milestone: '2' })
+    expect(stub.calls).toHaveLength(1) // no milestone-lookup roundtrip
+    expect((stub.calls[0]?.body as { milestone?: number }).milestone).toBe(2)
+  })
+
+  it('createIssue resolves milestone by title (case-insensitive lookup)', async () => {
+    const stub = stubFetch([
+      // milestone listing
+      {
+        body: [
+          { number: 1, title: 'v0.1 — Feature parity' },
+          { number: 2, title: 'v0.2 — Polish' },
+        ],
+      },
+      // create
+      { status: 201, body: { ...ISSUE_OPEN_RAW, number: 51 } },
+    ])
+    await adapter(stub).createIssue({ summary: 'X', milestone: 'v0.2 — POLISH' })
+    expect(stub.calls[0]?.url).toContain('/milestones')
+    expect((stub.calls[1]?.body as { milestone?: number }).milestone).toBe(2)
+  })
+
+  it('createIssue throws a clear error when the milestone title is not found', async () => {
+    const stub = stubFetch([{ body: [{ number: 1, title: 'Other' }] }])
+    await expect(
+      adapter(stub).createIssue({ summary: 'X', milestone: 'Nonexistent' }),
+    ).rejects.toThrow(/Milestone "Nonexistent" not found/)
+  })
+
   it('createIssue posts title + body + labels', async () => {
     const stub = stubFetch([{ status: 201, body: { ...ISSUE_OPEN_RAW, number: 42 } }])
     const result = await adapter(stub).createIssue({

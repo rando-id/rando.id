@@ -1,0 +1,32 @@
+#!/usr/bin/env sh
+# Safety net: re-append `Fixes: <ISSUE-KEY>` to the commit message
+# AFTER the editor closes, in case the user pasted over the footer
+# that prepare-commit-msg wrote earlier into the template.
+#
+# Idempotent — skips when the message already contains a
+# Fixes/Closes/Resolves/Refs footer.
+#
+# Args from git:
+#   $1 = commit message file (final, post-edit)
+
+set +e
+
+# Skip merge commits (they're noise — see git's auto-generated
+# "Merge branch '...'" message). Anything else: re-append.
+if head -1 "$1" 2>/dev/null | grep -qE '^Merge (branch|pull request|remote-tracking)'; then
+  exit 0
+fi
+
+if [ -n "$RANDO_NO_JIRA" ]; then exit 0; fi
+
+# Footer already present (from prepare-commit-msg or user-typed) — done.
+if grep -qiE '^(Fixes|Closes|Resolves|Refs): ' "$1" 2>/dev/null; then exit 0; fi
+
+branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+if [ -z "$branch" ] || [ "$branch" = "HEAD" ]; then exit 0; fi
+
+key=$(git config "branch.$branch.jira-key" 2>/dev/null)
+if [ "$key" = "skip" ] || [ -z "$key" ]; then exit 0; fi
+
+# Make sure there's a blank line before the trailer block.
+printf '\nFixes: %s\n' "$key" >> "$1"

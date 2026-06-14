@@ -105,6 +105,12 @@ export interface IssueTrackerProvider {
     description?: string
     /** Optional vendor labels. */
     labels?: string[]
+    /**
+     * Optional milestone — accepts either a numeric id ("2") or a
+     * title ("v0.1 — Feature parity"). Adapters that don't support
+     * milestones (Jira) raise a clear error.
+     */
+    milestone?: string
   }): Promise<{ key: string }>
 
   /**

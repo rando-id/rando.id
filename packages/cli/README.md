@@ -543,7 +543,7 @@ TTL `1` = "auto".
 ```
 rando issues list [--mine] [--all] [--limit <n>]
 rando issues show <KEY>
-rando issues create [summary] [-d <text>] [--label <label>...]
+rando issues create [summary] [-d <text>] [--label <label>...] [-m <milestone>]
 rando issues comment [KEY] [body...]
 rando issues pick [--limit <n>] [--reset]
 rando issues refs <range> [--json]
@@ -565,7 +565,9 @@ care which.
 URL).
 
 **`create [summary]`** opens a new issue. `-d "..."` for body, `--label`
-(repeatable) for vendor labels.
+(repeatable) for vendor labels, `-m "<id-or-title>"` to attach a
+milestone (GitHub only — accepts the numeric id `2` or the exact title
+`"v0.1 — Feature parity"`; Jira raises a clear error).
 
 **`comment [KEY] [body...]`** appends a comment. Body args are joined
 with spaces:

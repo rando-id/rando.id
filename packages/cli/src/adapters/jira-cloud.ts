@@ -98,7 +98,18 @@ export class JiraCloudProvider implements IssueTrackerProvider {
     description?: string
     labels?: string[]
     issueType?: string
+    /**
+     * Milestones don't have a direct equivalent in Jira — the closest
+     * is "fix versions" which require setup outside the scope of this
+     * adapter. We raise a clear error so callers know to drop the flag.
+     */
+    milestone?: string
   }): Promise<{ key: string }> {
+    if (input.milestone) {
+      throw new Error(
+        'Milestones are not supported by the Jira adapter (closest equivalent is fix versions). Drop the --milestone flag or switch tracker.kind to "github".',
+      )
+    }
     const body: Record<string, unknown> = {
       fields: {
         project: { key: this.projectKey },

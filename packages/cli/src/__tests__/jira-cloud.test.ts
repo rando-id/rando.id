@@ -108,6 +108,13 @@ describe('JiraCloudProvider', () => {
     })
   })
 
+  it('createIssue refuses --milestone with a clear error (Jira has no equivalent)', async () => {
+    const stub = stubFetch([])
+    await expect(adapter(stub).createIssue({ summary: 'X', milestone: 'v0.1' })).rejects.toThrow(
+      /Milestones are not supported by the Jira adapter/,
+    )
+  })
+
   it('createIssue omits description + labels when not provided', async () => {
     const stub = stubFetch([{ status: 201, body: { key: 'RANDO-43' } }])
     await adapter(stub).createIssue({ summary: 'no body' })

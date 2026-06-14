@@ -112,19 +112,29 @@ export function listCommits(
 }
 
 /**
- * Pull Jira keys out of `Refs:` footers in a commit message. Supports
- * comma- or space-separated values for the multi-ticket PR case, and
- * is forgiving about leading whitespace (some editors strip, some
- * don't). Only well-formed PROJ-N keys are returned.
+ * Pull issue keys out of `Fixes:` / `Closes:` / `Resolves:` / `Refs:`
+ * footers in a commit message. Accepts:
+ *   - GitHub keys: `#42`
+ *   - Jira keys:   `RANDO-42`
+ *
+ * Multi-ticket commits use comma or whitespace separation
+ * (`Fixes: #5, #6` or `Fixes: #5 #6`). Leading whitespace on the
+ * footer line is tolerated (some editors strip, some don't).
+ *
+ * The Fixes/Closes/Resolves keywords are GitHub's auto-close
+ * trigger words — recognized server-side on PR merge. Refs is
+ * kept as a back-compat alias for any existing history.
  */
 export function parseJiraRefs(message: string): string[] {
   const keys: string[] = []
   for (const line of message.split('\n')) {
-    const m = line.match(/^\s*Refs:\s*(.+?)\s*$/i)
+    const m = line.match(/^\s*(?:Fixes|Closes|Resolves|Refs):\s*(.+?)\s*$/i)
     if (!m) continue
     for (const part of (m[1] ?? '').split(/[,\s]+/)) {
       const trimmed = part.trim()
-      if (/^[A-Z][A-Z0-9_]*-\d+$/.test(trimmed)) keys.push(trimmed)
+      if (/^#\d+$/.test(trimmed) || /^[A-Z][A-Z0-9_]*-\d+$/.test(trimmed)) {
+        keys.push(trimmed)
+      }
     }
   }
   return keys

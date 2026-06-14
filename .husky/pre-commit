@@ -1,36 +1,47 @@
 #!/usr/bin/env sh
-# Pre-commit pipeline:
-#   1. lint-staged formats/lints staged files
-#   2. if the current branch has no cached issue key and a tracker is
-#      configured, prompt for one (picker writes to git config)
+# Husky invokes us with `sh -e`, which would kill the script the moment
+# any command returns non-zero — and `git config <missing-key>` returns 1.
+# Turn it off; we do explicit exit-code checks below.
+set +e
+
+# Pre-commit pipeline (picker first, lint-staged second):
 #
-# Step 2 used to live in prepare-commit-msg but lint-staged's
-# stash/restore dance disturbs the TTY for that hook, so prompts
-# silently failed. Doing it here — before lint-staged hands off to
-# git's commit-message phase — keeps the picker on a clean TTY.
+#   1. If the current branch has no cached issue key and a tracker is
+#      configured, prompt for one.
+#   2. lint-staged formats/lints staged files.
+#
+# Picker-first because lint-staged's stash/restore dance disturbs
+# subsequent commands enough that the picker fails after it runs.
+# Going first dodges that entirely. Git invokes hooks with
+# stdin=/dev/null so the picker still needs an explicit /dev/tty
+# redirect either way.
+#
+# After the picker, the key is in `git config branch.<name>.jira-key`
+# and prepare-commit-msg reads it to append the `Fixes: #N` footer.
 
-# 1. lint-staged
+# ── 1. picker ──────────────────────────────────────────────────────────
+if [ -z "$RANDO_NO_JIRA" ]; then
+  branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+  if [ -n "$branch" ] && [ "$branch" != "HEAD" ]; then
+    key=$(git config "branch.$branch.jira-key" 2>/dev/null)
+    if [ -z "$key" ]; then
+      RANDO_BIN="$(git rev-parse --show-toplevel)/packages/cli/bin/rando.mjs"
+      # Probe: only enforce when a tracker is configured.
+      if "$RANDO_BIN" issues pick --check >/dev/null 2>&1; then
+        if [ ! -e /dev/tty ]; then
+          echo >&2
+          echo "✗ Commit blocked: no issue cached for branch '$branch' and no TTY to prompt." >&2
+          echo "  Set RANDO_NO_JIRA=1 for a one-off, or run \`rando issues pick\` first." >&2
+          exit 1
+        fi
+        if ! "$RANDO_BIN" issues pick --from-hook </dev/tty >/dev/tty 2>&1; then
+          echo "✗ Issue picker failed — commit aborted." >&2
+          exit 1
+        fi
+      fi
+    fi
+  fi
+fi
+
+# ── 2. lint-staged ─────────────────────────────────────────────────────
 pnpm exec lint-staged
-
-# 2. issue picker
-if [ -n "$RANDO_NO_JIRA" ]; then exit 0; fi
-
-branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-if [ -z "$branch" ] || [ "$branch" = "HEAD" ]; then exit 0; fi
-
-key=$(git config "branch.$branch.jira-key" 2>/dev/null)
-if [ -n "$key" ]; then exit 0; fi  # already cached — nothing to do
-
-RANDO_BIN="$(git rev-parse --show-toplevel)/packages/cli/bin/rando.mjs"
-
-# Probe: is a tracker even configured? --check exits 0 when yes, non-zero
-# when no. We only enforce when configured.
-if ! "$RANDO_BIN" issues pick --check >/dev/null 2>&1; then
-  exit 0
-fi
-
-# Picker runs in the existing TTY — no /dev/tty redirect needed because
-# pre-commit hasn't been wrapped by lint-staged's stash flow yet.
-if ! "$RANDO_BIN" issues pick --from-hook; then
-  exit 1
-fi

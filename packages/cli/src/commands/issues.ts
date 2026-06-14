@@ -274,18 +274,29 @@ export function issuesCommand(adapters: Adapters, io: Io, deps: IssuesCommandDep
     .description('Create a new issue in the configured project / repo.')
     .option('-d, --description <text>', 'Plain-text/markdown description body')
     .option('--label <label...>', 'Vendor labels to attach (repeatable)')
+    .option(
+      '-m, --milestone <ref>',
+      'Milestone to attach. Numeric id ("2") or exact title ("v0.1 — Feature parity"). GitHub only — Jira raises an error.',
+    )
     .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
     .option('--json', 'Emit raw JSON', false)
     .action(
       async (
         summaryArg: string | undefined,
-        opts: { description?: string; label?: string[]; config: string; json: boolean },
+        opts: {
+          description?: string
+          label?: string[]
+          milestone?: string
+          config: string
+          json: boolean
+        },
       ) => {
         const summary = await askOr(io, summaryArg, 'Issue summary:', 'summary')
         const result = await adapters.tracker({ configPath: opts.config }).createIssue({
           summary,
           description: opts.description,
           labels: opts.label,
+          milestone: opts.milestone,
         })
         emit(
           io,

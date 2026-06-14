@@ -1,6 +1,9 @@
 #!/usr/bin/env sh
-# Append `Refs: <ISSUE-KEY>` to the commit message based on the per-
-# branch cached key set by pre-commit's picker step.
+# Append `Fixes: <ISSUE-KEY>` to the commit message based on the per-
+# branch cached key set by pre-commit's picker step. `Fixes:` is a
+# GitHub auto-close keyword — when the PR merges, the referenced
+# issue gets closed automatically (and our CI sync workflow still
+# fires `lifecycle done` for the Jira case where that doesn't apply).
 #
 # This script only reads the cache and writes the footer — no prompts,
 # no TTY redirects. The picker logic moved to pre-commit (which owns the
@@ -17,7 +20,9 @@ esac
 
 if [ -n "$RANDO_NO_JIRA" ]; then exit 0; fi
 
-if grep -qE '^Refs: ' "$1" 2>/dev/null; then exit 0; fi
+# Both Fixes: (new) and Refs: (legacy) skip — covers re-commits + commit
+# templates that already include the footer.
+if grep -qiE '^(Fixes|Closes|Resolves|Refs): ' "$1" 2>/dev/null; then exit 0; fi
 
 branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
 if [ -z "$branch" ] || [ "$branch" = "HEAD" ]; then exit 0; fi
@@ -27,4 +32,4 @@ key=$(git config "branch.$branch.jira-key" 2>/dev/null)
 # 'skip' sentinel = per-branch opt-out from picker. No footer.
 if [ "$key" = "skip" ] || [ -z "$key" ]; then exit 0; fi
 
-printf '\nRefs: %s\n' "$key" >> "$1"
+printf '\nFixes: %s\n' "$key" >> "$1"

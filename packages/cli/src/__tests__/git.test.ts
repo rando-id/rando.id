@@ -155,6 +155,24 @@ describe('parseJiraRefs', () => {
     const { parseJiraRefs } = await import('../git')
     expect(parseJiraRefs('msg\n\n  Refs: RANDO-9')).toEqual(['RANDO-9'])
   })
+
+  it('recognizes Fixes/Closes/Resolves keywords (GitHub auto-close triggers)', async () => {
+    const { parseJiraRefs } = await import('../git')
+    expect(parseJiraRefs('msg\n\nFixes: #5')).toEqual(['#5'])
+    expect(parseJiraRefs('msg\n\nCloses: #6')).toEqual(['#6'])
+    expect(parseJiraRefs('msg\n\nResolves: #7')).toEqual(['#7'])
+    expect(parseJiraRefs('msg\n\nfixes: #8')).toEqual(['#8']) // case-insensitive
+  })
+
+  it('parses GitHub #N keys alongside Jira PROJ-N keys', async () => {
+    const { parseJiraRefs } = await import('../git')
+    expect(parseJiraRefs('msg\n\nFixes: #5, RANDO-2, #6')).toEqual(['#5', 'RANDO-2', '#6'])
+  })
+
+  it('rejects malformed GitHub-style refs (#x, #, owner/repo#N for now)', async () => {
+    const { parseJiraRefs } = await import('../git')
+    expect(parseJiraRefs('msg\n\nFixes: #x, #, #-1')).toEqual([])
+  })
 })
 
 describe('defaultGitRunner', () => {
