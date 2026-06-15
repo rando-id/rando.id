@@ -99,6 +99,19 @@ export const SetupConfigSchema = z.object({
         .optional(),
     })
     .optional(),
+
+  /**
+   * Postman workspace integration. Optional — `rando api postman sync`
+   * + `rando init`'s Postman step both read this. workspaceId can also
+   * be passed via --workspace on the CLI.
+   */
+  postman: z
+    .object({
+      workspaceId: z.string().min(1).optional(),
+      /** Collection name shown in Postman. Defaults to "Rando API". */
+      collectionName: z.string().min(1).optional(),
+    })
+    .optional(),
 })
 
 export type SetupConfig = z.infer<typeof SetupConfigSchema>

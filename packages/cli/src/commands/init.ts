@@ -9,7 +9,7 @@
 //      the user at the config schema if it's missing).
 //   5. Final doctor sweep so the user sees the green table.
 
-import { copyFileSync, existsSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Command } from 'commander'
 import type { Adapters } from '../config'
@@ -28,6 +28,36 @@ import { readEnv, setEnvValue, writeEnv } from '../init/env-file'
 
 const DEFAULT_CONFIG_PATH = 'rando.config.json'
 
+/**
+ * Read `postman.workspaceId` from rando.config.json. Returns undefined
+ * when the field, the postman block, or the whole file is missing —
+ * each is a "user hasn't set this up yet" signal, not an error.
+ */
+function readPostmanWorkspaceId(configPath: string): string | undefined {
+  try {
+    const raw = readFileSync(resolve(process.cwd(), configPath), 'utf-8')
+    const parsed = JSON.parse(raw) as { postman?: { workspaceId?: string } }
+    return parsed.postman?.workspaceId
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Write `postman.workspaceId` into rando.config.json, preserving
+ * everything else. Reads → mutates → writes back with 2-space indent
+ * + a trailing newline to match the existing file style.
+ */
+function writePostmanWorkspaceId(configPath: string, workspaceId: string): void {
+  const path = resolve(process.cwd(), configPath)
+  const raw = readFileSync(path, 'utf-8')
+  const parsed = JSON.parse(raw) as Record<string, unknown> & {
+    postman?: { workspaceId?: string }
+  }
+  parsed.postman = { ...(parsed.postman ?? {}), workspaceId }
+  writeFileSync(path, JSON.stringify(parsed, null, 2) + '\n', 'utf-8')
+}
+
 /** Help text shown above each token prompt — terse one-liner per var. */
 const TOKEN_HELP: Record<string, string> = {
   GITHUB_TOKEN: 'GitHub PAT (fine-grained, Read+Write Issues on the repo) — or `gh auth token`',
@@ -40,6 +70,8 @@ const TOKEN_HELP: Record<string, string> = {
   JIRA_BASE_URL: 'https://<workspace>.atlassian.net (no trailing slash)',
   JIRA_EMAIL: 'Your Atlassian account email',
   JIRA_API_TOKEN: 'Jira API token from https://id.atlassian.com/manage-profile/security/api-tokens',
+  POSTMAN_API_KEY:
+    'Postman API key from https://web.postman.co/settings/me/api-keys (used by `rando api postman sync`)',
 }
 
 export function initCommand(adapters: Adapters, io: Io): Command {
@@ -174,7 +206,57 @@ export function initCommand(adapters: Adapters, io: Io): Command {
         }
       }
 
-      // 5. Final sweep — full doctor. Helps the user see what's still
+      // 5. Postman workspace selection — only when POSTMAN_API_KEY is set
+      //    (validated by the env loop above). If the config already
+      //    has a workspaceId, skip silently. Otherwise list the user's
+      //    workspaces, let them pick, write to rando.config.json.
+      if (process.env.POSTMAN_API_KEY) {
+        try {
+          const postman = adapters.postman()
+          const existingWsId = readPostmanWorkspaceId(opts.config)
+          if (!existingWsId) {
+            io.stdout('')
+            io.stdout(colors.bold('Postman: pick a workspace for OpenAPI sync'))
+            const me = await postman.getMyself()
+            io.stdout(`  ${colors.hint(`signed in as ${me.fullName} (@${me.username})`)}`)
+            const workspaces = await postman.listWorkspaces()
+            if (workspaces.length === 0) {
+              io.stdout(
+                `  ${colors.warn('no workspaces — create one at https://web.postman.co then re-run init')}`,
+              )
+            } else {
+              const chosen = await io.select(
+                'Which workspace should hold the Rando API collection?',
+                workspaces.map((w) => ({
+                  name: `${w.name} (${w.type})`,
+                  value: w.id,
+                  description: w.id,
+                })),
+              )
+              try {
+                writePostmanWorkspaceId(opts.config, chosen)
+                io.stdout(
+                  `  ${colors.success('✓')} postman.workspaceId = ${colors.resource(chosen)} → ${opts.config}`,
+                )
+              } catch (e) {
+                io.stdout(
+                  `  ${colors.warn("couldn't write to rando.config.json:")} ${e instanceof Error ? e.message : String(e)}`,
+                )
+                io.stdout(
+                  `  ${colors.hint(`add { "postman": { "workspaceId": "${chosen}" } } to rando.config.json manually`)}`,
+                )
+              }
+            }
+          }
+        } catch (e) {
+          io.stdout('')
+          io.stdout(
+            `${colors.warn('Postman setup skipped:')} ${e instanceof Error ? e.message : String(e)}`,
+          )
+        }
+      }
+
+      // 6. Final sweep — full doctor. Helps the user see what's still
       //    on the table (config gaps, missing local tooling, etc.).
       //    Re-load adapters from the freshly-written .env so the table
       //    reflects what's on disk, not what was in process.env at
@@ -194,7 +276,7 @@ export function initCommand(adapters: Adapters, io: Io): Command {
       ])
       renderReport(io, report)
 
-      // 6. Suggested next commands — only shown when the env is in a
+      // 7. Suggested next commands — only shown when the env is in a
       //    usable state. Skip if anything failed so the user fixes
       //    those first.
       if (!report.hasFailures) {

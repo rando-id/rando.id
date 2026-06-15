@@ -1,9 +1,13 @@
-import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { run } from '../cli'
 import type { Adapters } from '../config'
 import type { DbProvider } from '../domain/db'
 import type { DeployProvider } from '../domain/deploy'
 import type { DnsProvider } from '../domain/dns'
+import type { PostmanProvider } from '../domain/postman'
 import type { IssueTrackerProvider } from '../domain/tracker'
 import type { TunnelProvider } from '../domain/tunnel'
 import { captureIo } from './helpers'
@@ -16,6 +20,7 @@ function mockAdapters(
     dns: DnsProvider
     deploy: DeployProvider
     tracker: IssueTrackerProvider
+    postman: PostmanProvider
   }>,
 ): Adapters {
   return {
@@ -24,6 +29,7 @@ function mockAdapters(
     dns: () => overrides.dns ?? notConfigured('dns'),
     deploy: () => overrides.deploy ?? notConfigured('deploy'),
     tracker: () => overrides.tracker ?? notConfigured('tracker'),
+    postman: () => overrides.postman ?? notConfigured('postman'),
   }
 }
 
@@ -420,5 +426,131 @@ describe('destructive commands — confirm + --yes', () => {
     })
     expect(io.confirmCalls).toHaveLength(1)
     expect(dns.removeRecord).not.toHaveBeenCalled()
+  })
+})
+
+describe('api postman sync', () => {
+  let tmpDir: string
+  const originalFetch = globalThis.fetch
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'rando-api-test-'))
+  })
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true })
+    globalThis.fetch = originalFetch
+  })
+
+  function writeSpec(): string {
+    const path = join(tmpDir, 'openapi.json')
+    writeFileSync(path, JSON.stringify({ openapi: '3.0.0', paths: {} }))
+    return path
+  }
+
+  it('replaces an existing collection when one with the same name exists', async () => {
+    const postman: Partial<PostmanProvider> = {
+      findCollectionByName: vi.fn(async () => ({ id: 'c-old', uid: 'u-old', name: 'Rando API' })),
+      deleteCollection: vi.fn(async () => {}),
+      importOpenApi: vi.fn(async () => ({ id: 'c-new', uid: 'u-new', name: 'Rando API' })),
+    }
+    const io = captureIo()
+    await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1'], {
+      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(postman.deleteCollection).toHaveBeenCalledWith('c-old')
+    expect(postman.importOpenApi).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      spec: { openapi: '3.0.0', paths: {} },
+    })
+    const out = io.stdout.join('\n')
+    expect(out).toContain('replaced')
+    expect(out).toContain('https://web.postman.co/workspace/ws-1/collection/u-new')
+  })
+
+  it('creates a new collection when no previous one exists', async () => {
+    const postman: Partial<PostmanProvider> = {
+      findCollectionByName: vi.fn(async () => null),
+      deleteCollection: vi.fn(async () => {}),
+      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
+    }
+    const io = captureIo()
+    await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1'], {
+      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(postman.deleteCollection).not.toHaveBeenCalled()
+    expect(io.stdout.join('\n')).toContain('created')
+  })
+
+  it('fails clearly when no workspace can be resolved', async () => {
+    const postman: Partial<PostmanProvider> = {
+      findCollectionByName: vi.fn(),
+      importOpenApi: vi.fn(),
+    }
+    const io = captureIo()
+    const exitCalls: number[] = []
+    await run(
+      ['api', 'postman', 'sync', '--spec', writeSpec(), '--config', join(tmpDir, 'missing.json')],
+      {
+        adapters: mockAdapters({ postman: postman as PostmanProvider }),
+        io: io.io,
+        exit: ((c: number) => {
+          exitCalls.push(c)
+        }) as never,
+      },
+    )
+    expect(exitCalls[0]).toBe(1)
+    expect(io.stderr.join('\n')).toMatch(/No Postman workspace/)
+    expect(postman.findCollectionByName).not.toHaveBeenCalled()
+  })
+
+  it('--json emits structured output instead of human summary', async () => {
+    const postman: Partial<PostmanProvider> = {
+      findCollectionByName: vi.fn(async () => null),
+      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
+    }
+    const io = captureIo()
+    await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1', '--json'], {
+      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    const json = JSON.parse(io.stdout.join(''))
+    expect(json).toMatchObject({
+      ok: true,
+      replaced: false,
+      collection: { uid: 'u-1', name: 'Rando API' },
+      url: 'https://web.postman.co/workspace/ws-1/collection/u-1',
+    })
+  })
+
+  it('reads workspaceId from rando.config.json when --workspace is omitted', async () => {
+    const configPath = join(tmpDir, 'rando.config.json')
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        project: 'rando',
+        repo: 'rando-id/rando',
+        domains: { nonProd: 'rando-id.dev', production: 'rando.id' },
+        apps: [{ name: 'api', rootDirectory: 'apps/api', port: 4000 }],
+        postman: { workspaceId: 'ws-from-config' },
+      }),
+    )
+    const postman: Partial<PostmanProvider> = {
+      findCollectionByName: vi.fn(async () => null),
+      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
+    }
+    const io = captureIo()
+    await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--config', configPath], {
+      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(postman.importOpenApi).toHaveBeenCalledWith(
+      expect.objectContaining({ workspaceId: 'ws-from-config' }),
+    )
   })
 })

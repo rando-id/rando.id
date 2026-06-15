@@ -126,6 +126,7 @@ Env vars (set in your shell or in repo-root `.env`):
 | `JIRA_BASE_URL`         | `issues` (when tracker.kind="jira")   |
 | `JIRA_EMAIL`            | `issues` (when tracker.kind="jira")   |
 | `JIRA_API_TOKEN`        | `issues` (when tracker.kind="jira")   |
+| `POSTMAN_API_KEY`       | `api postman sync` (optional)         |
 
 A repo-root `.env` is auto-loaded via Node's `--env-file-if-exists` flag
 in the bin shebang — no `source .env` needed. Shell-exported vars still
@@ -254,6 +255,23 @@ repo, the statuses the adapter exposes, and the lifecycle map from
 `rando.config.json` with any unmapped slots called out.
 
 Reference: <https://developer.atlassian.com/cloud/jira/platform/basic-auth-for-rest-apis/>
+
+#### `POSTMAN_API_KEY` (optional — only needed for `api postman sync`)
+
+If you're not using Postman, leave this unset and skip the `api postman`
+commands; everything else works.
+
+1. Sign in at <https://web.postman.co>.
+2. Avatar (top right) → **Settings** → **API keys**, or go to
+   <https://web.postman.co/settings/me/api-keys>.
+3. **Generate API key**. Label it `rando-cli`.
+4. Copy the value — Postman only displays it once.
+5. The key uses `X-Api-Key` header auth (no `Bearer` prefix); `rando init`
+   validates it for you by calling `GET /me`.
+
+`rando init` will also offer to pick a default workspace and write the id
+into `rando.config.json` (`postman.workspaceId`) so `rando api postman sync`
+runs with no flags by default.
 
 #### `VERCEL_TEAM_ID` (only if your projects live in a team)
 
@@ -556,6 +574,32 @@ Wraps the muscle-memory of "is Docker up? is cloudflared up? did I run
 
 If any child exits with a non-zero code, the others are torn down and
 the supervisor exits non-zero too.
+
+### `api` — API surface tooling
+
+```
+rando api postman sync [--spec <urlOrPath>] [--workspace <id>] [--name <name>] [--config <path>] [--json]
+```
+
+**`postman sync`** pushes the auto-generated OpenAPI spec at
+`/v1/openapi.json` into a Postman workspace as a collection. The sync
+is idempotent: if a collection with the same name already exists in
+that workspace, it's deleted and re-imported (Postman has no in-place
+OpenAPI-update endpoint we can rely on, so each sync issues a fresh
+collection id — your saved environments and requests should live in
+the workspace, not on the collection).
+
+Defaults:
+
+- `--spec` is `http://localhost:4000/v1/openapi.json` (point it at a
+  deployed env or a local file when needed).
+- `--workspace` reads from `postman.workspaceId` in `rando.config.json`
+  when omitted. `rando init` will help you pick one and write it.
+- `--name` is `"Rando API"`.
+
+CI shape (see issue #59) plus the doctor check are both wired off
+`POSTMAN_API_KEY` — set it in `.env` to opt in. Without it, the rest
+of the CLI still works.
 
 ### `dns` — DNS records
 

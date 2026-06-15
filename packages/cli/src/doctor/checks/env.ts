@@ -82,6 +82,14 @@ const TOKENS: EnvTokenSpec[] = [
     probe: async () => {},
     optional: true,
   },
+  {
+    name: 'POSTMAN_API_KEY',
+    label: 'POSTMAN_API_KEY (rando api postman sync)',
+    probe: async (a) => {
+      await a.postman().getMyself()
+    },
+    optional: true,
+  },
 ]
 
 export function envChecks(adapters: Adapters, env: NodeJS.ProcessEnv = process.env): Check[] {

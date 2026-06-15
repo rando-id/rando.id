@@ -21,6 +21,7 @@ brew "postgresql@16"    # pg_dump / pg_restore for `rando db copy`; version matc
 
 # ── Local infra ───────────────────────────────────────────────────────
 brew "cloudflared"      # Cloudflare Tunnel — used by `rando dev` for the public dev URL
+brew "postman-cli"      # `postman` — used by `rando api postman sync` + #59 CI runs
 
 # ── Container runtime — pick whichever you prefer ─────────────────────
 # OrbStack is the lighter-weight default. Swap for `cask "docker"` if

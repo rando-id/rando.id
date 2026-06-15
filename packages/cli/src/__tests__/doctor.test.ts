@@ -28,6 +28,7 @@ function fakeAdapters(overrides: Partial<Adapters> = {}): Adapters {
     dns: never,
     deploy: never,
     tracker: never,
+    postman: never,
     ...overrides,
   }
 }

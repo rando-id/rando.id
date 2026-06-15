@@ -12,6 +12,7 @@ import type { DbProvider } from './domain/db'
 import type { DeployProvider } from './domain/deploy'
 import type { DnsProvider } from './domain/dns'
 import type { IssueTrackerProvider } from './domain/tracker'
+import type { PostmanProvider } from './domain/postman'
 import type { TunnelProvider } from './domain/tunnel'
 import { MissingConfigError } from './domain/errors'
 import { NeonDbProvider } from './adapters/neon'
@@ -19,6 +20,7 @@ import { CloudflareTunnelProvider } from './adapters/cloudflare-tunnel'
 import { CloudflareDnsProvider } from './adapters/cloudflare-dns'
 import { GitHubIssuesProvider } from './adapters/github-issues'
 import { JiraCloudProvider } from './adapters/jira-cloud'
+import { PostmanRestProvider } from './adapters/postman'
 import { VercelDeployProvider } from './adapters/vercel'
 import { loadSetupConfig } from './setup-config'
 
@@ -46,6 +48,10 @@ const GitHubEnv = z.object({
   GITHUB_TOKEN: z.string().min(1),
 })
 
+const PostmanEnv = z.object({
+  POSTMAN_API_KEY: z.string().min(1),
+})
+
 export interface Adapters {
   db(): DbProvider
   tunnel(): TunnelProvider
@@ -56,6 +62,8 @@ export interface Adapters {
    * `tracker.kind` in rando.config.json.
    */
   tracker(opts?: { configPath?: string }): IssueTrackerProvider
+  /** Postman REST API — for `rando api postman sync`. */
+  postman(): PostmanProvider
 }
 
 /**
@@ -125,6 +133,11 @@ export function createAdapters(env: NodeJS.ProcessEnv = process.env): Adapters {
         })
       }
       throw new Error(`tracker.kind="${tracker.kind satisfies never}" is not a supported tracker`)
+    },
+    postman: () => {
+      const parsed = PostmanEnv.safeParse(env)
+      if (!parsed.success) throw missingVar(parsed.error, 'postman')
+      return new PostmanRestProvider({ apiKey: parsed.data.POSTMAN_API_KEY })
     },
   }
 }
