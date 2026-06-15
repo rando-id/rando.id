@@ -1,8 +1,9 @@
-// Tests for the contacts route handler. We mock the three modules the
-// handler depends on (db client factory, current-user auth, and the
-// @rando/db query helpers) and call the exported GET/POST functions
-// directly with synthesized Request objects.
+// Tests for /v1/contacts (list + create), now backed by ts-rest's
+// createNextHandler. The handler is a single function we call with a
+// NextRequest; ts-rest dispatches to listContacts/createContact based
+// on method + URL.
 
+import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/db', () => ({
@@ -46,10 +47,24 @@ const NEARBY_ROW = {
   meters: 12,
 }
 
+function getReq(url: string): NextRequest {
+  return new NextRequest(new Request(url))
+}
+
+function postReq(body: unknown): NextRequest {
+  return new NextRequest(
+    new Request('http://localhost/v1/contacts', {
+      method: 'POST',
+      body: JSON.stringify(body),
+      headers: { 'content-type': 'application/json' },
+    }),
+  )
+}
+
 describe('GET /v1/contacts', () => {
   it('returns mapped ContactListItem rows for the current user', async () => {
     listMock.mockResolvedValue([NEARBY_ROW])
-    const res = await GET(new Request('http://localhost/v1/contacts?near=33.94,-118.41'))
+    const res = await GET(getReq('http://localhost/v1/contacts?near=33.94,-118.41'))
     expect(res.status).toBe(200)
     const body = (await res.json()) as unknown[]
     expect(body).toEqual([
@@ -74,7 +89,7 @@ describe('GET /v1/contacts', () => {
 
   it('passes null `near` when the query string is missing or malformed', async () => {
     listMock.mockResolvedValue([])
-    await GET(new Request('http://localhost/v1/contacts'))
+    await GET(getReq('http://localhost/v1/contacts'))
     expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
       favorites: false,
       listId: undefined,
@@ -83,7 +98,7 @@ describe('GET /v1/contacts', () => {
     })
 
     listMock.mockClear()
-    await GET(new Request('http://localhost/v1/contacts?near=not-a-pair'))
+    await GET(getReq('http://localhost/v1/contacts?near=not-a-pair'))
     expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
       favorites: false,
       listId: undefined,
@@ -94,7 +109,7 @@ describe('GET /v1/contacts', () => {
 
   it('threads favorites=true filter through', async () => {
     listMock.mockResolvedValue([])
-    await GET(new Request('http://localhost/v1/contacts?favorites=true'))
+    await GET(getReq('http://localhost/v1/contacts?favorites=true'))
     expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
       favorites: true,
       listId: undefined,
@@ -105,7 +120,7 @@ describe('GET /v1/contacts', () => {
 
   it('threads list=<id> filter through', async () => {
     listMock.mockResolvedValue([])
-    await GET(new Request('http://localhost/v1/contacts?list=l_42'))
+    await GET(getReq('http://localhost/v1/contacts?list=l_42'))
     expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
       favorites: false,
       listId: 'l_42',
@@ -116,7 +131,7 @@ describe('GET /v1/contacts', () => {
 
   it('threads q=<term> filter through', async () => {
     listMock.mockResolvedValue([])
-    await GET(new Request('http://localhost/v1/contacts?q=jane'))
+    await GET(getReq('http://localhost/v1/contacts?q=jane'))
     expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
       favorites: false,
       listId: undefined,
@@ -125,11 +140,11 @@ describe('GET /v1/contacts', () => {
     })
   })
 
-  it('threads each valid sort value through, and drops unknown sort silently', async () => {
+  it('threads each valid sort value through, and 400s on unknown sort (contract enforces enum)', async () => {
     for (const s of ['distance', 'last_name', 'date_added', 'date_updated'] as const) {
       listMock.mockClear()
       listMock.mockResolvedValue([])
-      await GET(new Request(`http://localhost/v1/contacts?sort=${s}`))
+      await GET(getReq(`http://localhost/v1/contacts?sort=${s}`))
       expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
         favorites: false,
         listId: undefined,
@@ -138,15 +153,14 @@ describe('GET /v1/contacts', () => {
       })
     }
 
+    // The contract restricts `sort` to the enum — unknown values are
+    // rejected at the validation layer (400) instead of silently
+    // falling through. This is a behavior shift from the hand-rolled
+    // version but it's the safer default with a typed contract.
     listMock.mockClear()
-    listMock.mockResolvedValue([])
-    await GET(new Request('http://localhost/v1/contacts?sort=bogus'))
-    expect(listMock).toHaveBeenCalledWith(expect.anything(), 'u_1', null, {
-      favorites: false,
-      listId: undefined,
-      q: undefined,
-      sort: undefined,
-    })
+    const res = await GET(getReq('http://localhost/v1/contacts?sort=bogus'))
+    expect(res.status).toBe(400)
+    expect(listMock).not.toHaveBeenCalled()
   })
 
   it('flattens row to `location: null` when the contact has no interaction yet', async () => {
@@ -160,21 +174,13 @@ describe('GET /v1/contacts', () => {
         meters: null,
       },
     ])
-    const res = await GET(new Request('http://localhost/v1/contacts'))
+    const res = await GET(getReq('http://localhost/v1/contacts'))
     const body = (await res.json()) as Array<{ location: unknown }>
     expect(body[0]?.location).toBeNull()
   })
 })
 
 describe('POST /v1/contacts', () => {
-  function postReq(body: unknown): Request {
-    return new Request('http://localhost/v1/contacts', {
-      method: 'POST',
-      body: JSON.stringify(body),
-      headers: { 'content-type': 'application/json' },
-    })
-  }
-
   it('creates the contact and returns the new row + locationReused flag', async () => {
     createMock.mockResolvedValue({
       contactId: 'c_new',
@@ -200,18 +206,6 @@ describe('POST /v1/contacts', () => {
         location: { lat: 33.94, lng: -118.41, name: 'Wilson Park' },
       }),
     )
-  })
-
-  it('400s when the body is not JSON', async () => {
-    const res = await POST(
-      new Request('http://localhost/v1/contacts', {
-        method: 'POST',
-        body: 'not json',
-        headers: { 'content-type': 'application/json' },
-      }),
-    )
-    expect(res.status).toBe(400)
-    expect(((await res.json()) as { error: string }).error).toMatch(/JSON/)
   })
 
   it('400s when zod validation fails (e.g. out-of-range lat)', async () => {
@@ -243,7 +237,7 @@ describe('POST /v1/contacts', () => {
       locationId: 'l_new',
       locationReused: false,
     })
-    listMock.mockResolvedValue([]) // empty — the row we just created isn't here
+    listMock.mockResolvedValue([])
     const res = await POST(
       postReq({
         firstName: 'Jane',

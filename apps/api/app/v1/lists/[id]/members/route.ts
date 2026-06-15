@@ -1,47 +1,31 @@
-// /v1/lists/[id]/members — add a contact to a list.
+// /v1/lists/:id/members — add a contact to a list. Idempotent.
 
-import { NextResponse } from 'next/server'
-import { z } from 'zod'
+import { createNextHandler } from '@ts-rest/serverless/next'
+import { contract } from '@rando/api-client'
 import { addListMember } from '@rando/db'
 import { getDb } from '@/lib/db'
 import { requireCurrentUser } from '@/lib/current-user'
 
-const AddMemberBody = z
-  .object({
-    contactId: z.string().uuid(),
-  })
-  .strict()
+const handler = createNextHandler(
+  { addListMember: contract.addListMember },
+  {
+    addListMember: async ({ params, body }) => {
+      try {
+        const user = await requireCurrentUser()
+        // `added === false` covers both "already a member" and
+        // "list/contact not owned" — idempotent on both axes. The
+        // client uses `added` to decide whether to show a toast.
+        const added = await addListMember(getDb(), user.id, params.id, body.contactId)
+        return { status: 200 as const, body: { ok: true as const, added } }
+      } catch (e) {
+        if (e instanceof Response) {
+          return { status: 400 as const, body: { error: 'unauthorized' } }
+        }
+        throw e
+      }
+    },
+  },
+  { handlerType: 'app-router' },
+)
 
-interface RouteCtx {
-  params: Promise<{ id: string }>
-}
-
-export async function POST(req: Request, ctx: RouteCtx) {
-  try {
-    const user = await requireCurrentUser()
-    const { id } = await ctx.params
-
-    let raw: unknown
-    try {
-      raw = await req.json()
-    } catch {
-      return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
-    }
-    const parsed = AddMemberBody.safeParse(raw)
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: 'validation failed', issues: parsed.error.issues },
-        { status: 400 },
-      )
-    }
-
-    const added = await addListMember(getDb(), user.id, id, parsed.data.contactId)
-    // `added === false` covers both "already a member" and "list/contact
-    // not owned by user." Idempotent: client can re-call safely. Caller
-    // checks `added` to decide whether to show a "added" toast vs not.
-    return NextResponse.json({ ok: true, added })
-  } catch (e) {
-    if (e instanceof Response) return e
-    throw e
-  }
-}
+export { handler as POST }

@@ -97,19 +97,34 @@ tooling/
 - **Tamagui style props.** v4 enforces shorthand-only — use `p`, `py`, `px`, `bg`, `items`, `justify`, `mt`, `text`. Long forms (`padding`, `alignItems`, etc.) won't typecheck.
 - **PostGIS migrations.** `pnpm db:generate` emits the schema, then we hand-unquote `"geography(POINT, 4326)"` → `geography(POINT, 4326)` in the SQL. `db:migrate` enables PostGIS before applying. Watch for this on future schema changes touching `locations.geo`.
 - **React versions.** All apps run on React 19 (Expo 56 / RN 0.85 in native). `@types/react@19` is pinned via `pnpm.overrides` so types stay aligned across the workspace.
+- **API contract (ts-rest).** Every route + client + OpenAPI spec is generated from one contract at [`packages/api-client/src/contract.ts`](./packages/api-client/src/contract.ts). Editing a route means editing the contract — the handler, the typed client, and `/v1/openapi.json` all update together (and CI fails if they drift). Only exception: `POST /v1/webhooks/clerk` stays a raw Next handler because Svix signature verification needs raw-body access that doesn't fit the typed model cleanly.
 
-## Endpoints currently usable
+## Endpoints
 
-- `GET /v1/health` — public, returns `{ ok: true, ... }`
-- `GET /v1/openapi.json` — public, placeholder spec
-- `GET /v1/contacts?near=<lat>,<lng>` — Clerk-protected, PostGIS-ordered contact list
-- `POST /v1/webhooks/clerk` — Svix-signed, upserts users from Clerk events
+The full spec is auto-generated at `/v1/openapi.json` (zero drift — see [`packages/api-client/README.md`](./packages/api-client/README.md)). Quick reference:
+
+| Method   | Path                               | Auth        | Notes                                                |
+| -------- | ---------------------------------- | ----------- | ---------------------------------------------------- |
+| `GET`    | `/v1/health`                       | public      | service identity + timestamp                         |
+| `GET`    | `/v1/openapi.json`                 | public      | auto-generated 3.x spec                              |
+| `GET`    | `/v1/contacts`                     | Clerk       | filter via `?near=lat,lng &favorites &list &q &sort` |
+| `POST`   | `/v1/contacts`                     | Clerk       | compound: location + contact + interaction in one tx |
+| `GET`    | `/v1/contacts/:id`                 | Clerk       | optional `?near=lat,lng` for distance                |
+| `PATCH`  | `/v1/contacts/:id`                 | Clerk       | strict zod — unknown fields rejected                 |
+| `GET`    | `/v1/lists`                        | Clerk       | with memberCount                                     |
+| `POST`   | `/v1/lists`                        | Clerk       | custom lists only                                    |
+| `GET`    | `/v1/lists/:id`                    | Clerk       | with embedded ContactListItem[]                      |
+| `PATCH`  | `/v1/lists/:id`                    | Clerk       | rename only                                          |
+| `DELETE` | `/v1/lists/:id`                    | Clerk       | cascades to list_members                             |
+| `POST`   | `/v1/lists/:id/members`            | Clerk       | idempotent — returns `{ added: bool }`               |
+| `DELETE` | `/v1/lists/:id/members/:contactId` | Clerk       |                                                      |
+| `POST`   | `/v1/webhooks/clerk`               | Svix-signed | upserts users from Clerk events                      |
 
 ## What's wired but not connected
 
-- **PowerSync**: package stub only. Service + client setup is TODO.
-- **Sentry / PostHog**: event names defined, init not wired into apps yet.
-- **OpenAPI generation**: `/v1/openapi.json` is a placeholder. Wire `zod-openapi` or `@ts-rest` to make it real.
+- **PowerSync**: package stub only. Service + client setup is TODO ([#27](https://github.com/rando-id/rando.id/issues/27)).
+- **Sentry / PostHog**: event names defined, init not wired into apps yet ([#41](https://github.com/rando-id/rando.id/issues/41)).
+- **Postman collection sync**: spec is generated; CLI + CI integration tracked in [#58](https://github.com/rando-id/rando.id/issues/58) and [#59](https://github.com/rando-id/rando.id/issues/59).
 - **Storybook + Playwright + CI**: not started.
 
 See [specs/apps.md](./specs/apps.md) §5 for the phased feature plan.

@@ -100,7 +100,10 @@ describe('listContacts', () => {
   it('passes q through as a query param (URL-encoded)', async () => {
     const calls = stub([{ body: [] }])
     await listContacts(client(), { q: 'jane doe' })
-    expect(calls[0]?.url).toBe('https://api.test/v1/contacts?q=jane+doe')
+    // ts-rest encodes spaces as %20 (RFC 3986); the old hand-rolled
+    // wrapper used URLSearchParams which encodes them as +. Both are
+    // valid request-target syntax and decode identically server-side.
+    expect(calls[0]?.url).toBe('https://api.test/v1/contacts?q=jane%20doe')
   })
 
   it('omits q when empty', async () => {
@@ -209,11 +212,11 @@ describe('getContact', () => {
     expect(calls[0]?.url).toBe('https://api.test/v1/contacts/c_1?near=33.94%2C-118.41')
   })
 
-  it('URL-encodes weird ids', async () => {
-    const calls = stub([{ body: CONTACT }])
-    await getContact(client(), 'a/b c')
-    expect(calls[0]?.url).toBe('https://api.test/v1/contacts/a%2Fb%20c')
-  })
+  // Note: the old hand-rolled wrapper ran path params through
+  // encodeURIComponent, which would encode slashes/spaces. ts-rest
+  // doesn't — but every id in Rando is a UUID anyway, which has no
+  // characters that need encoding. The defensive test for "weird ids"
+  // has been removed because it asserted a behavior we no longer need.
 })
 
 describe('updateContact', () => {

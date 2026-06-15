@@ -1,4 +1,14 @@
-import type { ApiClient } from './client'
+// Public wrappers around the typed ts-rest client for /v1/contacts*.
+// The contract owns URL building + header injection + body serialization;
+// these wrappers exist only to preserve the call-site shape that
+// web/native hooks have used since before the migration:
+//
+//   const items = await listContacts(client, { lat, lng, q, sort })
+//
+// The {lat,lng} pair is collapsed into the single `near` query param
+// that the contract declares.
+
+import { unwrap, type ApiClient } from './client'
 
 export type AvatarKind = 'photo' | 'gravatar' | 'monogram' | 'emoji' | 'random'
 
@@ -34,20 +44,25 @@ export type ListContactsQuery = {
   sort?: ContactSort
 }
 
+function nearStr(q: { lat?: number; lng?: number }): string | undefined {
+  return q.lat != null && q.lng != null ? `${q.lat},${q.lng}` : undefined
+}
+
 export async function listContacts(
   client: ApiClient,
   query: ListContactsQuery = {},
 ): Promise<ContactListItem[]> {
-  const params = new URLSearchParams()
-  if (query.lat != null && query.lng != null) {
-    params.set('near', `${query.lat},${query.lng}`)
-  }
-  if (query.favorites) params.set('favorites', 'true')
-  if (query.listId) params.set('list', query.listId)
-  if (query.q) params.set('q', query.q)
-  if (query.sort) params.set('sort', query.sort)
-  const path = params.toString() ? `/v1/contacts?${params}` : '/v1/contacts'
-  return client.request<ContactListItem[]>(path)
+  const res = await client.tsRest.listContacts({
+    query: {
+      near: nearStr(query),
+      favorites: query.favorites ? 'true' : undefined,
+      list: query.listId,
+      // Drop empty `q` so we never send `?q=` (matches old behavior).
+      q: query.q && query.q.length > 0 ? query.q : undefined,
+      sort: query.sort,
+    },
+  })
+  return unwrap(res, '/v1/contacts') as ContactListItem[]
 }
 
 export type CreateContactInput = {
@@ -63,7 +78,7 @@ export type CreateContactInput = {
     address?: string | null
   }
   interaction?: {
-    metAt?: string // ISO timestamp
+    metAt?: string
     notes?: string | null
   }
 }
@@ -77,10 +92,8 @@ export async function createContact(
   client: ApiClient,
   input: CreateContactInput,
 ): Promise<CreateContactResult> {
-  return client.request<CreateContactResult>('/v1/contacts', {
-    method: 'POST',
-    body: JSON.stringify(input),
-  })
+  const res = await client.tsRest.createContact({ body: input })
+  return unwrap(res, '/v1/contacts') as CreateContactResult
 }
 
 export type GetContactQuery = { lat?: number; lng?: number }
@@ -90,14 +103,11 @@ export async function getContact(
   id: string,
   query: GetContactQuery = {},
 ): Promise<ContactListItem> {
-  const params = new URLSearchParams()
-  if (query.lat != null && query.lng != null) {
-    params.set('near', `${query.lat},${query.lng}`)
-  }
-  const path = params.toString()
-    ? `/v1/contacts/${encodeURIComponent(id)}?${params}`
-    : `/v1/contacts/${encodeURIComponent(id)}`
-  return client.request<ContactListItem>(path)
+  const res = await client.tsRest.getContact({
+    params: { id },
+    query: { near: nearStr(query) },
+  })
+  return unwrap(res, `/v1/contacts/${id}`) as ContactListItem
 }
 
 export type UpdateContactInput = {
@@ -114,15 +124,10 @@ export async function updateContact(
   patch: UpdateContactInput,
   query: GetContactQuery = {},
 ): Promise<ContactListItem> {
-  const params = new URLSearchParams()
-  if (query.lat != null && query.lng != null) {
-    params.set('near', `${query.lat},${query.lng}`)
-  }
-  const path = params.toString()
-    ? `/v1/contacts/${encodeURIComponent(id)}?${params}`
-    : `/v1/contacts/${encodeURIComponent(id)}`
-  return client.request<ContactListItem>(path, {
-    method: 'PATCH',
-    body: JSON.stringify(patch),
+  const res = await client.tsRest.updateContact({
+    params: { id },
+    query: { near: nearStr(query) },
+    body: patch,
   })
+  return unwrap(res, `/v1/contacts/${id}`) as ContactListItem
 }

@@ -1,13 +1,12 @@
-// /v1/lists/[id] — GET (with members embedded), PATCH (rename), DELETE.
+// /v1/lists/:id — get-with-members + rename + delete, one ts-rest handler.
 
-import { NextResponse } from 'next/server'
-import { z } from 'zod'
-import type { ContactListItem, ListWithMembers } from '@rando/api-client'
+import { createNextHandler } from '@ts-rest/serverless/next'
+import { contract } from '@rando/api-client'
 import { deleteList, getContactsNearby, getListById, updateListName } from '@rando/db'
 import { getDb } from '@/lib/db'
 import { requireCurrentUser } from '@/lib/current-user'
 
-function parseNear(value: string | null): { lat: number; lng: number } | null {
+function parseNear(value: string | undefined): { lat: number; lng: number } | null {
   if (!value) return null
   const [latStr, lngStr] = value.split(',')
   const lat = parseFloat(latStr ?? '')
@@ -17,9 +16,7 @@ function parseNear(value: string | null): { lat: number; lng: number } | null {
   return { lat, lng }
 }
 
-function mapRow(
-  r: NonNullable<Awaited<ReturnType<typeof getContactsNearby>>[number]>,
-): ContactListItem {
+function mapMember(r: Awaited<ReturnType<typeof getContactsNearby>>[number]) {
   return {
     id: r.id,
     firstName: r.first_name,
@@ -41,99 +38,91 @@ function mapRow(
   }
 }
 
-interface RouteCtx {
-  params: Promise<{ id: string }>
-}
+const handler = createNextHandler(
+  {
+    getList: contract.getList,
+    updateList: contract.updateList,
+    deleteList: contract.deleteList,
+  },
+  {
+    getList: async ({ params, query }) => {
+      try {
+        const user = await requireCurrentUser()
+        const db = getDb()
+        const list = await getListById(db, user.id, params.id)
+        if (!list) return { status: 404 as const, body: { error: 'not found' } }
 
-export async function GET(req: Request, ctx: RouteCtx) {
-  try {
-    const user = await requireCurrentUser()
-    const { id } = await ctx.params
-    const url = new URL(req.url)
-    const near = parseNear(url.searchParams.get('near'))
+        const near = parseNear(query.near)
+        const memberRows = await getContactsNearby(db, user.id, near, { listId: params.id })
 
-    const db = getDb()
-    const list = await getListById(db, user.id, id)
-    if (!list) return NextResponse.json({ error: 'not found' }, { status: 404 })
+        return {
+          status: 200 as const,
+          body: {
+            id: list.id,
+            name: list.name,
+            kind: list.kind,
+            coverImage: list.coverImage,
+            createdAt: list.createdAt.toISOString(),
+            updatedAt: list.updatedAt.toISOString(),
+            memberCount: memberRows.length,
+            members: memberRows.map(mapMember),
+          },
+        }
+      } catch (e) {
+        if (e instanceof Response) {
+          return { status: 404 as const, body: { error: 'unauthorized' } }
+        }
+        throw e
+      }
+    },
 
-    const memberRows = await getContactsNearby(db, user.id, near, { listId: id })
+    updateList: async ({ params, body }) => {
+      try {
+        const user = await requireCurrentUser()
+        const db = getDb()
+        const affected = await updateListName(db, user.id, params.id, body.name)
+        if (affected === 0) {
+          return { status: 404 as const, body: { error: 'not found' } }
+        }
+        const fresh = await getListById(db, user.id, params.id)
+        if (!fresh) return { status: 404 as const, body: { error: 'not found' } }
+        return {
+          status: 200 as const,
+          body: {
+            id: fresh.id,
+            name: fresh.name,
+            kind: fresh.kind,
+            coverImage: fresh.coverImage,
+            createdAt: fresh.createdAt.toISOString(),
+            updatedAt: fresh.updatedAt.toISOString(),
+            memberCount: fresh.memberCount ?? 0,
+          },
+        }
+      } catch (e) {
+        if (e instanceof Response) {
+          return { status: 404 as const, body: { error: 'unauthorized' } }
+        }
+        throw e
+      }
+    },
 
-    const body: ListWithMembers = {
-      id: list.id,
-      name: list.name,
-      kind: list.kind,
-      coverImage: list.coverImage,
-      createdAt: list.createdAt.toISOString(),
-      updatedAt: list.updatedAt.toISOString(),
-      memberCount: memberRows.length,
-      members: memberRows.map(mapRow),
-    }
-    return NextResponse.json(body)
-  } catch (e) {
-    if (e instanceof Response) return e
-    throw e
-  }
-}
+    deleteList: async ({ params }) => {
+      try {
+        const user = await requireCurrentUser()
+        const affected = await deleteList(getDb(), user.id, params.id)
+        if (affected === 0) {
+          return { status: 404 as const, body: { error: 'not found' } }
+        }
+        return { status: 200 as const, body: { ok: true as const } }
+      } catch (e) {
+        if (e instanceof Response) {
+          return { status: 404 as const, body: { error: 'unauthorized' } }
+        }
+        throw e
+      }
+    },
+  },
+  { handlerType: 'app-router' },
+)
 
-const PatchBody = z
-  .object({
-    name: z.string().trim().min(1).max(120),
-  })
-  .strict()
-
-export async function PATCH(req: Request, ctx: RouteCtx) {
-  try {
-    const user = await requireCurrentUser()
-    const { id } = await ctx.params
-
-    let raw: unknown
-    try {
-      raw = await req.json()
-    } catch {
-      return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
-    }
-    const parsed = PatchBody.safeParse(raw)
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: 'validation failed', issues: parsed.error.issues },
-        { status: 400 },
-      )
-    }
-
-    const db = getDb()
-    const affected = await updateListName(db, user.id, id, parsed.data.name)
-    if (affected === 0) {
-      return NextResponse.json({ error: 'not found' }, { status: 404 })
-    }
-    const fresh = await getListById(db, user.id, id)
-    if (!fresh) return NextResponse.json({ error: 'not found' }, { status: 404 })
-    return NextResponse.json({
-      id: fresh.id,
-      name: fresh.name,
-      kind: fresh.kind,
-      coverImage: fresh.coverImage,
-      createdAt: fresh.createdAt.toISOString(),
-      updatedAt: fresh.updatedAt.toISOString(),
-      memberCount: fresh.memberCount ?? 0,
-    })
-  } catch (e) {
-    if (e instanceof Response) return e
-    throw e
-  }
-}
-
-export async function DELETE(_req: Request, ctx: RouteCtx) {
-  try {
-    const user = await requireCurrentUser()
-    const { id } = await ctx.params
-
-    const affected = await deleteList(getDb(), user.id, id)
-    if (affected === 0) {
-      return NextResponse.json({ error: 'not found' }, { status: 404 })
-    }
-    return NextResponse.json({ ok: true })
-  } catch (e) {
-    if (e instanceof Response) return e
-    throw e
-  }
-}
+export { handler as GET, handler as PATCH, handler as DELETE }
