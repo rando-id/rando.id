@@ -1,12 +1,7 @@
 import { clerkMiddleware, createRouteMatcher } from '@clerk/nextjs/server'
 import { NextResponse } from 'next/server'
 
-const isPublic = createRouteMatcher([
-  '/',
-  '/v1/health',
-  '/v1/openapi.json',
-  '/v1/webhooks/(.*)',
-])
+const isPublic = createRouteMatcher(['/', '/v1/health', '/v1/openapi.json', '/v1/webhooks/(.*)'])
 
 const ALLOWED_ORIGINS = (
   process.env.CORS_ALLOWED_ORIGINS ?? 'http://localhost:3000,http://localhost:3100'
@@ -16,9 +11,11 @@ const ALLOWED_ORIGINS = (
   .filter(Boolean)
 
 function corsHeadersFor(origin: string | null): Record<string, string> {
-  const allowOrigin = origin && ALLOWED_ORIGINS.includes(origin) ? origin : ALLOWED_ORIGINS[0]!
+  if (!origin || !ALLOWED_ORIGINS.includes(origin)) {
+    return { Vary: 'Origin' }
+  }
   return {
-    'Access-Control-Allow-Origin': allowOrigin,
+    'Access-Control-Allow-Origin': origin,
     'Access-Control-Allow-Methods': 'GET, POST, PUT, PATCH, DELETE, OPTIONS',
     'Access-Control-Allow-Headers':
       'authorization, content-type, svix-id, svix-timestamp, svix-signature',

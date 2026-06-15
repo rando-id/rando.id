@@ -5,6 +5,7 @@ import { contract } from '@rando/api-client'
 import { deleteList, getContactsNearby, getListById, updateListName } from '@rando/db'
 import { getDb } from '@/lib/db'
 import { requireCurrentUser } from '@/lib/current-user'
+import { isUuid } from '@/lib/validate-uuid'
 
 function parseNear(value: string | undefined): { lat: number; lng: number } | null {
   if (!value) return null
@@ -47,6 +48,7 @@ const handler = createNextHandler(
   {
     getList: async ({ params, query }) => {
       try {
+        if (!isUuid(params.id)) return { status: 404 as const, body: { error: 'not found' } }
         const user = await requireCurrentUser()
         const db = getDb()
         const list = await getListById(db, user.id, params.id)
@@ -78,6 +80,7 @@ const handler = createNextHandler(
 
     updateList: async ({ params, body }) => {
       try {
+        if (!isUuid(params.id)) return { status: 404 as const, body: { error: 'not found' } }
         const user = await requireCurrentUser()
         const db = getDb()
         const affected = await updateListName(db, user.id, params.id, body.name)
@@ -108,6 +111,7 @@ const handler = createNextHandler(
 
     deleteList: async ({ params }) => {
       try {
+        if (!isUuid(params.id)) return { status: 404 as const, body: { error: 'not found' } }
         const user = await requireCurrentUser()
         const affected = await deleteList(getDb(), user.id, params.id)
         if (affected === 0) {

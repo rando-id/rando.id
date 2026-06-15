@@ -5,12 +5,16 @@ import { contract } from '@rando/api-client'
 import { removeListMember } from '@rando/db'
 import { getDb } from '@/lib/db'
 import { requireCurrentUser } from '@/lib/current-user'
+import { isUuid } from '@/lib/validate-uuid'
 
 const handler = createNextHandler(
   { removeListMember: contract.removeListMember },
   {
     removeListMember: async ({ params }) => {
       try {
+        if (!isUuid(params.id) || !isUuid(params.contactId)) {
+          return { status: 404 as const, body: { error: 'not found' } }
+        }
         const user = await requireCurrentUser()
         const removed = await removeListMember(getDb(), user.id, params.id, params.contactId)
         if (removed === 0) {
