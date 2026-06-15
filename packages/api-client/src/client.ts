@@ -30,7 +30,16 @@ export function createApiClient({ baseUrl, getToken }: ApiClientOptions) {
         const body = await res.text().catch(() => '')
         throw new ApiError(res.status, path, body)
       }
-      return res.json() as Promise<T>
+      const text = await res.text()
+      try {
+        return JSON.parse(text) as T
+      } catch {
+        throw new ApiError(
+          res.status,
+          path,
+          `Expected JSON response but got: ${text.slice(0, 200)}`,
+        )
+      }
     },
   }
 }

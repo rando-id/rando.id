@@ -6,11 +6,24 @@ import type { MapsAdapter, GeocodeResult, LatLng } from './adapter'
 
 const USER_AGENT = 'rando.id/0.0.0 (https://rando.id)'
 
+/** Thrown when the Nominatim API returns a non-success response. */
+export class GeocodingError extends Error {
+  constructor(
+    public readonly status: number,
+    public readonly url: string,
+  ) {
+    super(`Nominatim returned HTTP ${status} for ${url}`)
+    this.name = 'GeocodingError'
+  }
+}
+
 export const osmAdapter: MapsAdapter = {
   async reverseGeocode({ lat, lng }: LatLng): Promise<GeocodeResult | null> {
     const url = `https://nominatim.openstreetmap.org/reverse?format=json&lat=${lat}&lon=${lng}`
     const res = await fetch(url, { headers: { 'user-agent': USER_AGENT } })
-    if (!res.ok) return null
+    if (!res.ok) {
+      throw new GeocodingError(res.status, url)
+    }
     const data = (await res.json()) as { display_name?: string; name?: string }
     if (!data.display_name) return null
     return {
@@ -22,7 +35,9 @@ export const osmAdapter: MapsAdapter = {
   async search(query: string): Promise<GeocodeResult[]> {
     const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}`
     const res = await fetch(url, { headers: { 'user-agent': USER_AGENT } })
-    if (!res.ok) return []
+    if (!res.ok) {
+      throw new GeocodingError(res.status, url)
+    }
     const data = (await res.json()) as Array<{
       display_name: string
       lat: string

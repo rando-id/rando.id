@@ -510,8 +510,10 @@ async function teardownStableUrls(
   let existingRecords: Array<{ id: string; name: string }> = []
   try {
     existingRecords = await dns.listRecords({ zone })
-  } catch {
-    // Continue with empty list — per-app removeRecord lookups will be no-ops.
+  } catch (e) {
+    io.stdout(
+      `  ${colors.warn('⚠')} failed to list DNS records for ${colors.resource(zone)}: ${(e as Error).message ?? e} — DNS cleanup skipped`,
+    )
   }
 
   const out: Array<{
@@ -589,8 +591,10 @@ async function setupStableUrls(
   let existingRecords: Array<{ name: string }> = []
   try {
     existingRecords = await dns.listRecords({ zone })
-  } catch {
-    // Continue with an empty list — addRecord will surface specific errors per app.
+  } catch (e) {
+    io.stdout(
+      `  ${colors.warn('⚠')} failed to list DNS records for ${colors.resource(zone)}: ${(e as Error).message ?? e} — duplicates may be created`,
+    )
   }
 
   for (const app of apps) {

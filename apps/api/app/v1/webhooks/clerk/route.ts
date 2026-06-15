@@ -1,9 +1,6 @@
 import { Webhook } from 'svix'
 import { NextResponse } from 'next/server'
-import {
-  clerkWebhookSchema,
-  displayNameFromClerk,
-} from '@rando/auth/webhooks'
+import { clerkWebhookSchema, displayNameFromClerk } from '@rando/auth/webhooks'
 import { eq, users } from '@rando/db'
 import { getDb } from '@/lib/db'
 
@@ -38,20 +35,26 @@ export async function POST(req: Request) {
   const db = getDb()
   const event = parsed.data
 
-  if (event.type === 'user.created' || event.type === 'user.updated') {
-    const displayName = displayNameFromClerk(event.data)
-    await db
-      .insert(users)
-      .values({
-        clerkId: event.data.id,
-        displayName,
-      })
-      .onConflictDoUpdate({
-        target: users.clerkId,
-        set: { displayName, updatedAt: new Date() },
-      })
-  } else if (event.type === 'user.deleted') {
-    await db.delete(users).where(eq(users.clerkId, event.data.id))
+  try {
+    if (event.type === 'user.created' || event.type === 'user.updated') {
+      const displayName = displayNameFromClerk(event.data)
+      await db
+        .insert(users)
+        .values({
+          clerkId: event.data.id,
+          displayName,
+        })
+        .onConflictDoUpdate({
+          target: users.clerkId,
+          set: { displayName, updatedAt: new Date() },
+        })
+    } else if (event.type === 'user.deleted') {
+      await db.delete(users).where(eq(users.clerkId, event.data.id))
+    }
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    console.error(`[clerk-webhook] ${event.type} failed for ${event.data.id}: ${detail}`)
+    return NextResponse.json({ error: 'internal error processing webhook' }, { status: 500 })
   }
 
   return NextResponse.json({ ok: true })
