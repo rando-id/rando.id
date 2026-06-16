@@ -110,14 +110,15 @@ jobs:
         run: |
           echo "::notice title=API tests skipped::Target URL ${{ steps.target.outputs.url }} did not respond 200 on /v1/health within 5 minutes — likely no preview was deployed, or the deploy failed. Not failing the PR."
 
-      - name: Load Postman API key from 1Password
+      - name: Install 1Password CLI
         if: steps.wait.outputs.ready == 'true'
-        uses: 1password/load-secrets-action@v2
-        with:
-          export-env: true
+        uses: 1password/install-cli-action@v1
+
+      - name: Load secrets from 1Password Environment
+        if: steps.wait.outputs.ready == 'true'
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          POSTMAN_API_KEY: op://ftd3n4l5egcfjai7f7tm2f7ytq/POSTMAN_API_KEY/credential
+        run: op environment read ftd3n4l5egcfjai7f7tm2f7ytq >> "$GITHUB_ENV"
 
       - name: Run Postman collection against target
         if: steps.wait.outputs.ready == 'true'

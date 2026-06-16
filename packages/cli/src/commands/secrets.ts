@@ -27,7 +27,7 @@ const DEFAULT_CONFIG_PATH = 'rando.config.json'
 
 interface SecretsConfig {
   field: string
-  vaults: Record<SecretsEnv, string | undefined>
+  environments: Record<SecretsEnv, string | undefined>
 }
 
 export function secretsCommand(adapters: Adapters, io: Io): Command {
@@ -132,7 +132,7 @@ export function secretsCommand(adapters: Adapters, io: Io): Command {
         const identity = await provider.whoami()
 
         // Resolve which environments to write to.
-        const configuredEnvs = ALL_SECRETS_ENVS.filter((e) => cfg.vaults[e])
+        const configuredEnvs = ALL_SECRETS_ENVS.filter((e) => cfg.environments[e])
         let targets: SecretsEnv[]
         if (opts.all) {
           targets = configuredEnvs
@@ -140,9 +140,9 @@ export function secretsCommand(adapters: Adapters, io: Io): Command {
           targets = parseEnvList(opts.env)
           // Validate every env in the list has a vault configured.
           for (const env of targets) {
-            if (!cfg.vaults[env]) {
+            if (!cfg.environments[env]) {
               throw new Error(
-                `No vault configured for env "${env}". Add it under secrets.vaults in rando.config.json.`,
+                `No environment configured for "${env}". Add it under secrets.environments in rando.config.json.`,
               )
             }
           }
@@ -152,7 +152,7 @@ export function secretsCommand(adapters: Adapters, io: Io): Command {
             ...configuredEnvs.map((e) => ({
               name: e,
               value: e,
-              description: cfg.vaults[e] ?? '',
+              description: cfg.environments[e] ?? '',
             })),
             { name: 'all configured envs', value: 'all' as const },
           ])
@@ -172,7 +172,7 @@ export function secretsCommand(adapters: Adapters, io: Io): Command {
           `${colors.hint('1Password:')} ${colors.resource(identity.account)} ${colors.hint('→ ' + targets.join(', '))}`,
         )
         for (const env of targets) {
-          const vault = cfg.vaults[env]!
+          const vault = cfg.environments[env]!
           const ref = `op://${vault}/${variable}/${cfg.field}`
           await provider.write({
             vault,
@@ -269,15 +269,15 @@ function loadSecretsConfig(configPath: string): SecretsConfig {
   const cfg = loadSetupConfig(resolve(process.cwd(), configPath))
   if (!cfg.secrets) {
     throw new Error(
-      `No \`secrets\` block in ${configPath}. Add { "secrets": { "kind": "1password", "account": "<uuid>", "field": "credential", "vaults": { "local": "<vault-uuid>" } } } to enable.`,
+      `No \`secrets\` block in ${configPath}. Add { "secrets": { "kind": "1password", "account": "<uuid>", "field": "credential", "environments": { "local": "<environment-id>" } } } to enable.`,
     )
   }
   return {
     field: cfg.secrets.field,
-    vaults: {
-      local: cfg.secrets.vaults.local,
-      staging: cfg.secrets.vaults.staging,
-      prod: cfg.secrets.vaults.prod,
+    environments: {
+      local: cfg.secrets.environments.local,
+      staging: cfg.secrets.environments.staging,
+      prod: cfg.secrets.environments.prod,
     },
   }
 }
@@ -297,12 +297,12 @@ function parseEnvList(value: string): SecretsEnv[] {
     .map(parseEnv)
 }
 
-/** Look up a vault id for an env, throwing if not configured. */
+/** Look up an environment id for an env name, throwing if not configured. */
 function requireVault(cfg: SecretsConfig, env: SecretsEnv): string {
-  const vault = cfg.vaults[env]
+  const vault = cfg.environments[env]
   if (!vault) {
     throw new Error(
-      `No vault configured for env "${env}". Add secrets.vaults.${env} to rando.config.json.`,
+      `No environment configured for "${env}". Add secrets.environments.${env} to rando.config.json.`,
     )
   }
   return vault

@@ -438,7 +438,7 @@ describe('secretsChecks', () => {
     const secrets = {
       kind: '1password',
       field: 'credential',
-      vaults: { local: 'v-local' },
+      environments: { local: 'v-local' },
       ...(account ? { account } : {}),
     }
     writeFileSync(

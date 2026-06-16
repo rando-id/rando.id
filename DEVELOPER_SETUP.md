@@ -36,27 +36,52 @@ already done.
 
 Rando treats **1Password as the source of truth for every secret**;
 the `.env` files (root + each app's `.env.local`) are just local
-caches. The CLI uses three separate 1Password vaults — one per
-environment — so dev/staging/prod credentials can't cross-contaminate.
+caches. The CLI uses three 1Password **Environments** — one per
+deploy environment — so local/staging/prod credentials can't
+cross-contaminate.
 
-### Vaults
+### Environments (NOT Vaults — read this twice)
 
-| Env       | Vault UUID                   | Used by                                                 |
+1Password has two distinct features with similar names:
+
+- **Vaults** — the standard container. Items live here. Referenced as
+  `op://<vault-id>/<item>/<field>`. Service accounts read from vaults.
+- **Environments** — a SecretMgr feature that groups items by deploy
+  environment. Referenced as `op://<env-id>/...` (user accounts only)
+  or read in bulk via `op environment read <env-id>` (works for
+  service accounts).
+
+Rando uses **Environments** because the local/staging/prod separation
+maps cleanly onto them, and service accounts can be scoped to a
+single environment for safety. The IDs below are environment IDs,
+not vault IDs.
+
+| Env       | 1Password Environment ID     | Used by                                                 |
 | --------- | ---------------------------- | ------------------------------------------------------- |
 | `local`   | `jkimas55rfb5pr3g6xqwuejrpy` | `rando init`, `rando secrets sync` (default), local dev |
-| `staging` | `ftd3n4l5egcfjai7f7tm2f7ytq` | `.github/workflows/*` via service account               |
+| `staging` | `ftd3n4l5egcfjai7f7tm2f7ytq` | `.github/workflows/*` via `op environment read`         |
 | `prod`    | `ma4jp2piap7otpnnpvqmc4cgkq` | (future) production deploy workflows                    |
 
-Account UUID + vault UUIDs are pinned in `rando.config.json` →
+Account UUID + environment IDs are pinned in `rando.config.json` →
 `secrets`. Every `op` invocation gets `--account <UUID>` so the right
 account is always targeted even when multiple are signed in.
 
+How they're accessed:
+
+- **Locally** (user-account auth): `op read op://<env-id>/<item>/<field>`
+  works because the user account transparently resolves environment
+  references to their underlying items.
+- **In CI** (service account): `op environment read <env-id>` dumps
+  every secret as `KEY=VALUE` lines, which workflows pipe to
+  `$GITHUB_ENV`. Service accounts can't use `op read op://<env-id>/...`
+  — the action validator rejects it.
+
 ### Setting up 1Password from scratch
 
-Skip this section if you're joining an existing project — the vaults
-already exist and `rando.config.json` already has the IDs. **Only
-needed when forking Rando or recreating the 1Password side from
-zero.**
+Skip this section if you're joining an existing project — the
+environments already exist and `rando.config.json` already has the
+IDs. **Only needed when forking Rando or recreating the 1Password
+side from zero.**
 
 1. **Find your 1Password `account_uuid`** (the one you're going to
    pin in `rando.config.json` → `secrets.account`):
@@ -80,25 +105,25 @@ zero.**
    ```
 
    `account_uuid` is fixed per-account and doesn't change as you add
-   vaults. `rando doctor` validates the pinned value matches a known
-   account, so if you copy the wrong one by mistake, doctor will
+   environments. `rando doctor` validates the pinned value matches a
+   known account, so if you copy the wrong one by mistake, doctor will
    tell you (and even suggest the right `account_uuid` to swap in).
 
-2. **Create three vaults** in the 1Password desktop app (top-left
-   vault dropdown → New Vault). Name them however you like — only
-   the UUIDs land in config. Suggested names:
+2. **Create three Environments** in the 1Password desktop app
+   (Developer panel → Environments → New Environment). Name them
+   however you like — only the IDs land in config. Suggested names:
    - `Rando — local`
    - `Rando — staging`
    - `Rando — prod`
 
-3. **Get the vault UUIDs**:
+3. **Get the Environment IDs**:
 
    ```bash
-   op vault list --format=json | jq '.[] | {id, name}'
+   op environment list --format=json | jq '.[] | {id, name}'
    ```
 
-   Copy each UUID. Vault UUIDs are stable — renaming a vault doesn't
-   change them, which is why we pin UUIDs not names.
+   Copy each ID. Environment IDs are stable — renaming doesn't
+   change them, which is why we pin IDs not names.
 
 4. **Update `rando.config.json` → `secrets`**:
 
@@ -107,29 +132,34 @@ zero.**
      "kind": "1password",
      "account": "<your-account-uuid>",
      "field": "credential",
-     "vaults": {
-       "local": "<local-vault-uuid>",
-       "staging": "<staging-vault-uuid>",
-       "prod": "<prod-vault-uuid>"
+     "environments": {
+       "local": "<local-environment-id>",
+       "staging": "<staging-environment-id>",
+       "prod": "<prod-environment-id>"
      }
    }
    ```
 
-5. **Populate each vault** with one item per env var, titled
+5. **Populate each Environment** with one entry per env var, named
    **literally with the var name** (`NEON_API_KEY`, `VERCEL_TOKEN`,
-   etc.) — `credential` field holds the value. You can do this in
-   the desktop UI, or programmatically once you have a few values
-   handy:
+   etc.). You can do this in the desktop UI, or programmatically once
+   you have a few values handy:
 
    ```bash
-   # Local vault, single env, prompts for value:
+   # Local environment, prompts for value:
    rando secrets set NEON_API_KEY --env local
 
-   # All three vaults at once with the same value:
+   # All three environments at once with the same value:
    rando secrets set NEON_API_KEY --value "$(cat /tmp/the-key)" --all
    ```
 
-6. **Verify** by pulling into `.env`:
+6. **Create a service account** for CI at
+   <https://my.1password.com/developer-tools/infrastructure-secrets/serviceaccount>
+   and scope it to the **staging** Environment (read-only). The token
+   is what ends up in GitHub as `OP_SERVICE_ACCOUNT_TOKEN` — push it
+   via `rando secrets push OP_SERVICE_ACCOUNT_TOKEN --ref op://Personal/OP_SERVICE_ACCOUNT_TOKEN/credential`.
+
+7. **Verify** by pulling into `.env`:
 
    ```bash
    rando secrets sync
@@ -139,8 +169,9 @@ zero.**
 ### Finding IDs again later
 
 Account UUID: `op account list --format=json | jq -r '.[].account_uuid'`
-Vault UUIDs: `op vault list --format=json | jq -r '.[] | "\(.id)  \(.name)"'`
-Item references: in the desktop app → right-click an item → **Copy Secret Reference**.
+Environment IDs: `op environment list --format=json | jq -r '.[] | "\(.id)  \(.name)"'`
+Vault UUIDs (rare): `op vault list --format=json | jq -r '.[] | "\(.id)  \(.name)"'`
+Item references: in the desktop app → right-click → **Copy Secret Reference**.
 
 ### One-time per machine
 

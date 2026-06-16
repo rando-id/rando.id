@@ -55,7 +55,7 @@ async function tryOpLookup(
   try {
     const cfg = loadSetupConfig(resolve(process.cwd(), configPath))
     if (cfg.secrets) {
-      secretsConfig = { vault: cfg.secrets.vaults.local, field: cfg.secrets.field }
+      secretsConfig = { vault: cfg.secrets.environments.local, field: cfg.secrets.field }
     }
   } catch {
     // rando.config.json missing or invalid — no 1P lookup possible.

@@ -850,7 +850,7 @@ describe('secrets sync', () => {
           kind: '1password',
           account: 'AAAA',
           field: 'credential',
-          vaults: { local: 'vault-local', staging: 'vault-staging', prod: 'vault-prod' },
+          environments: { local: 'vault-local', staging: 'vault-staging', prod: 'vault-prod' },
         },
       }),
     )
@@ -970,7 +970,7 @@ describe('secrets sync --env', () => {
         secrets: {
           kind: '1password',
           field: 'credential',
-          vaults: { local: 'vault-local', staging: 'vault-staging' },
+          environments: { local: 'vault-local', staging: 'vault-staging' },
         },
       }),
     )
@@ -1007,7 +1007,7 @@ describe('secrets sync --env', () => {
         secrets: {
           kind: '1password',
           field: 'credential',
-          vaults: { local: 'vault-local' },
+          environments: { local: 'vault-local' },
         },
       }),
     )
@@ -1026,7 +1026,7 @@ describe('secrets sync --env', () => {
       exit: ((c: number) => exitCalls.push(c)) as never,
     })
     expect(exitCalls[0]).toBe(1)
-    expect(io.stderr.join('\n')).toMatch(/No vault configured for env "prod"/)
+    expect(io.stderr.join('\n')).toMatch(/No environment configured for "prod"/)
   })
 })
 
@@ -1052,7 +1052,7 @@ describe('secrets set', () => {
         secrets: {
           kind: '1password',
           field: 'credential',
-          vaults: { local: 'v-local', staging: 'v-staging', prod: 'v-prod' },
+          environments: { local: 'v-local', staging: 'v-staging', prod: 'v-prod' },
         },
       }),
     )
@@ -1135,7 +1135,7 @@ describe('secrets set', () => {
         secrets: {
           kind: '1password',
           field: 'credential',
-          vaults: { local: 'v-local' },
+          environments: { local: 'v-local' },
         },
       }),
     )
@@ -1151,7 +1151,7 @@ describe('secrets set', () => {
       exit: ((c: number) => exitCalls.push(c)) as never,
     })
     expect(exitCalls[0]).toBe(1)
-    expect(io.stderr.join('\n')).toMatch(/No vault configured for env "staging"/)
+    expect(io.stderr.join('\n')).toMatch(/No environment configured for "staging"/)
     expect(secrets.write).not.toHaveBeenCalled()
   })
 })
@@ -1178,7 +1178,7 @@ describe('secrets push', () => {
         secrets: {
           kind: '1password',
           field: 'credential',
-          vaults: { local: 'v-local', staging: 'v-staging' },
+          environments: { local: 'v-local', staging: 'v-staging' },
         },
       }),
     )

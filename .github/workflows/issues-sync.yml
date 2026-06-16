@@ -52,20 +52,19 @@ jobs:
 
       - run: pnpm setup:cli
 
-      # Only pull Jira creds from 1Password when the tracker config
-      # actually needs them. For GitHub Issues (the default) the
+      # Only stream the staging 1Password Environment when the tracker
+      # config actually needs it. For GitHub Issues (the default) the
       # auto-provided GITHUB_TOKEN is enough — we don't burn a service
       # account read per PR for nothing.
-      - name: Load Jira secrets from 1Password
+      - name: Install 1Password CLI
         if: vars.TRACKER_KIND == 'jira'
-        uses: 1password/load-secrets-action@v2
-        with:
-          export-env: true
+        uses: 1password/install-cli-action@v1
+
+      - name: Load Jira secrets from 1Password Environment
+        if: vars.TRACKER_KIND == 'jira'
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          JIRA_BASE_URL: op://ftd3n4l5egcfjai7f7tm2f7ytq/JIRA_BASE_URL/credential
-          JIRA_EMAIL: op://ftd3n4l5egcfjai7f7tm2f7ytq/JIRA_EMAIL/credential
-          JIRA_API_TOKEN: op://ftd3n4l5egcfjai7f7tm2f7ytq/JIRA_API_TOKEN/credential
+        run: op environment read ftd3n4l5egcfjai7f7tm2f7ytq >> "$GITHUB_ENV"
 
       - name: Collect issue keys from the PR's commit range
         id: refs
