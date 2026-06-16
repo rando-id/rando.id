@@ -19,6 +19,8 @@ function adaptersWithDb(db: DbProvider): Adapters {
     deploy: never as never,
     tracker: never as never,
     postman: never as never,
+    secrets: never as never,
+    gh: never as never,
   }
 }
 

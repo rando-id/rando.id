@@ -43,7 +43,8 @@ pnpm rando --help            # top-level help
 pnpm rando db --help         # subcommand help
 ```
 
-Required env vars (in repo-root `.env`, gitignored):
+Required env vars — **stored in 1Password, populated into `.env`** by
+`rando secrets sync` (see [DEVELOPER_SETUP.md → 1Password integration](./DEVELOPER_SETUP.md#1password-integration-required-path)):
 
 | Variable                | Used by                     |
 | ----------------------- | --------------------------- |
@@ -52,6 +53,10 @@ Required env vars (in repo-root `.env`, gitignored):
 | `CLOUDFLARE_ACCOUNT_ID` | `rando tunnel`              |
 | `VERCEL_TOKEN`          | `rando deploy`              |
 | `VERCEL_TEAM_ID`        | `rando deploy` (optional)   |
+
+Items inside the local vault are titled with the env var name; field
+is `credential`. So `op://<local-vault>/NEON_API_KEY/credential` is
+where `NEON_API_KEY` lives.
 
 Manual step → `rando` equivalent:
 

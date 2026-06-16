@@ -83,6 +83,8 @@ function mockAdapters(trackerFactory: (() => IssueTrackerProvider) | (() => neve
     deploy: never,
     tracker: trackerFactory,
     postman: never,
+    secrets: never,
+    gh: never,
   }
 }
 

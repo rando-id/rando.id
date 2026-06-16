@@ -14,6 +14,8 @@ import { resolve } from 'node:path'
 import { Command } from 'commander'
 import type { Adapters } from '../config'
 import { createAdapters } from '../config'
+import { loadSetupConfig } from '../setup-config'
+import type { SecretsProvider } from '../domain/secrets'
 import type { Io } from '../output'
 import { brewChecks } from '../doctor/checks/brew'
 import { envChecks } from '../doctor/checks/env'
@@ -21,12 +23,61 @@ import { renderReport, runChecks } from '../doctor/run'
 import { configChecks } from '../doctor/checks/config'
 import { hooksChecks } from '../doctor/checks/hooks'
 import { localChecks } from '../doctor/checks/local'
+import { secretsChecks } from '../doctor/checks/secrets'
 import { trackerChecks } from '../doctor/checks/tracker'
 import { terminalChecks } from '../doctor/checks/terminal'
 import { spawnSync } from 'node:child_process'
 import { readEnv, setEnvValue, writeEnv } from '../init/env-file'
 
 const DEFAULT_CONFIG_PATH = 'rando.config.json'
+
+/**
+ * Probe whether 1Password is usable for this `init` run. Returns the
+ * vault/field convention + the live provider when everything checks
+ * out, null when 1P is not configured, not signed in, or otherwise
+ * unavailable. Errors are silent — 1P is a nice-to-have layer on top
+ * of the prompt flow, so any failure falls through to manual entry.
+ */
+async function tryOpLookup(
+  factory: () => SecretsProvider,
+  configPath: string,
+  io: Io,
+): Promise<{
+  provider: SecretsProvider
+  vault: string
+  field: string
+  account: string
+} | null> {
+  // init always reads from the LOCAL vault — dev machines don't pull
+  // staging or prod credentials. `rando secrets sync --env staging` is
+  // the escape hatch for the rare "I need to debug staging values" case.
+  let secretsConfig: { vault: string; field: string } | undefined
+  try {
+    const cfg = loadSetupConfig(resolve(process.cwd(), configPath))
+    if (cfg.secrets) {
+      secretsConfig = { vault: cfg.secrets.vaults.local, field: cfg.secrets.field }
+    }
+  } catch {
+    // rando.config.json missing or invalid — no 1P lookup possible.
+    return null
+  }
+  if (!secretsConfig) return null
+  let provider: SecretsProvider
+  try {
+    provider = factory()
+  } catch {
+    return null
+  }
+  try {
+    const me = await provider.whoami()
+    return { provider, vault: secretsConfig.vault, field: secretsConfig.field, account: me.account }
+  } catch {
+    io.stdout(
+      `${io.colors.hint('1Password not signed in — falling back to manual prompts. Run `op signin` then re-run init for vault-driven setup.')}`,
+    )
+    return null
+  }
+}
 
 /**
  * Read `postman.workspaceId` from rando.config.json. Returns undefined
@@ -81,7 +132,11 @@ export function initCommand(adapters: Adapters, io: Io): Command {
     )
     .option('--env-file <path>', 'Path to .env (default: repo root)', '.env')
     .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
-    .action(async (opts: { envFile: string; config: string }) => {
+    .option(
+      '--no-1password',
+      'Skip fetching from 1Password — prompt for every missing var manually.',
+    )
+    .action(async (opts: { envFile: string; config: string; '1password': boolean }) => {
       const { colors } = io
       const envPath = resolve(process.cwd(), opts.envFile)
       const examplePath = resolve(process.cwd(), '.env.example')
@@ -115,8 +170,15 @@ export function initCommand(adapters: Adapters, io: Io): Command {
       if (toFix.length === 0) {
         io.stdout(`${colors.success('✓')} every env var is already set + valid`)
       } else {
+        // Detect 1Password integration up front — if the user is signed in
+        // and rando.config.json's `secrets` block is present, we'll try to
+        // resolve each missing var from the vault before prompting.
+        const opLookup = opts['1password']
+          ? await tryOpLookup(adapters.secrets, opts.config, io)
+          : null
+
         io.stdout(
-          `${colors.hint(`${toFix.length} var(s) need attention — prompting interactively`)}`,
+          `${colors.hint(`${toFix.length} var(s) need attention${opLookup ? ` — trying 1Password (${opLookup.account}) first` : ' — prompting interactively'}`)}`,
         )
         io.stdout('')
 
@@ -127,7 +189,25 @@ export function initCommand(adapters: Adapters, io: Io): Command {
             `${entry.required ? colors.warn('required') : colors.hint('optional')} ${colors.resource(entry.name)} ${colors.hint(`— ${entry.subject}`)}`,
           )
           if (help) io.stdout(`  ${colors.hint(help)}`)
-          const value = (await io.input(`${entry.name}=`, { default: '' })).trim()
+
+          // 1Password first: build the canonical reference and try to
+          // resolve. On hit, skip the prompt and validate the value the
+          // same way as a manually-entered one. On miss, fall through.
+          let value = ''
+          if (opLookup) {
+            const ref = `op://${opLookup.vault}/${entry.name}/${opLookup.field}`
+            try {
+              value = (await opLookup.provider.read(ref)).trim()
+              if (value) {
+                io.stdout(`  ${colors.success('✓')} fetched from ${colors.resource(ref)}`)
+              }
+            } catch {
+              // Reference doesn't exist or other failure — silent fallback.
+            }
+          }
+          if (!value) {
+            value = (await io.input(`${entry.name}=`, { default: '' })).trim()
+          }
           if (!value) {
             io.stdout(colors.hint(`  skipped`))
             io.stdout('')
@@ -272,6 +352,7 @@ export function initCommand(adapters: Adapters, io: Io): Command {
         ...localChecks(),
         ...brewChecks(),
         ...trackerChecks(freshAdapters, opts.config),
+        ...secretsChecks(freshAdapters, opts.config),
         ...terminalChecks(),
       ])
       renderReport(io, report)

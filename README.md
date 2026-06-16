@@ -20,8 +20,8 @@ git clone https://github.com/rando-id/rando.id.git && cd rando.id
 `./scripts/bootstrap` chains six idempotent steps into one command:
 
 1. **`brew bundle install`** — system deps from `scripts/Brewfile`
-   (gh, pnpm, node@22, postgresql@16, cloudflared, 1password-cli,
-   orbstack).
+   (gh, pnpm, node@22, 1password-cli, orbstack — plus a couple of
+   optional commented-out lines).
 2. **`pnpm install`** — JS deps + husky regenerates the git hook
    shims via the `prepare` script.
 3. **Symlinks `rando`** into `~/.local/bin` so subsequent commands
@@ -29,9 +29,11 @@ git clone https://github.com/rando-id/rando.id.git && cd rando.id
 4. **`docker compose up -d`** — Postgres + PostGIS container.
 5. **`pnpm --filter @rando/db db:migrate`** — applies the schema +
    enables PostGIS.
-6. **`rando init`** — interactive walkthrough that prompts for each
-   env-var token, validates each by calling the vendor API, writes to
-   `.env`, then ends with a doctor sweep + "next steps" menu.
+6. **`rando init`** — pulls every configured env-var from your local
+   1Password vault (after `op signin`), or prompts interactively for
+   anything missing. Validates each by calling the vendor API,
+   writes to `.env`, then ends with a doctor sweep + "next steps"
+   menu. Pass `--no-1password` to skip the vault entirely.
 
 After `init` finishes:
 
@@ -39,7 +41,15 @@ After `init` finishes:
 rando dev                          # local orchestrator: tunnel + 3 apps
 pnpm --filter @rando/db db:seed    # (optional) load sample data — 1 user, 5 places, 10 contacts, 2 lists
 rando doctor                       # re-check health anytime
+rando secrets set NEW_VAR --all    # add a new secret to every env vault at once
+rando secrets sync                 # re-pull from the local 1P vault into .env
 ```
+
+**Secrets live in 1Password, not `.env`.** Rando uses three vaults
+(local / staging / prod) and the `.env` file is just a working cache
+populated by `rando secrets sync`. See
+[DEVELOPER_SETUP.md → 1Password integration](./DEVELOPER_SETUP.md#1password-integration-required-path)
+for the full convention + CI side.
 
 **Linux / Windows**: skip the Brewfile, install equivalents however
 you manage packages, then run the inner steps manually:

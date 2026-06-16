@@ -46,6 +46,8 @@ function adaptersWithDeploy(deploy: DeployProvider, dns?: DnsProvider): Adapters
     deploy: () => deploy,
     tracker: never as never,
     postman: never as never,
+    secrets: never as never,
+    gh: never as never,
   }
 }
 

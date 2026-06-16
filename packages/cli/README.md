@@ -21,8 +21,7 @@ git clone https://github.com/rando-id/rando.id.git && cd rando.id
 That's it. `scripts/bootstrap` is a shell script that:
 
 1. **`brew bundle install`** — installs every system dep listed in
-   `Brewfile` (gh, pnpm, node@22, postgresql@16, cloudflared,
-   1password-cli, orbstack).
+   `scripts/Brewfile` (gh, pnpm, node@22, 1password-cli, orbstack).
 2. **`pnpm install`** — JS deps + husky regenerates the hook shims via
    the `prepare` script.
 3. **`node scripts/setup-cli.mjs`** — symlinks `rando` into
@@ -115,18 +114,19 @@ Typos surface "Did you mean…?" suggestions (`rando dbb` → `(Did you mean db?
 
 Env vars (set in your shell or in repo-root `.env`):
 
-| Variable                | Used by                               |
-| ----------------------- | ------------------------------------- |
-| `NEON_API_KEY`          | `db`                                  |
-| `CLOUDFLARE_API_TOKEN`  | `tunnel`, `dns`                       |
-| `CLOUDFLARE_ACCOUNT_ID` | `tunnel`                              |
-| `VERCEL_TOKEN`          | `deploy`                              |
-| `VERCEL_TEAM_ID`        | `deploy` (optional)                   |
-| `GITHUB_TOKEN`          | `issues` (when tracker.kind="github") |
-| `JIRA_BASE_URL`         | `issues` (when tracker.kind="jira")   |
-| `JIRA_EMAIL`            | `issues` (when tracker.kind="jira")   |
-| `JIRA_API_TOKEN`        | `issues` (when tracker.kind="jira")   |
-| `POSTMAN_API_KEY`       | `api postman sync` (optional)         |
+| Variable                   | Used by                                              |
+| -------------------------- | ---------------------------------------------------- |
+| `NEON_API_KEY`             | `db`                                                 |
+| `CLOUDFLARE_API_TOKEN`     | `tunnel`, `dns`                                      |
+| `CLOUDFLARE_ACCOUNT_ID`    | `tunnel`                                             |
+| `VERCEL_TOKEN`             | `deploy`                                             |
+| `VERCEL_TEAM_ID`           | `deploy` (optional)                                  |
+| `GITHUB_TOKEN`             | `issues` (when tracker.kind="github")                |
+| `JIRA_BASE_URL`            | `issues` (when tracker.kind="jira")                  |
+| `JIRA_EMAIL`               | `issues` (when tracker.kind="jira")                  |
+| `JIRA_API_TOKEN`           | `issues` (when tracker.kind="jira")                  |
+| `POSTMAN_API_KEY`          | `api postman sync` (optional)                        |
+| `OP_SERVICE_ACCOUNT_TOKEN` | CI only — `1password/load-secrets-action` (optional) |
 
 A repo-root `.env` is auto-loaded via Node's `--env-file-if-exists` flag
 in the bin shebang — no `source .env` needed. Shell-exported vars still
@@ -809,10 +809,77 @@ adapters live in the codebase side-by-side; cached `branch.<name>.
 jira-key` values from the previous tracker stay put (just legacy text
 in git config) and are overwritten by the next picker pick.
 
+### `secrets` — 1Password ↔ `.env` bridge
+
+```
+rando secrets sync [--env <local|staging|prod>] [--env-file <path>] [--config <path>] [-f/--force]
+rando secrets set  <VAR> [--value <v>] [--env <list>|--all] [--config <path>]
+rando secrets push <VAR> [--from <env>] [--ref <op-ref>] [--repo <owner/name>] [--config <path>]
+```
+
+The CLI treats **1Password as the source of truth** and `.env` as a
+local cache. **One vault per environment** (local/staging/prod) so
+dev/staging/prod credentials can't cross-contaminate — vault UUIDs
+live in `rando.config.json` under `secrets.vaults`.
+
+**`sync`** pulls every var listed in the env-token table from the
+target environment's vault into `.env`. Defaults to `local`; pass
+`--env staging` or `--env prod` only when you need to debug another
+environment's values locally. Skips vars already set unless `--force`.
+
+**`set <VAR>`** stores a value across one or more environments at
+once — `--env local,staging,prod` for a list, `--all` for every
+configured env, or skip both for an interactive multi-select.
+Prompts (masked) for the value when `--value` isn't passed.
+Upserts: edits the existing item if found, creates if not.
+
+**`push <VAR>`** reads a secret from 1Password and writes it to
+GitHub Actions repo secrets via `gh secret set`. Solves the
+`OP_SERVICE_ACCOUNT_TOKEN` bootstrap: CI can't read from 1Password
+until it has the service-account token, which has to come from
+somewhere `gh` can reach. Defaults to reading from the `local` vault
+and pushing to the repo declared in `rando.config.json`. `--ref` lets
+you read from a vault that isn't in the config (e.g. your Personal
+vault, where you stash the service-account token). The value is
+piped via stdin so it never appears in argv / shell history / `ps`.
+
+Canonical one-shot for the CI bootstrap:
+
+```bash
+op signin
+gh auth login
+rando secrets push OP_SERVICE_ACCOUNT_TOKEN \
+  --ref op://Personal/OP_SERVICE_ACCOUNT_TOKEN/credential
+```
+
+See [DEVELOPER_SETUP.md → CI side](../../DEVELOPER_SETUP.md#ci-side--bootstrapping-op_service_account_token)
+for the full bootstrap (creating the service account, storing the
+token in 1Password, rotation).
+
+Convention (set in `rando.config.json`'s `secrets` block):
+
+- **account**: 1Password account UUID passed as `--account` on every
+  `op` call. Found via `op account list --format=json`.
+- **field**: `credential` (1Password's default for API credentials).
+- **vaults.{local,staging,prod}**: vault UUIDs. `local` is required;
+  staging/prod are optional until you need them.
+- **item title** === env var name (`NEON_API_KEY` → an item literally
+  called `NEON_API_KEY` inside each environment's vault).
+
+So `NEON_API_KEY` in local resolves to
+`op://<local-vault-uuid>/NEON_API_KEY/credential`. Zero per-secret
+config — adding a new env var just means adding the item with that
+name to whichever environment vaults need it.
+
+`rando init` also tries 1Password (local vault) before each prompt:
+if you're signed in via `op signin` and the item exists, the var is
+fetched silently and the prompt is skipped. Pass `--no-1password` to
+disable.
+
 ### `init` and `doctor`
 
 ```
-rando init                                # interactive bootstrap (first clone)
+rando init [--no-1password]               # interactive bootstrap (first clone)
 rando doctor [--skip-tracker]             # full read-only health check
 ```
 
@@ -836,6 +903,7 @@ the current health of the setup. It walks six surfaces:
 | Hooks    | `.husky/_/` shims exist, `core.hooksPath` is set, all three hook files present + executable.                                                |
 | Local    | Node ≥22, `rando` on PATH, `gh` / `pg_dump` / `docker` installed (warnings, not failures, since each is only needed for specific commands). |
 | Tracker  | Delegates to `rando issues doctor` for auth + lifecycle-map lint.                                                                           |
+| Secrets  | `op` CLI signed in + `secrets` block present in `rando.config.json`. Warn (not fail) — 1Password is optional.                               |
 | Terminal | `isTTY` + `chalk.level` (preserved from the old terminal-only doctor).                                                                      |
 
 Each row shows `✓` / `⚠` / `✗`. Doctor exits non-zero on any `✗` so you

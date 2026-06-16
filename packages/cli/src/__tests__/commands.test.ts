@@ -7,7 +7,9 @@ import type { Adapters } from '../config'
 import type { DbProvider } from '../domain/db'
 import type { DeployProvider } from '../domain/deploy'
 import type { DnsProvider } from '../domain/dns'
+import type { GhProvider } from '../domain/gh'
 import type { PostmanProvider } from '../domain/postman'
+import type { SecretsProvider } from '../domain/secrets'
 import type { IssueTrackerProvider } from '../domain/tracker'
 import type { TunnelProvider } from '../domain/tunnel'
 import { captureIo } from './helpers'
@@ -21,6 +23,8 @@ function mockAdapters(
     deploy: DeployProvider
     tracker: IssueTrackerProvider
     postman: PostmanProvider
+    secrets: SecretsProvider
+    gh: GhProvider
   }>,
 ): Adapters {
   return {
@@ -30,6 +34,8 @@ function mockAdapters(
     deploy: () => overrides.deploy ?? notConfigured('deploy'),
     tracker: () => overrides.tracker ?? notConfigured('tracker'),
     postman: () => overrides.postman ?? notConfigured('postman'),
+    secrets: () => overrides.secrets ?? notConfigured('secrets'),
+    gh: () => overrides.gh ?? notConfigured('gh'),
   }
 }
 
@@ -818,5 +824,495 @@ describe('api postman sync', () => {
     expect(exitCalls[0]).toBe(1)
     expect(io.stderr.join('\n')).toMatch(/Collection file not found/)
     expect(postman.createCollection).not.toHaveBeenCalled()
+  })
+})
+
+describe('secrets sync', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'rando-secrets-test-'))
+  })
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  function writeConfig(): string {
+    const configPath = join(tmpDir, 'rando.config.json')
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        project: 'rando',
+        repo: 'rando-id/rando',
+        domains: { nonProd: 'rando-id.dev', production: 'rando.id' },
+        apps: [{ name: 'api', rootDirectory: 'apps/api', port: 4000 }],
+        secrets: {
+          kind: '1password',
+          account: 'AAAA',
+          field: 'credential',
+          vaults: { local: 'vault-local', staging: 'vault-staging', prod: 'vault-prod' },
+        },
+      }),
+    )
+    return configPath
+  }
+
+  it('fetches each token from 1Password and writes to .env', async () => {
+    const configPath = writeConfig()
+    const envFile = join(tmpDir, '.env')
+    writeFileSync(envFile, '')
+
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'dev@rando.id', url: 'https://x' })),
+      read: vi.fn(async (ref: string) => {
+        // Match: op://vault-local/<VAR>/credential — defaults to local
+        const m = ref.match(/^op:\/\/vault-local\/([A-Z_]+)\/credential$/)
+        if (!m) throw new Error('bad ref')
+        if (m[1] === 'GITHUB_TOKEN') return 'gh-secret-value'
+        if (m[1] === 'NEON_API_KEY') return 'neon-secret-value'
+        throw new Error('missing')
+      }),
+    }
+    const io = captureIo()
+    await run(['secrets', 'sync', '--env-file', envFile, '--config', configPath], {
+      adapters: mockAdapters({ secrets: secrets as SecretsProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    const written = readFileSync(envFile, 'utf-8')
+    expect(written).toMatch(/^GITHUB_TOKEN=gh-secret-value$/m)
+    expect(written).toMatch(/^NEON_API_KEY=neon-secret-value$/m)
+    expect(io.stdout.join('\n')).toMatch(/2 fetched/)
+  })
+
+  it('skips vars already set in .env unless --force', async () => {
+    const configPath = writeConfig()
+    const envFile = join(tmpDir, '.env')
+    writeFileSync(envFile, 'NEON_API_KEY=already-here\n')
+
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
+      read: vi.fn(async () => 'from-vault'),
+    }
+    const io = captureIo()
+    await run(['secrets', 'sync', '--env-file', envFile, '--config', configPath], {
+      adapters: mockAdapters({ secrets: secrets as SecretsProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(readFileSync(envFile, 'utf-8')).toMatch(/^NEON_API_KEY=already-here$/m)
+    expect(io.stdout.join('\n')).toMatch(/already set/)
+  })
+
+  it('--force overwrites existing values', async () => {
+    const configPath = writeConfig()
+    const envFile = join(tmpDir, '.env')
+    writeFileSync(envFile, 'NEON_API_KEY=stale\n')
+
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
+      read: vi.fn(async () => 'fresh'),
+    }
+    const io = captureIo()
+    await run(['secrets', 'sync', '--env-file', envFile, '--config', configPath, '--force'], {
+      adapters: mockAdapters({ secrets: secrets as SecretsProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(readFileSync(envFile, 'utf-8')).toMatch(/^NEON_API_KEY=fresh$/m)
+  })
+
+  it('errors clearly when no secrets block exists in rando.config.json', async () => {
+    const configPath = join(tmpDir, 'rando.config.json')
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        project: 'rando',
+        repo: 'rando-id/rando',
+        domains: { nonProd: 'a', production: 'b' },
+        apps: [{ name: 'api', rootDirectory: 'apps/api', port: 4000 }],
+      }),
+    )
+    const envFile = join(tmpDir, '.env')
+    writeFileSync(envFile, '')
+
+    const io = captureIo()
+    const exitCalls: number[] = []
+    await run(['secrets', 'sync', '--env-file', envFile, '--config', configPath], {
+      adapters: mockAdapters({ secrets: { whoami: vi.fn() } as unknown as SecretsProvider }),
+      io: io.io,
+      exit: ((c: number) => exitCalls.push(c)) as never,
+    })
+    expect(exitCalls[0]).toBe(1)
+    expect(io.stderr.join('\n')).toMatch(/No `secrets` block/)
+  })
+})
+
+describe('secrets sync --env', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'rando-sync-env-test-'))
+  })
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  it('reads from the staging vault when --env staging is passed', async () => {
+    const configPath = join(tmpDir, 'rando.config.json')
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        project: 'rando',
+        repo: 'rando-id/rando',
+        domains: { nonProd: 'a', production: 'b' },
+        apps: [{ name: 'api', rootDirectory: 'apps/api', port: 4000 }],
+        secrets: {
+          kind: '1password',
+          field: 'credential',
+          vaults: { local: 'vault-local', staging: 'vault-staging' },
+        },
+      }),
+    )
+    const envFile = join(tmpDir, '.env')
+    writeFileSync(envFile, '')
+
+    const reads: string[] = []
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
+      read: vi.fn(async (ref: string) => {
+        reads.push(ref)
+        throw new Error('not configured for this test')
+      }),
+    }
+    const io = captureIo()
+    await run(
+      ['secrets', 'sync', '--env-file', envFile, '--config', configPath, '--env', 'staging'],
+      { adapters: mockAdapters({ secrets: secrets as SecretsProvider }), io: io.io, exit: noExit },
+    )
+    // Every read should target the staging vault.
+    expect(reads.every((r) => r.startsWith('op://vault-staging/'))).toBe(true)
+    expect(reads.some((r) => r.startsWith('op://vault-local/'))).toBe(false)
+  })
+
+  it('errors when --env points at an env without a configured vault', async () => {
+    const configPath = join(tmpDir, 'rando.config.json')
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        project: 'rando',
+        repo: 'rando-id/rando',
+        domains: { nonProd: 'a', production: 'b' },
+        apps: [{ name: 'api', rootDirectory: 'apps/api', port: 4000 }],
+        secrets: {
+          kind: '1password',
+          field: 'credential',
+          vaults: { local: 'vault-local' },
+        },
+      }),
+    )
+    const envFile = join(tmpDir, '.env')
+    writeFileSync(envFile, '')
+
+    const io = captureIo()
+    const exitCalls: number[] = []
+    await run(['secrets', 'sync', '--env-file', envFile, '--config', configPath, '--env', 'prod'], {
+      adapters: mockAdapters({
+        secrets: {
+          whoami: vi.fn(async () => ({ account: '', url: '' })),
+        } as unknown as SecretsProvider,
+      }),
+      io: io.io,
+      exit: ((c: number) => exitCalls.push(c)) as never,
+    })
+    expect(exitCalls[0]).toBe(1)
+    expect(io.stderr.join('\n')).toMatch(/No vault configured for env "prod"/)
+  })
+})
+
+describe('secrets set', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'rando-set-test-'))
+  })
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  function writeConfig(): string {
+    const configPath = join(tmpDir, 'rando.config.json')
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        project: 'rando',
+        repo: 'rando-id/rando',
+        domains: { nonProd: 'a', production: 'b' },
+        apps: [{ name: 'api', rootDirectory: 'apps/api', port: 4000 }],
+        secrets: {
+          kind: '1password',
+          field: 'credential',
+          vaults: { local: 'v-local', staging: 'v-staging', prod: 'v-prod' },
+        },
+      }),
+    )
+    return configPath
+  }
+
+  it('writes to a single env when --env <name> is passed', async () => {
+    const configPath = writeConfig()
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
+      write: vi.fn(async () => {}),
+    }
+    const io = captureIo()
+    await run(
+      [
+        'secrets',
+        'set',
+        'NEW_KEY',
+        '--value',
+        'the-value',
+        '--env',
+        'local',
+        '--config',
+        configPath,
+      ],
+      { adapters: mockAdapters({ secrets: secrets as SecretsProvider }), io: io.io, exit: noExit },
+    )
+    expect(secrets.write).toHaveBeenCalledTimes(1)
+    expect(secrets.write).toHaveBeenCalledWith({
+      vault: 'v-local',
+      item: 'NEW_KEY',
+      field: 'credential',
+      value: 'the-value',
+    })
+  })
+
+  it('writes to every configured env with --all', async () => {
+    const configPath = writeConfig()
+    const writes: Array<{ vault: string }> = []
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
+      write: vi.fn(async (input: { vault: string }) => {
+        writes.push(input)
+      }),
+    }
+    const io = captureIo()
+    await run(
+      ['secrets', 'set', 'GLOBAL_KEY', '--value', 'shared', '--all', '--config', configPath],
+      { adapters: mockAdapters({ secrets: secrets as SecretsProvider }), io: io.io, exit: noExit },
+    )
+    expect(writes.map((w) => w.vault).sort()).toEqual(['v-local', 'v-prod', 'v-staging'])
+  })
+
+  it('accepts a comma-separated list via --env', async () => {
+    const configPath = writeConfig()
+    const writes: Array<{ vault: string }> = []
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
+      write: vi.fn(async (input: { vault: string }) => {
+        writes.push(input)
+      }),
+    }
+    const io = captureIo()
+    await run(
+      ['secrets', 'set', 'SHARED', '--value', 'x', '--env', 'staging,prod', '--config', configPath],
+      { adapters: mockAdapters({ secrets: secrets as SecretsProvider }), io: io.io, exit: noExit },
+    )
+    expect(writes.map((w) => w.vault).sort()).toEqual(['v-prod', 'v-staging'])
+  })
+
+  it('rejects --env targeting an env without a vault configured', async () => {
+    const configPath = join(tmpDir, 'partial.config.json')
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        project: 'rando',
+        repo: 'rando-id/rando',
+        domains: { nonProd: 'a', production: 'b' },
+        apps: [{ name: 'api', rootDirectory: 'apps/api', port: 4000 }],
+        secrets: {
+          kind: '1password',
+          field: 'credential',
+          vaults: { local: 'v-local' },
+        },
+      }),
+    )
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
+      write: vi.fn(),
+    }
+    const io = captureIo()
+    const exitCalls: number[] = []
+    await run(['secrets', 'set', 'K', '--value', 'v', '--env', 'staging', '--config', configPath], {
+      adapters: mockAdapters({ secrets: secrets as SecretsProvider }),
+      io: io.io,
+      exit: ((c: number) => exitCalls.push(c)) as never,
+    })
+    expect(exitCalls[0]).toBe(1)
+    expect(io.stderr.join('\n')).toMatch(/No vault configured for env "staging"/)
+    expect(secrets.write).not.toHaveBeenCalled()
+  })
+})
+
+describe('secrets push', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    tmpDir = mkdtempSync(join(tmpdir(), 'rando-push-test-'))
+  })
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  function writeConfig(): string {
+    const configPath = join(tmpDir, 'rando.config.json')
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        project: 'rando',
+        repo: 'rando-id/rando',
+        domains: { nonProd: 'a', production: 'b' },
+        apps: [{ name: 'api', rootDirectory: 'apps/api', port: 4000 }],
+        secrets: {
+          kind: '1password',
+          field: 'credential',
+          vaults: { local: 'v-local', staging: 'v-staging' },
+        },
+      }),
+    )
+    return configPath
+  }
+
+  it('reads from the local vault by default and writes to GitHub repo secret', async () => {
+    const configPath = writeConfig()
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
+      read: vi.fn(async () => 'the-token-value'),
+    }
+    const gh: Partial<GhProvider> = {
+      whoami: vi.fn(async () => ({ login: 'newton' })),
+      setRepoSecret: vi.fn(async () => {}),
+    }
+    const io = captureIo()
+    await run(['secrets', 'push', 'OP_SERVICE_ACCOUNT_TOKEN', '--config', configPath], {
+      adapters: mockAdapters({
+        secrets: secrets as SecretsProvider,
+        gh: gh as GhProvider,
+      }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(secrets.read).toHaveBeenCalledWith('op://v-local/OP_SERVICE_ACCOUNT_TOKEN/credential')
+    expect(gh.setRepoSecret).toHaveBeenCalledWith({
+      repo: 'rando-id/rando',
+      name: 'OP_SERVICE_ACCOUNT_TOKEN',
+      value: 'the-token-value',
+    })
+  })
+
+  it('reads from the staging vault when --from staging is passed', async () => {
+    const configPath = writeConfig()
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
+      read: vi.fn(async () => 'staging-token'),
+    }
+    const gh: Partial<GhProvider> = {
+      whoami: vi.fn(async () => ({ login: 'n' })),
+      setRepoSecret: vi.fn(async () => {}),
+    }
+    await run(['secrets', 'push', 'API_KEY', '--from', 'staging', '--config', configPath], {
+      adapters: mockAdapters({
+        secrets: secrets as SecretsProvider,
+        gh: gh as GhProvider,
+      }),
+      io: captureIo().io,
+      exit: noExit,
+    })
+    expect(secrets.read).toHaveBeenCalledWith('op://v-staging/API_KEY/credential')
+  })
+
+  it('--ref overrides the vault/env convention', async () => {
+    const configPath = writeConfig()
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
+      read: vi.fn(async () => 'personal-vault-value'),
+    }
+    const gh: Partial<GhProvider> = {
+      whoami: vi.fn(async () => ({ login: 'n' })),
+      setRepoSecret: vi.fn(async () => {}),
+    }
+    await run(
+      [
+        'secrets',
+        'push',
+        'OP_SERVICE_ACCOUNT_TOKEN',
+        '--ref',
+        'op://Personal/SAToken/credential',
+        '--config',
+        configPath,
+      ],
+      {
+        adapters: mockAdapters({
+          secrets: secrets as SecretsProvider,
+          gh: gh as GhProvider,
+        }),
+        io: captureIo().io,
+        exit: noExit,
+      },
+    )
+    expect(secrets.read).toHaveBeenCalledWith('op://Personal/SAToken/credential')
+  })
+
+  it('--repo overrides the rando.config.json repo', async () => {
+    const configPath = writeConfig()
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
+      read: vi.fn(async () => 'v'),
+    }
+    const gh: Partial<GhProvider> = {
+      whoami: vi.fn(async () => ({ login: 'n' })),
+      setRepoSecret: vi.fn(async () => {}),
+    }
+    await run(
+      ['secrets', 'push', 'K', '--repo', 'other-owner/other-repo', '--config', configPath],
+      {
+        adapters: mockAdapters({
+          secrets: secrets as SecretsProvider,
+          gh: gh as GhProvider,
+        }),
+        io: captureIo().io,
+        exit: noExit,
+      },
+    )
+    expect(gh.setRepoSecret).toHaveBeenCalledWith(
+      expect.objectContaining({ repo: 'other-owner/other-repo' }),
+    )
+  })
+
+  it('refuses to push an empty value', async () => {
+    const configPath = writeConfig()
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
+      read: vi.fn(async () => '   '),
+    }
+    const gh: Partial<GhProvider> = {
+      whoami: vi.fn(async () => ({ login: 'n' })),
+      setRepoSecret: vi.fn(),
+    }
+    const io = captureIo()
+    const exitCalls: number[] = []
+    await run(['secrets', 'push', 'K', '--config', configPath], {
+      adapters: mockAdapters({
+        secrets: secrets as SecretsProvider,
+        gh: gh as GhProvider,
+      }),
+      io: io.io,
+      exit: ((c: number) => exitCalls.push(c)) as never,
+    })
+    expect(exitCalls[0]).toBe(1)
+    expect(io.stderr.join('\n')).toMatch(/Empty value/)
+    expect(gh.setRepoSecret).not.toHaveBeenCalled()
   })
 })

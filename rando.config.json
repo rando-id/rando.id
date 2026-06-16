@@ -27,6 +27,16 @@
   "postman": {
     "workspaceId": "92182519-b2a9-4ca4-8997-2b250fd1cd47"
   },
+  "secrets": {
+    "kind": "1password",
+    "account": "APT7PAMCSJHZ5MGWWPNCDOH65Y",
+    "field": "credential",
+    "vaults": {
+      "local": "jkimas55rfb5pr3g6xqwuejrpy",
+      "staging": "ftd3n4l5egcfjai7f7tm2f7ytq",
+      "prod": "ma4jp2piap7otpnnpvqmc4cgkq"
+    }
+  },
   "tracker": {
     "kind": "github",
     "jira": {

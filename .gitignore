@@ -27,6 +27,9 @@ android/
 # `op run` env files — per-developer vault references, copied from .op.env.example
 .op.env
 **/.op.env
+# `op plugin init` per-project credential bindings — your PAT lives in YOUR vault,
+# so the references in here aren't shareable. Each dev runs the init themselves.
+.op/
 
 # logs
 npm-debug.log*

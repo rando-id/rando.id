@@ -23,7 +23,7 @@ interface EnvTokenSpec {
   optional?: boolean
 }
 
-const TOKENS: EnvTokenSpec[] = [
+export const TOKENS: EnvTokenSpec[] = [
   {
     name: 'GITHUB_TOKEN',
     label: 'GITHUB_TOKEN (issues, when tracker.kind=github)',

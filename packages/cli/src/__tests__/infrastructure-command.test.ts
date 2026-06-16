@@ -39,6 +39,8 @@ function fakeAdapters(): Adapters {
     dns: () => never('dns'),
     tracker: () => never('tracker'),
     postman: () => never('postman'),
+    secrets: () => never('secrets'),
+    gh: () => never('gh'),
   }
 }
 

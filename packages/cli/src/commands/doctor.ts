@@ -15,6 +15,7 @@ import { envChecks } from '../doctor/checks/env'
 import { configChecks } from '../doctor/checks/config'
 import { hooksChecks } from '../doctor/checks/hooks'
 import { localChecks } from '../doctor/checks/local'
+import { secretsChecks } from '../doctor/checks/secrets'
 import { trackerChecks } from '../doctor/checks/tracker'
 import { terminalChecks } from '../doctor/checks/terminal'
 import { renderReport, runChecks } from '../doctor/run'
@@ -40,6 +41,7 @@ export function doctorCommand(adapters: Adapters, io: Io): Command {
         ...localChecks(),
         ...brewChecks(),
         ...(opts.skipTracker ? [] : trackerChecks(adapters, opts.config)),
+        ...secretsChecks(adapters, opts.config),
         ...terminalChecks(),
       ]
       const report = await runChecks(checks)

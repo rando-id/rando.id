@@ -11,15 +11,19 @@ import { z } from 'zod'
 import type { DbProvider } from './domain/db'
 import type { DeployProvider } from './domain/deploy'
 import type { DnsProvider } from './domain/dns'
+import type { GhProvider } from './domain/gh'
 import type { IssueTrackerProvider } from './domain/tracker'
 import type { PostmanProvider } from './domain/postman'
+import type { SecretsProvider } from './domain/secrets'
 import type { TunnelProvider } from './domain/tunnel'
 import { MissingConfigError } from './domain/errors'
 import { NeonDbProvider } from './adapters/neon'
 import { CloudflareTunnelProvider } from './adapters/cloudflare-tunnel'
 import { CloudflareDnsProvider } from './adapters/cloudflare-dns'
+import { GhCliProvider } from './adapters/gh-cli'
 import { GitHubIssuesProvider } from './adapters/github-issues'
 import { JiraCloudProvider } from './adapters/jira-cloud'
+import { OpCliProvider } from './adapters/op-cli'
 import { PostmanRestProvider } from './adapters/postman'
 import { VercelDeployProvider } from './adapters/vercel'
 import { loadSetupConfig } from './setup-config'
@@ -64,6 +68,18 @@ export interface Adapters {
   tracker(opts?: { configPath?: string }): IssueTrackerProvider
   /** Postman REST API — for `rando api postman sync`. */
   postman(): PostmanProvider
+  /**
+   * Secret vault — 1Password CLI by default. Throws when the user
+   * isn't signed in; callers should treat any failure as "skip 1P,
+   * fall back to interactive prompts".
+   */
+  secrets(): SecretsProvider
+  /**
+   * GitHub CLI — for admin ops outside the IssueTrackerProvider
+   * surface (setting repo Actions secrets, etc.). Auth is handled
+   * by `gh` itself (keychain / GH_TOKEN env var).
+   */
+  gh(): GhProvider
 }
 
 /**
@@ -139,6 +155,23 @@ export function createAdapters(env: NodeJS.ProcessEnv = process.env): Adapters {
       if (!parsed.success) throw missingVar(parsed.error, 'postman')
       return new PostmanRestProvider({ apiKey: parsed.data.POSTMAN_API_KEY })
     },
+    secrets: () => {
+      // Read the account UUID from rando.config.json so every `op`
+      // call targets the same account (the user may have multiple
+      // signed in — Personal + Family + Business + work). Config
+      // load is best-effort: if rando.config.json is missing or the
+      // secrets block isn't set, the adapter falls back to the
+      // default account.
+      let account: string | undefined
+      try {
+        const cfg = loadSetupConfig(resolve(process.cwd(), 'rando.config.json'))
+        account = cfg.secrets?.account
+      } catch {
+        // Config not loadable — fine, the adapter handles this.
+      }
+      return new OpCliProvider({ account })
+    },
+    gh: () => new GhCliProvider(),
   }
 }
 

@@ -112,7 +112,51 @@ export const SetupConfigSchema = z.object({
       collectionName: z.string().min(1).optional(),
     })
     .optional(),
+
+  /**
+   * Secret-vault integration. When set, `rando init`, `rando secrets
+   * sync`, and `rando secrets set` route every secret through the
+   * configured 1Password vault before/instead of touching `.env`.
+   *
+   * Convention: item title === env var name (e.g. NEON_API_KEY →
+   * `op://<vault-id>/NEON_API_KEY/<field>`). Means zero per-secret
+   * config — adding a new env var just means creating an item with
+   * that name in each environment's vault.
+   *
+   * One vault per environment so dev/staging/prod credentials can't
+   * cross-contaminate. The `local` vault is used by default; `--env
+   * staging|prod` overrides where supported.
+   */
+  secrets: z
+    .object({
+      kind: z.enum(['1password']).default('1password'),
+      /**
+       * 1Password account UUID — passed as --account on every `op`
+       * call so commands always target the right account, even when
+       * the user has multiple accounts configured. Find it via
+       * `op account list --format=json`.
+       */
+      account: z.string().min(1).optional(),
+      /** Field on each item that holds the credential value. */
+      field: z.string().min(1).default('credential'),
+      /**
+       * 1Password vault IDs per environment. UUIDs (not names) because
+       * names can change without breaking the integration. `local` is
+       * required since it's the default for everyday dev work;
+       * `staging` + `prod` are optional until you need them.
+       */
+      vaults: z.object({
+        local: z.string().min(1),
+        staging: z.string().min(1).optional(),
+        prod: z.string().min(1).optional(),
+      }),
+    })
+    .optional(),
 })
+
+/** Valid environment names for the `secrets` block's vaults map. */
+export type SecretsEnv = 'local' | 'staging' | 'prod'
+export const ALL_SECRETS_ENVS: SecretsEnv[] = ['local', 'staging', 'prod']
 
 export type SetupConfig = z.infer<typeof SetupConfigSchema>
 

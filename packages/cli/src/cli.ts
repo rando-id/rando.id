@@ -15,6 +15,7 @@ import { doctorCommand } from './commands/doctor'
 import { infrastructureCommand } from './commands/infrastructure'
 import { initCommand } from './commands/init'
 import { issuesCommand } from './commands/issues'
+import { secretsCommand } from './commands/secrets'
 import { isInteractiveCandidate, pickFromMenu } from './menu'
 import { SetupConfigError } from './setup-config'
 import { MissingConfigError, NotFoundError, ProviderApiError } from './domain/errors'
@@ -53,6 +54,7 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<voi
   program.addCommand(devCommand(io))
   program.addCommand(doctorCommand(adapters, io))
   program.addCommand(initCommand(adapters, io))
+  program.addCommand(secretsCommand(adapters, io))
   program.addCommand(completionCommand(io))
 
   // Interactive discovery: bare `rando` or `rando <group>` drops the user
