@@ -108,6 +108,7 @@ jobs:
         run: |
           echo "::notice title=API tests skipped::Target URL ${{ steps.target.outputs.url }} did not respond 200 on /v1/health within 5 minutes — likely no preview was deployed, or the deploy failed. Not failing the PR."
 
+      # TODO(#73): drop the `version:` pin once `op environment` lands in stable.
       - name: Install 1Password CLI (>= 2.35 for `op environment`)
         if: steps.wait.outputs.ready == 'true'
         uses: 1password/install-cli-action@v1

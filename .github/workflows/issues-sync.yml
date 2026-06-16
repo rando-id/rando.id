@@ -56,6 +56,7 @@ jobs:
       # config actually needs it. For GitHub Issues (the default) the
       # auto-provided GITHUB_TOKEN is enough — we don't burn a service
       # account read per PR for nothing.
+      # TODO(#73): drop the `version:` pin once `op environment` lands in stable.
       - name: Install 1Password CLI (>= 2.35 for `op environment`)
         if: vars.TRACKER_KIND == 'jira'
         uses: 1password/install-cli-action@v1

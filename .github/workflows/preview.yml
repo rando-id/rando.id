@@ -57,6 +57,7 @@ jobs:
 
       - run: pnpm setup:cli
 
+      # TODO(#73): drop the `version:` pin once `op environment` lands in stable.
       - name: Install 1Password CLI (>= 2.35 for `op environment`)
         uses: 1password/install-cli-action@v1
         with:
@@ -78,7 +79,7 @@ jobs:
       #   run: rando db branch create ${{ vars.RANDO_NEON_PROJECT_ID }} pr-${{ github.event.pull_request.number }} --from main
 
       - name: Trigger preview deploys
-        run: rando deploy branch '${{ github.head_ref }}' --stable-url --yes
+        run: rando deploy branch '${{ github.head_ref }}' --stable-url
         env:
           FORCE_COLOR: '1'
 
@@ -124,6 +125,7 @@ jobs:
 
       - run: pnpm setup:cli
 
+      # TODO(#73): drop the `version:` pin once `op environment` lands in stable.
       - name: Install 1Password CLI (>= 2.35 for `op environment`)
         uses: 1password/install-cli-action@v1
         with:
