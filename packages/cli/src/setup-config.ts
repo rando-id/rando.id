@@ -110,6 +110,35 @@ export const SetupConfigSchema = z.object({
     .optional(),
 
   /**
+   * Database provisioning + behavior. Only meaningful for the
+   * `rando infrastructure setup` orchestrator; everyday CLI commands
+   * (`rando db ...`) talk to Neon directly and ignore this block.
+   *
+   * `managedBy: 'vercel'` switches the project-creation step from
+   * direct Neon-API calls to `vercel install neon`, because
+   * Vercel-managed Neon orgs reject direct creates with
+   * "action restricted; reason: organization is managed by Vercel".
+   */
+  db: z
+    .object({
+      /**
+       * Database provider. Currently only Neon is supported — the
+       * field exists to mirror the `kind` pattern in `tracker` and
+       * `secrets` and to leave room for alternatives (Supabase, RDS)
+       * without a breaking schema change.
+       */
+      kind: z.enum(['neon']).default('neon'),
+      managedBy: z.enum(['standalone', 'vercel']).default('standalone'),
+      /**
+       * Vercel marketplace plan for `vercel install neon`. Vercel
+       * versioned these (`free` → `free_v3` etc.) — keep this in sync
+       * with the upstream marketplace.
+       */
+      plan: z.string().min(1).default('free_v3'),
+    })
+    .optional(),
+
+  /**
    * Postman workspace integration. Optional — `rando api postman sync`
    * + `rando init`'s Postman step both read this. workspaceId can also
    * be passed via --workspace on the CLI.

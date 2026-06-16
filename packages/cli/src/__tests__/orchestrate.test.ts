@@ -9,6 +9,7 @@ import type { DbProvider } from '../domain/db'
 import type { DeployProvider } from '../domain/deploy'
 import type { DnsProvider } from '../domain/dns'
 import type { TunnelProvider } from '../domain/tunnel'
+import type { VercelCliProvisioner } from '../domain/vercel-cli'
 import { ProviderApiError } from '../domain/errors'
 import type { SetupConfig } from '../setup-config'
 
@@ -213,6 +214,118 @@ describe('runSetup — staging env', () => {
     expect(messages(events)).toContainEqual(
       'step-skip: vercel domain staging-api.rando-id.dev already configured',
     )
+  })
+})
+
+describe('runSetup — Vercel-managed Neon', () => {
+  it('calls `vercel install neon` when project is missing AND db.managedBy="vercel"', async () => {
+    const installNeon = vi.fn(async () => undefined)
+    const vercelCli: VercelCliProvisioner = { installNeon }
+
+    let callCount = 0
+    const db: DbProvider = {
+      createProject: vi.fn(async () => {
+        throw new Error('direct createProject should NOT be called when managedBy=vercel')
+      }),
+      listProjects: vi.fn(async () => {
+        callCount += 1
+        // First call: project absent. Second call (post-install): now present.
+        if (callCount === 1) return []
+        return [{ id: 'p_neon', name: 'rando' }]
+      }),
+      createBranch: vi.fn(async ({ name }) => ({
+        id: 'br_staging',
+        name,
+        parentId: 'br_main',
+        createdAt: 'x',
+      })),
+      listBranches: vi.fn(async () => [
+        { id: 'br_main', name: 'main', parentId: null, createdAt: 'x' },
+      ]),
+      getConnectionString: vi.fn(),
+      enableExtension: vi.fn(async () => undefined),
+      deleteBranch: vi.fn(),
+      deleteProject: vi.fn(),
+      resetBranch: vi.fn(),
+    }
+    const { events, emit } = captureEvents()
+    const cfgWithVercelDb: SetupConfig = {
+      ...config,
+      db: { kind: 'neon', managedBy: 'vercel', plan: 'free_v3' },
+    }
+    // staging env exercises the db-setup branch without needing all the
+    // deploy/dns machinery; we just want to verify install path fires.
+    const deploy: DeployProvider = {
+      createProject: vi.fn(async ({ name }) => ({ id: `p_${name}`, name, rootDirectory: null })),
+      listProjects: vi.fn(),
+      getProjectByName: vi.fn(async () => null),
+      setEnv: vi.fn(),
+      listEnv: vi.fn(),
+      addDomain: vi.fn(async ({ hostname, branch }) => ({
+        name: hostname,
+        branch: branch ?? null,
+      })),
+      removeDomain: vi.fn(),
+      deleteProject: vi.fn(),
+      triggerDeployment: vi.fn(),
+      getDeployment: vi.fn(),
+    }
+    const dns: DnsProvider = {
+      addRecord: vi.fn(async (input) => ({
+        id: 'rec_1',
+        type: input.type,
+        name: input.name,
+        content: input.content,
+        ttl: 1,
+        proxied: false,
+      })),
+      listRecords: vi.fn(async () => []),
+      removeRecord: vi.fn(),
+    }
+    await runSetup(stubAll({ db, deploy, dns, vercelCli }), {
+      config: cfgWithVercelDb,
+      envs: ['staging'],
+      apps: [],
+      emit,
+    })
+
+    expect(installNeon).toHaveBeenCalledWith({
+      name: 'rando',
+      plan: 'free_v3',
+      envs: ['production', 'preview'],
+    })
+    expect(db.createProject).not.toHaveBeenCalled()
+    expect(messages(events)).toContainEqual(
+      expect.stringMatching(/provisioning "rando" via vercel install neon/),
+    )
+  })
+
+  it('throws if the post-install lookup still does not find the project', async () => {
+    const vercelCli: VercelCliProvisioner = { installNeon: vi.fn(async () => undefined) }
+    const db: DbProvider = {
+      createProject: vi.fn(),
+      listProjects: vi.fn(async () => []), // never appears
+      createBranch: vi.fn(),
+      listBranches: vi.fn(),
+      getConnectionString: vi.fn(),
+      enableExtension: vi.fn(),
+      deleteBranch: vi.fn(),
+      deleteProject: vi.fn(),
+      resetBranch: vi.fn(),
+    }
+    const cfgWithVercelDb: SetupConfig = {
+      ...config,
+      db: { kind: 'neon', managedBy: 'vercel', plan: 'free_v3' },
+    }
+    const { emit } = captureEvents()
+    await expect(
+      runSetup(stubAll({ db, vercelCli }), {
+        config: cfgWithVercelDb,
+        envs: ['staging'],
+        apps: [],
+        emit,
+      }),
+    ).rejects.toThrow(/check the Vercel dashboard/)
   })
 })
 
@@ -449,6 +562,7 @@ type Partials = Partial<{
   tunnel: TunnelProvider
   deploy: DeployProvider
   dns: DnsProvider
+  vercelCli: VercelCliProvisioner
 }>
 
 function stubAll(overrides: Partials) {
@@ -457,6 +571,7 @@ function stubAll(overrides: Partials) {
     tunnel: overrides.tunnel ?? (notProvided('tunnel') as TunnelProvider),
     deploy: overrides.deploy ?? (notProvided('deploy') as DeployProvider),
     dns: overrides.dns ?? (notProvided('dns') as DnsProvider),
+    vercelCli: overrides.vercelCli ?? (notProvided('vercelCli') as VercelCliProvisioner),
   }
 }
 

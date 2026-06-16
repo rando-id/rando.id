@@ -27,6 +27,9 @@ name: PR preview
 # Optional repo variables (Settings → Secrets and variables → Actions → Variables):
 #   RANDO_NEON_PROJECT_ID   — needed only by the optional per-PR Neon branch steps
 #   TRACKER_ENABLED=false   — disables the issue-tracker sync step
+#   PREVIEW_ENABLED=false   — disables this whole workflow (use until the
+#                             Vercel projects exist; see #75). Both preview
+#                             AND teardown skip when set.
 
 on:
   pull_request:
@@ -39,7 +42,7 @@ concurrency:
 
 jobs:
   preview:
-    if: github.event.action != 'closed'
+    if: ${{ vars.PREVIEW_ENABLED != 'false' && github.event.action != 'closed' }}
     name: Deploy preview
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -107,7 +110,7 @@ jobs:
           FORCE_COLOR: '1'
 
   teardown:
-    if: github.event.action == 'closed'
+    if: ${{ vars.PREVIEW_ENABLED != 'false' && github.event.action == 'closed' }}
     name: Teardown preview
     runs-on: ubuntu-latest
     timeout-minutes: 10

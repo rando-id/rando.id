@@ -36,6 +36,7 @@ function mockAdapters(
     postman: () => overrides.postman ?? notConfigured('postman'),
     secrets: () => overrides.secrets ?? notConfigured('secrets'),
     gh: () => overrides.gh ?? notConfigured('gh'),
+    vercelCli: () => notConfigured('vercelCli'),
   }
 }
 

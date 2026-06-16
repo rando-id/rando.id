@@ -154,15 +154,25 @@ export class VercelDeployProvider implements DeployProvider {
   private async request<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
     const url = new URL(path, this.baseUrl)
     if (this.options.teamId) url.searchParams.set('teamId', this.options.teamId)
-    const response = await this.fetch(url.toString(), {
-      method,
-      headers: {
-        Authorization: `Bearer ${this.options.apiToken}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    })
+    const fullUrl = url.toString()
+    let response: Response
+    try {
+      response = await this.fetch(fullUrl, {
+        method,
+        headers: {
+          Authorization: `Bearer ${this.options.apiToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      })
+    } catch (e) {
+      // Transport-level failure (DNS, TCP, TLS) — node's fetch throws
+      // a generic `TypeError: fetch failed` with no URL context. Wrap
+      // so the orchestrator's caller sees which API call broke.
+      const detail = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+      throw new ProviderApiError('vercel', 0, `fetch ${method} ${fullUrl} failed: ${detail}`)
+    }
     if (!response.ok) {
       const text = await response.text()
       throw new ProviderApiError('vercel', response.status, text)

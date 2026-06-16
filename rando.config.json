@@ -27,6 +27,11 @@
   "postman": {
     "workspaceId": "92182519-b2a9-4ca4-8997-2b250fd1cd47"
   },
+  "db": {
+    "kind": "neon",
+    "managedBy": "vercel",
+    "plan": "free_v3"
+  },
   "secrets": {
     "kind": "1password",
     "account": "PWOFKAZW3JFCLLMUD2WWDOSIXE",

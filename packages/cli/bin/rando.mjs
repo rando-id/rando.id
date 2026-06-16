@@ -6,7 +6,7 @@
 
 import { spawn } from 'node:child_process'
 import { existsSync } from 'node:fs'
-import { dirname, resolve } from 'node:path'
+import { delimiter, dirname, resolve } from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const here = dirname(fileURLToPath(import.meta.url))
@@ -14,6 +14,7 @@ const repoRoot = resolve(here, '..', '..', '..')
 const tsxEsm = resolve(repoRoot, 'node_modules/tsx/dist/esm/index.mjs')
 const envFile = resolve(repoRoot, '.env')
 const entry = resolve(here, '_run.mjs')
+const workspaceBin = resolve(repoRoot, 'node_modules/.bin')
 
 if (!existsSync(tsxEsm)) {
   process.stderr.write(
@@ -21,6 +22,16 @@ if (!existsSync(tsxEsm)) {
   )
   process.exit(1)
 }
+
+// Prepend the workspace's `node_modules/.bin` to PATH so adapters that
+// shell out to workspace-pinned CLIs (vercel, postman, etc.) resolve
+// to the version we depend on, regardless of where `rando` was invoked
+// from. Global installs still win if the workspace doesn't ship the
+// binary — the prepend is additive.
+const childPath =
+  process.env.PATH && process.env.PATH.length > 0
+    ? `${workspaceBin}${delimiter}${process.env.PATH}`
+    : workspaceBin
 
 const child = spawn(
   process.execPath,
@@ -30,7 +41,7 @@ const child = spawn(
     entry,
     ...process.argv.slice(2),
   ],
-  { stdio: 'inherit' },
+  { stdio: 'inherit', env: { ...process.env, PATH: childPath } },
 )
 
 child.on('exit', (code, signal) => {

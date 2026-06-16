@@ -9,6 +9,7 @@ import type { DbProvider } from './domain/db'
 import type { DeployProvider } from './domain/deploy'
 import type { DnsProvider } from './domain/dns'
 import type { TunnelProvider } from './domain/tunnel'
+import type { VercelCliProvisioner } from './domain/vercel-cli'
 import { ProviderApiError } from './domain/errors'
 import { hostnameFor, vercelProjectName, type SetupConfig, type SetupEnv } from './setup-config'
 
@@ -27,6 +28,12 @@ export interface OrchestratorDeps {
   tunnel: TunnelProvider
   deploy: DeployProvider
   dns: DnsProvider
+  /**
+   * Only invoked when `config.db?.managedBy === 'vercel'`. Provisions
+   * the Neon project via `vercel install neon` since direct Neon API
+   * creates are blocked on Vercel-managed orgs.
+   */
+  vercelCli: VercelCliProvisioner
 }
 
 export interface OrchestratorOptions {
@@ -110,6 +117,35 @@ async function setupDatabase(
       kind: 'step-skip',
       message: `db project "${config.project}" already exists (${project.id})`,
     })
+  } else if (config.db?.managedBy === 'vercel') {
+    // Vercel-managed Neon orgs reject direct API creates
+    // ("action restricted; reason: organization is managed by Vercel").
+    // Route project creation through `vercel install neon`, then
+    // re-lookup via the Neon API.
+    const plan = config.db.plan ?? 'free'
+    emit({
+      kind: 'step-start',
+      message: `db: provisioning "${config.project}" via vercel install neon (plan=${plan})`,
+    })
+    await deps.vercelCli.installNeon({
+      name: config.project,
+      plan,
+      envs: ['production', 'preview'],
+    })
+    const refreshed = await deps.db.listProjects()
+    project = refreshed.find((p) => p.name === config.project)
+    if (!project) {
+      throw new ProviderApiError(
+        'orchestrator',
+        500,
+        'vercel install neon completed but project not visible to Neon API',
+        `expected project "${config.project}" to appear after \`vercel install neon\` — check the Vercel dashboard`,
+      )
+    }
+    emit({
+      kind: 'step-done',
+      message: `db project "${project.name}" provisioned via Vercel (${project.id})`,
+    })
   } else {
     project = await deps.db.createProject({ name: config.project })
     emit({ kind: 'step-done', message: `db project "${project.name}" created (${project.id})` })
@@ -127,13 +163,11 @@ async function setupDatabase(
   }
 
   // Enable PostGIS on main (idempotent at the SQL layer thanks to IF NOT EXISTS).
+  // Soft-fail: Neon's REST API has no SQL-execution endpoint (see #79).
+  // The orchestrator emits a manual-setup note and continues so the rest
+  // of the flow (deploy projects, DNS, etc.) isn't blocked.
   if (envs.includes('production')) {
-    await deps.db.enableExtension({
-      projectId: project.id,
-      branchId: main.id,
-      extension: 'postgis',
-    })
-    emit({ kind: 'step-done', message: `db branch "main" — postgis enabled` })
+    await tryEnableExtension(deps, project.id, main.id, 'main', emit)
   }
 
   // staging branch
@@ -149,12 +183,35 @@ async function setupDatabase(
       })
       emit({ kind: 'step-done', message: `db branch "staging" created (${staging.id})` })
     }
-    await deps.db.enableExtension({
-      projectId: project.id,
-      branchId: staging.id,
-      extension: 'postgis',
+    await tryEnableExtension(deps, project.id, staging.id, 'staging', emit)
+  }
+}
+
+/**
+ * Best-effort PostGIS enable. The Neon REST API doesn't actually have
+ * a SQL-execution endpoint (see #79 for the proper fix that uses
+ * @neondatabase/serverless). Until that lands, we attempt the call and
+ * fall back to a clear "run this manually" note so the orchestrator
+ * doesn't block the rest of setup.
+ */
+async function tryEnableExtension(
+  deps: OrchestratorDeps,
+  projectId: string,
+  branchId: string,
+  branchName: string,
+  emit: (event: SetupEvent) => void,
+): Promise<void> {
+  try {
+    await deps.db.enableExtension({ projectId, branchId, extension: 'postgis' })
+    emit({ kind: 'step-done', message: `db branch "${branchName}" — postgis enabled` })
+  } catch (e) {
+    emit({
+      kind: 'note',
+      message:
+        `postgis on "${branchName}" not auto-enabled — Neon API doesn't expose SQL execution (#79). ` +
+        `Connect via psql and run: CREATE EXTENSION IF NOT EXISTS "postgis";` +
+        (e instanceof Error ? `  (underlying: ${e.message})` : ''),
     })
-    emit({ kind: 'step-done', message: `db branch "staging" — postgis enabled` })
   }
 }
 
