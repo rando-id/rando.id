@@ -75,6 +75,57 @@ describe('OpCliProvider', () => {
     })
   })
 
+  describe('listAccounts', () => {
+    it('parses the JSON array and maps each account', async () => {
+      const spawn = vi.fn(() =>
+        ok(
+          JSON.stringify([
+            {
+              url: 'iamnewton.1password.com',
+              email: 'a@b',
+              user_uuid: 'USER1',
+              account_uuid: 'ACC1',
+            },
+            {
+              url: 'work.1password.com',
+              email: 'c@d',
+              user_uuid: 'USER2',
+              account_uuid: 'ACC2',
+            },
+          ]),
+        ),
+      )
+      const accounts = await adapter(spawn).listAccounts()
+      expect(accounts).toEqual([
+        { accountUuid: 'ACC1', userUuid: 'USER1', url: 'iamnewton.1password.com', email: 'a@b' },
+        { accountUuid: 'ACC2', userUuid: 'USER2', url: 'work.1password.com', email: 'c@d' },
+      ])
+    })
+
+    it('does NOT prepend --account (listing is account-agnostic)', async () => {
+      const spawn = vi.fn(() => ok('[]'))
+      const a = new OpCliProvider({
+        spawn: spawn as unknown as typeof spawnSyncType,
+        account: 'SOMEACCOUNT',
+      })
+      await a.listAccounts()
+      const call = (spawn.mock.calls[0] ?? []) as unknown as [string, string[], unknown]
+      expect(call[1]).toEqual(['account', 'list', '--format=json'])
+      expect((call[1] ?? []).includes('--account')).toBe(false)
+    })
+
+    it('returns empty array when op outputs nothing', async () => {
+      const spawn = vi.fn(() => ok(''))
+      const accounts = await adapter(spawn).listAccounts()
+      expect(accounts).toEqual([])
+    })
+
+    it('throws when op fails', async () => {
+      const spawn = vi.fn(() => fail('op error', 1))
+      await expect(adapter(spawn).listAccounts()).rejects.toBeInstanceOf(ProviderApiError)
+    })
+  })
+
   describe('read', () => {
     it('returns the literal field value', async () => {
       const spawn = vi.fn(() => ok('the-token-value'))

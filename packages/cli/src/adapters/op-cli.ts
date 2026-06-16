@@ -13,7 +13,7 @@
 
 import { spawnSync } from 'node:child_process'
 import { ProviderApiError } from '../domain/errors'
-import type { SecretsIdentity, SecretsProvider } from '../domain/secrets'
+import type { SecretsAccount, SecretsIdentity, SecretsProvider } from '../domain/secrets'
 
 export interface OpCliOptions {
   /** Override the spawn function in tests. Defaults to node:child_process spawnSync. */
@@ -69,6 +69,40 @@ export class OpCliProvider implements SecretsProvider {
       account,
       url: parsed.url ?? '<unknown>',
     }
+  }
+
+  async listAccounts(): Promise<SecretsAccount[]> {
+    // `op account list` does NOT need --account (it's listing every
+    // account this CLI knows about), and does NOT need an active
+    // signed-in session — it reads the CLI's local config.
+    // Intentionally bypass our `run()` helper so we can skip the
+    // --account injection that whoami/read/write all do.
+    const result = this.spawnImpl(this.binary, ['account', 'list', '--format=json'], {
+      encoding: 'utf-8',
+      stdio: ['inherit', 'pipe', 'pipe'],
+    })
+    if (result.error) {
+      throw new ProviderApiError('1password', 500, result.error.message)
+    }
+    if (result.status !== 0) {
+      const stderr = (result.stderr ?? '').trim()
+      throw new ProviderApiError('1password', 500, stderr || 'op account list failed')
+    }
+    const stdout = (result.stdout ?? '').trim()
+    // Empty list is a valid result — user hasn't run `op signin` yet.
+    if (!stdout) return []
+    const parsed = JSON.parse(stdout) as Array<{
+      url?: string
+      email?: string
+      user_uuid?: string
+      account_uuid?: string
+    }>
+    return parsed.map((a) => ({
+      accountUuid: a.account_uuid ?? '',
+      userUuid: a.user_uuid ?? '',
+      url: a.url ?? '',
+      email: a.email ?? '',
+    }))
   }
 
   async read(reference: string): Promise<string> {

@@ -20,12 +20,34 @@ export interface SecretsIdentity {
   url: string
 }
 
+/**
+ * One entry per account the local CLI knows about. Used to validate
+ * that the account UUID pinned in rando.config.json actually matches
+ * an account this machine can authenticate against — catches the easy
+ * mistake of pasting user_uuid (also a UUID-shaped string sitting
+ * right next to account_uuid in the whoami JSON) into the config.
+ */
+export interface SecretsAccount {
+  accountUuid: string
+  userUuid: string
+  url: string
+  email: string
+}
+
 export interface SecretsProvider {
   /**
    * Return identity if currently signed in; throw otherwise. Used to
    * skip the 1P flow gracefully when the user hasn't run `op signin`.
    */
   whoami(): Promise<SecretsIdentity>
+
+  /**
+   * List every account the local CLI is configured to talk to. Does
+   * NOT require an active signed-in session — `op account list` reads
+   * the CLI's local config. Used by doctor to sanity-check the
+   * configured account UUID against what's actually set up.
+   */
+  listAccounts(): Promise<SecretsAccount[]>
 
   /**
    * Resolve a secret reference. For 1Password this is the `op://<vault>/<item>/<field>`

@@ -8,6 +8,7 @@ import { runChecks, renderReport } from '../doctor/run'
 import { envChecks } from '../doctor/checks/env'
 import { configChecks } from '../doctor/checks/config'
 import { hooksChecks } from '../doctor/checks/hooks'
+import { secretsChecks } from '../doctor/checks/secrets'
 import { trackerChecks } from '../doctor/checks/tracker'
 import { terminalChecks } from '../doctor/checks/terminal'
 import { MissingConfigError } from '../domain/errors'
@@ -414,6 +415,102 @@ describe('brewChecks', () => {
 })
 
 // ─── terminal checks ──────────────────────────────────────────────────
+
+describe('secretsChecks', () => {
+  function fakeSecrets(overrides: {
+    listAccounts?: () => Promise<
+      Array<{ accountUuid: string; userUuid: string; url: string; email: string }>
+    >
+    whoami?: () => Promise<{ account: string; url: string }>
+  }) {
+    return {
+      ...(overrides.listAccounts ? { listAccounts: overrides.listAccounts } : {}),
+      ...(overrides.whoami ? { whoami: overrides.whoami } : {}),
+      // Unused by the doctor check but needed to satisfy the interface
+      // when the adapter factory is invoked.
+      read: vi.fn(),
+      write: vi.fn(),
+    } as unknown as Adapters['secrets'] extends () => infer P ? P : never
+  }
+
+  function writeConfig(tmp: string, account: string | undefined): string {
+    const path = join(tmp, 'rando.config.json')
+    const secrets = {
+      kind: '1password',
+      field: 'credential',
+      vaults: { local: 'v-local' },
+      ...(account ? { account } : {}),
+    }
+    writeFileSync(
+      path,
+      JSON.stringify({
+        project: 'rando',
+        repo: 'rando-id/rando',
+        domains: { nonProd: 'a', production: 'b' },
+        apps: [{ name: 'api', rootDirectory: 'apps/api', port: 4000 }],
+        secrets,
+      }),
+    )
+    return path
+  }
+
+  it('fails loudly when secrets.account is the user_uuid instead of account_uuid', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'doctor-uuid-test-'))
+    const configPath = writeConfig(tmp, 'USER123') // a user_uuid by mistake
+    const secrets = fakeSecrets({
+      listAccounts: async () => [
+        {
+          accountUuid: 'ACC123',
+          userUuid: 'USER123',
+          url: 'iamnewton.1password.com',
+          email: '1password@nwtn.email',
+        },
+      ],
+    })
+    const adapters = fakeAdapters({ secrets: () => secrets })
+    const result = await secretsChecks(adapters, configPath)[0]!.run()
+    expect(result.status).toBe('fail')
+    expect(result.subject).toMatch(/user_uuid/)
+    expect(result.hint).toContain('ACC123')
+    expect(result.hint).toContain('1password@nwtn.email')
+  })
+
+  it('fails when secrets.account does not match any signed-in account', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'doctor-uuid-test-'))
+    const configPath = writeConfig(tmp, 'NOTHING-MATCHES-THIS')
+    const secrets = fakeSecrets({
+      listAccounts: async () => [{ accountUuid: 'ACC1', userUuid: 'U1', url: 'x', email: 'a@b' }],
+    })
+    const adapters = fakeAdapters({ secrets: () => secrets })
+    const result = await secretsChecks(adapters, configPath)[0]!.run()
+    expect(result.status).toBe('fail')
+    expect(result.subject).toMatch(/does not match/)
+    expect(result.hint).toContain('ACC1')
+  })
+
+  it('hints `op signin` when there are no signed-in accounts at all', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'doctor-uuid-test-'))
+    const configPath = writeConfig(tmp, 'WHATEVER')
+    const secrets = fakeSecrets({ listAccounts: async () => [] })
+    const adapters = fakeAdapters({ secrets: () => secrets })
+    const result = await secretsChecks(adapters, configPath)[0]!.run()
+    expect(result.status).toBe('fail')
+    expect(result.hint).toMatch(/op signin/)
+  })
+
+  it('passes through to whoami when account UUID matches', async () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'doctor-uuid-test-'))
+    const configPath = writeConfig(tmp, 'ACC1')
+    const secrets = fakeSecrets({
+      listAccounts: async () => [{ accountUuid: 'ACC1', userUuid: 'U1', url: 'x', email: 'me@x' }],
+      whoami: async () => ({ account: 'me@x', url: 'x' }),
+    })
+    const adapters = fakeAdapters({ secrets: () => secrets })
+    const result = await secretsChecks(adapters, configPath)[0]!.run()
+    expect(result.status).toBe('ok')
+    expect(result.subject).toContain('me@x')
+  })
+})
 
 describe('terminalChecks', () => {
   it('returns ok for both isTTY and chalk level when env supports color', async () => {

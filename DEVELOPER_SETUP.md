@@ -58,17 +58,31 @@ already exist and `rando.config.json` already has the IDs. **Only
 needed when forking Rando or recreating the 1Password side from
 zero.**
 
-1. **Find your 1Password account UUID** (the one you're going to
+1. **Find your 1Password `account_uuid`** (the one you're going to
    pin in `rando.config.json` → `secrets.account`):
 
    ```bash
    op signin
-   op account list --format=json | jq '.[] | {url, account_uuid}'
+   op account list --format=json | jq '.[] | {url, email, account_uuid}'
    ```
 
-   Copy the `account_uuid` of whichever account will own the Rando
-   vaults. This is fixed per-account and doesn't change as you add
-   vaults.
+   Copy the **`account_uuid`** (NOT `user_uuid` — they sit next to
+   each other in op's JSON output and look identical, but only
+   `account_uuid` works as a `--account` identifier). The output
+   looks like:
+
+   ```json
+   {
+     "url": "iamnewton.1password.com",
+     "email": "1password@nwtn.email",
+     "account_uuid": "PWOFKAZW3JFCLLMUD2WWDOSIXE"
+   }
+   ```
+
+   `account_uuid` is fixed per-account and doesn't change as you add
+   vaults. `rando doctor` validates the pinned value matches a known
+   account, so if you copy the wrong one by mistake, doctor will
+   tell you (and even suggest the right `account_uuid` to swap in).
 
 2. **Create three vaults** in the 1Password desktop app (top-left
    vault dropdown → New Vault). Name them however you like — only
