@@ -56,9 +56,11 @@ jobs:
       # config actually needs it. For GitHub Issues (the default) the
       # auto-provided GITHUB_TOKEN is enough — we don't burn a service
       # account read per PR for nothing.
-      - name: Install 1Password CLI
+      - name: Install 1Password CLI (>= 2.35 for `op environment`)
         if: vars.TRACKER_KIND == 'jira'
         uses: 1password/install-cli-action@v1
+        with:
+          version: 2.35.0-beta.01
 
       - name: Load Jira secrets from 1Password Environment
         if: vars.TRACKER_KIND == 'jira'

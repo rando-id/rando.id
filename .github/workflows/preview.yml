@@ -57,8 +57,10 @@ jobs:
 
       - run: pnpm setup:cli
 
-      - name: Install 1Password CLI
+      - name: Install 1Password CLI (>= 2.35 for `op environment`)
         uses: 1password/install-cli-action@v1
+        with:
+          version: 2.35.0-beta.01
 
       # Stream the staging 1Password Environment into $GITHUB_ENV. Every
       # KEY=VALUE line lands as an environment variable for subsequent
@@ -122,8 +124,10 @@ jobs:
 
       - run: pnpm setup:cli
 
-      - name: Install 1Password CLI
+      - name: Install 1Password CLI (>= 2.35 for `op environment`)
         uses: 1password/install-cli-action@v1
+        with:
+          version: 2.35.0-beta.01
 
       - name: Load secrets from 1Password Environment
         env:
