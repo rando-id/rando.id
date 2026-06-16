@@ -80,6 +80,11 @@ export function issuesCommand(adapters: Adapters, io: Io, deps: IssuesCommandDep
       'Probe mode used by the commit hook. Exits 0 if the tracker is fully configured. Does not prompt or modify state.',
       false,
     )
+    .option(
+      '--mine',
+      "Show only issues assigned to you (matches `rando issues list --mine`). Default shows every open issue — handy for solo projects + new contributors where assignment hasn't been triaged yet.",
+      false,
+    )
     .action(
       async (opts: {
         limit: number
@@ -87,6 +92,7 @@ export function issuesCommand(adapters: Adapters, io: Io, deps: IssuesCommandDep
         reset: boolean
         fromHook: boolean
         check: boolean
+        mine: boolean
       }) => {
         // --check: zero side-effects, just confirms the tracker is wired.
         if (opts.check) {
@@ -118,14 +124,33 @@ export function issuesCommand(adapters: Adapters, io: Io, deps: IssuesCommandDep
           return
         }
 
+        // Protected branches (main, master by default) always re-prompt:
+        // every commit on trunk is typically a different concern, so a
+        // stale cache from a previous unrelated commit shouldn't silently
+        // get applied. Configurable via `tracker.protectedBranches` in
+        // rando.config.json.
+        let isProtected = false
+        try {
+          const cfg = loadSetupConfig(opts.config)
+          const list = cfg.tracker?.protectedBranches ?? ['main', 'master']
+          isProtected = list.includes(branch)
+        } catch {
+          // Config not loadable — fall through with default isProtected=false.
+        }
+
         const existing = getCachedJiraKey(branch, git)
-        if (existing && !opts.fromHook) {
+        if (existing && !isProtected && !opts.fromHook) {
           io.stdout(
             `${io.colors.hint(`(branch ${branch} already cached: ${existing}; pass --reset to clear)`)}`,
           )
           return
         }
-        if (existing && opts.fromHook) return
+        if (existing && !isProtected && opts.fromHook) return
+        if (existing && isProtected && !opts.fromHook) {
+          io.stdout(
+            `${io.colors.hint(`(branch ${branch} is protected — re-prompting despite cached ${existing})`)}`,
+          )
+        }
 
         let provider: IssueTrackerProvider
         try {
@@ -143,7 +168,7 @@ export function issuesCommand(adapters: Adapters, io: Io, deps: IssuesCommandDep
         }
 
         const issues = await provider.searchIssues({
-          assignee: 'currentUser',
+          ...(opts.mine ? { assignee: 'currentUser' as const } : {}),
           openOnly: true,
           limit: opts.limit,
         })

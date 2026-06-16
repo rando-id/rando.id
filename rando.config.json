@@ -39,6 +39,7 @@
   },
   "tracker": {
     "kind": "github",
+    "protectedBranches": ["main", "master"],
     "jira": {
       "projectKey": "RANDO",
       "transitions": {

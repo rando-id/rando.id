@@ -330,6 +330,102 @@ describe('issues pick', () => {
     })
     await expect(run(['pick', '--check'], adapters, io, g.git)).rejects.toThrow(/not configured/)
   })
+
+  function writeConfigWithProtected(protectedBranches: string[]): string {
+    const dir = mkdtempSync(join(tmpdir(), 'pick-protected-'))
+    const path = join(dir, 'rando.config.json')
+    writeFileSync(
+      path,
+      JSON.stringify({
+        project: 'rando',
+        repo: 'rando-id/rando.id',
+        domains: { nonProd: 'rando-id.dev', production: 'rando.id' },
+        apps: [{ name: 'api', rootDirectory: 'apps/api', port: 4000 }],
+        tracker: { kind: 'github', protectedBranches },
+      }),
+    )
+    return path
+  }
+
+  it('re-prompts on protected branch even when a key is cached', async () => {
+    const configPath = writeConfigWithProtected(['main'])
+    const p = provider()
+    const io = captureIo({ selectResponses: ['#42'] })
+    const g = fakeGitConfig({ __branch: 'main', 'branch.main.jira-key': '#58' })
+    await run(
+      ['pick', '--config', configPath],
+      mockAdapters(() => p),
+      io,
+      g.git,
+    )
+    // Despite the cached #58, the picker prompted and overwrote with #42.
+    expect(p.searchIssues).toHaveBeenCalled()
+    expect(g.state['branch.main.jira-key']).toBe('#42')
+    // User sees a note about why they were re-prompted.
+    expect(io.stdout.join('\n')).toMatch(/protected/)
+  })
+
+  it('--from-hook on protected branch also re-prompts (no silent skip)', async () => {
+    const configPath = writeConfigWithProtected(['main'])
+    const p = provider()
+    const io = captureIo({ selectResponses: ['#7'] })
+    const g = fakeGitConfig({ __branch: 'main', 'branch.main.jira-key': '#58' })
+    await run(
+      ['pick', '--from-hook', '--config', configPath],
+      mockAdapters(() => p),
+      io,
+      g.git,
+    )
+    expect(p.searchIssues).toHaveBeenCalled()
+    expect(g.state['branch.main.jira-key']).toBe('#7')
+  })
+
+  it('defaults to ALL open issues (assignee filter NOT applied)', async () => {
+    const p = provider()
+    const io = captureIo({ selectResponses: ['#7'] })
+    const g = fakeGitConfig({ __branch: 'feat-scope' })
+    await run(
+      ['pick'],
+      mockAdapters(() => p),
+      io,
+      g.git,
+    )
+    // Searches without `assignee` so unassigned + assigned-to-others issues show up.
+    expect(p.searchIssues).toHaveBeenCalledWith(
+      expect.not.objectContaining({ assignee: expect.anything() as unknown }),
+    )
+    expect(p.searchIssues).toHaveBeenCalledWith(expect.objectContaining({ openOnly: true }))
+  })
+
+  it('--mine narrows to issues assigned to current user', async () => {
+    const p = provider()
+    const io = captureIo({ selectResponses: ['#7'] })
+    const g = fakeGitConfig({ __branch: 'feat-scope' })
+    await run(
+      ['pick', '--mine'],
+      mockAdapters(() => p),
+      io,
+      g.git,
+    )
+    expect(p.searchIssues).toHaveBeenCalledWith(
+      expect.objectContaining({ assignee: 'currentUser', openOnly: true }),
+    )
+  })
+
+  it('non-protected branch with cache still short-circuits (no regression)', async () => {
+    const configPath = writeConfigWithProtected(['main', 'master'])
+    const p = provider()
+    const io = captureIo()
+    const g = fakeGitConfig({ __branch: 'feat/foo', 'branch.feat/foo.jira-key': '#5' })
+    await run(
+      ['pick', '--config', configPath],
+      mockAdapters(() => p),
+      io,
+      g.git,
+    )
+    expect(p.searchIssues).not.toHaveBeenCalled()
+    expect(io.stdout.join('\n')).toContain('already cached')
+  })
 })
 
 // ─── refs ─────────────────────────────────────────────────────────────

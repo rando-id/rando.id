@@ -55,6 +55,15 @@ export const SetupConfigSchema = z.object({
   tracker: z
     .object({
       kind: z.enum(['github', 'jira']).default('github'),
+      /**
+       * Branches where the picker always prompts, ignoring any cached
+       * key. Feature-branch caching makes sense (one ticket per
+       * branch's lifetime); trunk branches don't — every commit on
+       * `main` is typically a different concern. The picker treats
+       * these as "always reset" so a stale cache from weeks ago
+       * doesn't silently get re-applied.
+       */
+      protectedBranches: z.array(z.string().min(1)).default(['main', 'master']),
       /** Required when kind is "github". Defaults give sensible label names. */
       github: z
         .object({
