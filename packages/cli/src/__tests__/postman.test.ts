@@ -114,4 +114,79 @@ describe('PostmanRestProvider', () => {
     const stub = stubFetch([{ status: 200, text: '' }])
     await expect(adapter(stub).deleteCollection('c-1')).resolves.toBeUndefined()
   })
+
+  it('createCollection POSTs the local JSON wrapped under `collection`', async () => {
+    const stub = stubFetch([{ body: { collection: { id: 'c-9', uid: 'u-9', name: 'Rando API' } } }])
+    const localCollection = { info: { name: 'Rando API' }, item: [{ name: 'health' }] }
+    const result = await adapter(stub).createCollection({
+      workspaceId: 'ws-1',
+      collection: localCollection,
+    })
+    expect(result).toEqual({ id: 'c-9', uid: 'u-9', name: 'Rando API' })
+    expect(stub.calls[0]?.method).toBe('POST')
+    expect(stub.calls[0]?.url).toBe('https://api.postman.test/collections?workspace=ws-1')
+    expect(stub.calls[0]?.body).toEqual({ collection: localCollection })
+  })
+
+  it('updateCollection PUTs to the existing uid (preserves stable id)', async () => {
+    const stub = stubFetch([{ body: { collection: { id: 'c-9', uid: 'u-9', name: 'Rando API' } } }])
+    await adapter(stub).updateCollection({
+      uid: 'u-9',
+      collection: { info: { name: 'Rando API' }, item: [] },
+    })
+    expect(stub.calls[0]?.method).toBe('PUT')
+    expect(stub.calls[0]?.url).toBe('https://api.postman.test/collections/u-9')
+  })
+
+  it('listEnvironments maps each entry from the workspace', async () => {
+    const stub = stubFetch([
+      {
+        body: {
+          environments: [
+            { id: 'e-1', uid: 'u-1', name: 'local' },
+            { id: 'e-2', uid: 'u-2', name: 'staging' },
+          ],
+        },
+      },
+    ])
+    const result = await adapter(stub).listEnvironments({ workspaceId: 'ws-1' })
+    expect(result).toHaveLength(2)
+    expect(stub.calls[0]?.url).toBe('https://api.postman.test/environments?workspace=ws-1')
+  })
+
+  it('findEnvironmentByName returns the match by name, null when absent', async () => {
+    const stub = stubFetch([
+      {
+        body: {
+          environments: [
+            { id: 'e-1', uid: 'u-1', name: 'local' },
+            { id: 'e-2', uid: 'u-2', name: 'staging' },
+          ],
+        },
+      },
+    ])
+    const found = await adapter(stub).findEnvironmentByName({
+      workspaceId: 'ws-1',
+      name: 'staging',
+    })
+    expect(found?.uid).toBe('u-2')
+  })
+
+  it('createEnvironment POSTs the env wrapped under `environment`', async () => {
+    const stub = stubFetch([{ body: { environment: { id: 'e-9', uid: 'u-9', name: 'local' } } }])
+    const local = { name: 'local', values: [{ key: 'baseUrl', value: 'http://x' }] }
+    await adapter(stub).createEnvironment({ workspaceId: 'ws-1', environment: local })
+    expect(stub.calls[0]?.method).toBe('POST')
+    expect(stub.calls[0]?.body).toEqual({ environment: local })
+  })
+
+  it('updateEnvironment PUTs by uid', async () => {
+    const stub = stubFetch([{ body: { environment: { id: 'e-9', uid: 'u-9', name: 'local' } } }])
+    await adapter(stub).updateEnvironment({
+      uid: 'u-9',
+      environment: { name: 'local', values: [] },
+    })
+    expect(stub.calls[0]?.method).toBe('PUT')
+    expect(stub.calls[0]?.url).toBe('https://api.postman.test/environments/u-9')
+  })
 })

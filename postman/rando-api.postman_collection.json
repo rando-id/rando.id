@@ -1,0 +1,657 @@
+{
+  "item": [
+    {
+      "name": "Liveness check",
+      "request": {
+        "name": "Liveness check",
+        "description": {
+          "content": "Public, unauthenticated. Returns service identity + timestamp.",
+          "type": "text/plain"
+        },
+        "url": {
+          "path": ["v1", "health"],
+          "host": ["{{baseUrl}}"],
+          "query": [],
+          "variable": []
+        },
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "method": "GET",
+        "body": {},
+        "auth": null
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('responds 200', () => pm.response.to.have.status(200));",
+              "pm.test('reports the service identity + timestamp', () => {",
+              "  const body = pm.response.json();",
+              "  pm.expect(body).to.have.property('ok', true);",
+              "  pm.expect(body).to.have.property('service');",
+              "  pm.expect(body).to.have.property('timestamp');",
+              "});"
+            ]
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      }
+    },
+    {
+      "name": "List contacts for the authenticated user",
+      "request": {
+        "name": "List contacts for the authenticated user",
+        "description": {
+          "content": "Returns contacts sorted by distance from `near` (lat,lng) when provided, otherwise alphabetically by last name. Supports filtering by favorites, list membership, and a free-text query.",
+          "type": "text/plain"
+        },
+        "url": {
+          "path": ["v1", "contacts"],
+          "host": ["{{baseUrl}}"],
+          "query": [
+            {
+              "disabled": false,
+              "description": {
+                "content": "",
+                "type": "text/plain"
+              },
+              "key": "near",
+              "value": "<string>"
+            },
+            {
+              "disabled": false,
+              "description": {
+                "content": "",
+                "type": "text/plain"
+              },
+              "key": "favorites",
+              "value": "<string>"
+            },
+            {
+              "disabled": false,
+              "description": {
+                "content": "",
+                "type": "text/plain"
+              },
+              "key": "list",
+              "value": "<string>"
+            },
+            {
+              "disabled": false,
+              "description": {
+                "content": "",
+                "type": "text/plain"
+              },
+              "key": "q",
+              "value": "<string>"
+            },
+            {
+              "disabled": false,
+              "description": {
+                "content": " (This can only be one of distance,last_name,date_added,date_updated)",
+                "type": "text/plain"
+              },
+              "key": "sort",
+              "value": "date_added"
+            }
+          ],
+          "variable": []
+        },
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "method": "GET",
+        "body": {},
+        "auth": null
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('rejects unauthenticated requests', () => {",
+              "  // 404 currently accepted because the ts-rest handler",
+              "  // does not propagate the 401 Response thrown by",
+              "  // requireCurrentUser — see #63. Tighten to [401, 403]",
+              "  // once that's fixed.",
+              "  pm.expect(pm.response.code).to.be.oneOf([401, 403, 404]);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      }
+    },
+    {
+      "name": "Create a contact + location + first interaction in one tx",
+      "request": {
+        "name": "Create a contact + location + first interaction in one tx",
+        "description": {
+          "content": "Compound endpoint: creates the location (with 50m PostGIS dedup), the contact, and the first interaction in a single DB transaction. At least one of firstName/lastName/company is required.",
+          "type": "text/plain"
+        },
+        "url": {
+          "path": ["v1", "contacts"],
+          "host": ["{{baseUrl}}"],
+          "query": [],
+          "variable": []
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "method": "POST",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"location\": {\n    \"lat\": \"<number>\",\n    \"lng\": \"<number>\",\n    \"name\": \"<string>\",\n    \"address\": \"<string>\"\n  },\n  \"firstName\": \"<string>\",\n  \"lastName\": \"<string>\",\n  \"company\": \"<string>\",\n  \"notes\": \"<string>\",\n  \"favorite\": \"<boolean>\",\n  \"interaction\": {\n    \"metAt\": \"<dateTime>\",\n    \"notes\": \"<string>\"\n  }\n}",
+          "options": {
+            "raw": {
+              "headerFamily": "json",
+              "language": "json"
+            }
+          }
+        },
+        "auth": null
+      },
+      "event": [],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      }
+    },
+    {
+      "name": "Fetch one contact by id",
+      "request": {
+        "name": "Fetch one contact by id",
+        "description": {
+          "content": "Owner-scoped — returns 404 if the contact does not exist OR is owned by a different user.",
+          "type": "text/plain"
+        },
+        "url": {
+          "path": ["v1", "contacts", ":id"],
+          "host": ["{{baseUrl}}"],
+          "query": [
+            {
+              "disabled": false,
+              "description": {
+                "content": "",
+                "type": "text/plain"
+              },
+              "key": "near",
+              "value": "<string>"
+            }
+          ],
+          "variable": [
+            {
+              "type": "any",
+              "value": "<string>",
+              "key": "id",
+              "disabled": false,
+              "description": {
+                "content": "(Required) ",
+                "type": "text/plain"
+              }
+            }
+          ]
+        },
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "method": "GET",
+        "body": {},
+        "auth": null
+      },
+      "event": [],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      }
+    },
+    {
+      "name": "Partial update of mutable contact fields",
+      "request": {
+        "name": "Partial update of mutable contact fields",
+        "description": {
+          "content": "Strict zod — unknown fields are rejected. Returns the updated contact (with distance from `near` if provided).",
+          "type": "text/plain"
+        },
+        "url": {
+          "path": ["v1", "contacts", ":id"],
+          "host": ["{{baseUrl}}"],
+          "query": [
+            {
+              "disabled": false,
+              "description": {
+                "content": "",
+                "type": "text/plain"
+              },
+              "key": "near",
+              "value": "<string>"
+            }
+          ],
+          "variable": [
+            {
+              "type": "any",
+              "value": "<string>",
+              "key": "id",
+              "disabled": false,
+              "description": {
+                "content": "(Required) ",
+                "type": "text/plain"
+              }
+            }
+          ]
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "method": "PATCH",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"firstName\": \"<string>\",\n  \"lastName\": \"<string>\",\n  \"company\": \"<string>\",\n  \"notes\": \"<string>\",\n  \"favorite\": \"<boolean>\"\n}",
+          "options": {
+            "raw": {
+              "headerFamily": "json",
+              "language": "json"
+            }
+          }
+        },
+        "auth": null
+      },
+      "event": [],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      }
+    },
+    {
+      "name": "List the user's custom lists",
+      "request": {
+        "name": "List the user's custom lists",
+        "description": {
+          "content": "Returns ListItem rows ordered by creation date ASC. memberCount is precomputed.",
+          "type": "text/plain"
+        },
+        "url": {
+          "path": ["v1", "lists"],
+          "host": ["{{baseUrl}}"],
+          "query": [],
+          "variable": []
+        },
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "method": "GET",
+        "body": {},
+        "auth": null
+      },
+      "event": [
+        {
+          "listen": "test",
+          "script": {
+            "type": "text/javascript",
+            "exec": [
+              "pm.test('rejects unauthenticated requests', () => {",
+              "  // 404 currently accepted because the ts-rest handler",
+              "  // does not propagate the 401 Response thrown by",
+              "  // requireCurrentUser — see #63. Tighten to [401, 403]",
+              "  // once that's fixed.",
+              "  pm.expect(pm.response.code).to.be.oneOf([401, 403, 404]);",
+              "});"
+            ]
+          }
+        }
+      ],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      }
+    },
+    {
+      "name": "Create a new custom list",
+      "request": {
+        "name": "Create a new custom list",
+        "description": {},
+        "url": {
+          "path": ["v1", "lists"],
+          "host": ["{{baseUrl}}"],
+          "query": [],
+          "variable": []
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "method": "POST",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"<string>\"\n}",
+          "options": {
+            "raw": {
+              "headerFamily": "json",
+              "language": "json"
+            }
+          }
+        },
+        "auth": null
+      },
+      "event": [],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      }
+    },
+    {
+      "name": "Fetch one list + its members",
+      "request": {
+        "name": "Fetch one list + its members",
+        "description": {
+          "content": "Owner-scoped. Members are returned as ContactListItem rows, distance-sorted from `near` when provided.",
+          "type": "text/plain"
+        },
+        "url": {
+          "path": ["v1", "lists", ":id"],
+          "host": ["{{baseUrl}}"],
+          "query": [
+            {
+              "disabled": false,
+              "description": {
+                "content": "",
+                "type": "text/plain"
+              },
+              "key": "near",
+              "value": "<string>"
+            }
+          ],
+          "variable": [
+            {
+              "type": "any",
+              "value": "<string>",
+              "key": "id",
+              "disabled": false,
+              "description": {
+                "content": "(Required) ",
+                "type": "text/plain"
+              }
+            }
+          ]
+        },
+        "header": [
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "method": "GET",
+        "body": {},
+        "auth": null
+      },
+      "event": [],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      }
+    },
+    {
+      "name": "Rename a list",
+      "request": {
+        "name": "Rename a list",
+        "description": {},
+        "url": {
+          "path": ["v1", "lists", ":id"],
+          "host": ["{{baseUrl}}"],
+          "query": [],
+          "variable": [
+            {
+              "type": "any",
+              "value": "<string>",
+              "key": "id",
+              "disabled": false,
+              "description": {
+                "content": "(Required) ",
+                "type": "text/plain"
+              }
+            }
+          ]
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "method": "PATCH",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"name\": \"<string>\"\n}",
+          "options": {
+            "raw": {
+              "headerFamily": "json",
+              "language": "json"
+            }
+          }
+        },
+        "auth": null
+      },
+      "event": [],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      }
+    },
+    {
+      "name": "Delete a list (cascades to list_members)",
+      "request": {
+        "name": "Delete a list (cascades to list_members)",
+        "description": {},
+        "url": {
+          "path": ["v1", "lists", ":id"],
+          "host": ["{{baseUrl}}"],
+          "query": [],
+          "variable": [
+            {
+              "type": "any",
+              "value": "<string>",
+              "key": "id",
+              "disabled": false,
+              "description": {
+                "content": "(Required) ",
+                "type": "text/plain"
+              }
+            }
+          ]
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "method": "DELETE",
+        "body": {
+          "mode": "raw",
+          "raw": "",
+          "options": {
+            "raw": {
+              "headerFamily": "json",
+              "language": "json"
+            }
+          }
+        },
+        "auth": null
+      },
+      "event": [],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      }
+    },
+    {
+      "name": "Add a contact to a list",
+      "request": {
+        "name": "Add a contact to a list",
+        "description": {
+          "content": "Idempotent — `added=false` covers both \"already a member\" and \"list/contact not owned by user\". Caller decides whether to show a toast.",
+          "type": "text/plain"
+        },
+        "url": {
+          "path": ["v1", "lists", ":id", "members"],
+          "host": ["{{baseUrl}}"],
+          "query": [],
+          "variable": [
+            {
+              "type": "any",
+              "value": "<string>",
+              "key": "id",
+              "disabled": false,
+              "description": {
+                "content": "(Required) ",
+                "type": "text/plain"
+              }
+            }
+          ]
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "method": "POST",
+        "body": {
+          "mode": "raw",
+          "raw": "{\n  \"contactId\": \"<uuid>\"\n}",
+          "options": {
+            "raw": {
+              "headerFamily": "json",
+              "language": "json"
+            }
+          }
+        },
+        "auth": null
+      },
+      "event": [],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      }
+    },
+    {
+      "name": "Remove a contact from a list",
+      "request": {
+        "name": "Remove a contact from a list",
+        "description": {},
+        "url": {
+          "path": ["v1", "lists", ":id", "members", ":contactId"],
+          "host": ["{{baseUrl}}"],
+          "query": [],
+          "variable": [
+            {
+              "type": "any",
+              "value": "<string>",
+              "key": "id",
+              "disabled": false,
+              "description": {
+                "content": "(Required) ",
+                "type": "text/plain"
+              }
+            },
+            {
+              "type": "any",
+              "value": "<string>",
+              "key": "contactId",
+              "disabled": false,
+              "description": {
+                "content": "(Required) ",
+                "type": "text/plain"
+              }
+            }
+          ]
+        },
+        "header": [
+          {
+            "key": "Content-Type",
+            "value": "application/json"
+          },
+          {
+            "key": "Accept",
+            "value": "application/json"
+          }
+        ],
+        "method": "DELETE",
+        "body": {
+          "mode": "raw",
+          "raw": "",
+          "options": {
+            "raw": {
+              "headerFamily": "json",
+              "language": "json"
+            }
+          }
+        },
+        "auth": null
+      },
+      "event": [],
+      "protocolProfileBehavior": {
+        "disableBodyPruning": true
+      }
+    }
+  ],
+  "event": [],
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "https://api.rando.id"
+    }
+  ],
+  "info": {
+    "name": "Rando API",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "description": {
+      "content": "Auto-generated from the ts-rest contract in @rando/api-client. Edit the contract, not this output.",
+      "type": "text/plain"
+    }
+  }
+}

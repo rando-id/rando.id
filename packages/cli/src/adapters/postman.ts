@@ -19,6 +19,7 @@
 import { ProviderApiError } from '../domain/errors'
 import type {
   PostmanCollection,
+  PostmanEnvironment,
   PostmanProvider,
   PostmanUser,
   PostmanWorkspace,
@@ -69,6 +70,69 @@ export class PostmanRestProvider implements PostmanProvider {
 
   async deleteCollection(collectionId: string): Promise<void> {
     await this.request('DELETE', `/collections/${encodeURIComponent(collectionId)}`)
+  }
+
+  async createCollection(input: {
+    workspaceId: string
+    collection: unknown
+  }): Promise<PostmanCollection> {
+    // POST /collections with `?workspace=<id>` puts the new collection
+    // into the right workspace. Body shape is `{ collection: <v2.1 json> }`.
+    const raw = await this.request<{ collection: RawCollection }>(
+      'POST',
+      `/collections?workspace=${encodeURIComponent(input.workspaceId)}`,
+      { collection: input.collection },
+    )
+    return mapCollection(raw.collection)
+  }
+
+  async updateCollection(input: { uid: string; collection: unknown }): Promise<PostmanCollection> {
+    const raw = await this.request<{ collection: RawCollection }>(
+      'PUT',
+      `/collections/${encodeURIComponent(input.uid)}`,
+      { collection: input.collection },
+    )
+    return mapCollection(raw.collection)
+  }
+
+  async listEnvironments(input: { workspaceId: string }): Promise<PostmanEnvironment[]> {
+    const raw = await this.request<{ environments: RawEnvironment[] }>(
+      'GET',
+      `/environments?workspace=${encodeURIComponent(input.workspaceId)}`,
+    )
+    return raw.environments.map(mapEnvironment)
+  }
+
+  async findEnvironmentByName(input: {
+    workspaceId: string
+    name: string
+  }): Promise<PostmanEnvironment | null> {
+    const envs = await this.listEnvironments(input)
+    return envs.find((e) => e.name === input.name) ?? null
+  }
+
+  async createEnvironment(input: {
+    workspaceId: string
+    environment: unknown
+  }): Promise<PostmanEnvironment> {
+    const raw = await this.request<{ environment: RawEnvironment }>(
+      'POST',
+      `/environments?workspace=${encodeURIComponent(input.workspaceId)}`,
+      { environment: input.environment },
+    )
+    return mapEnvironment(raw.environment)
+  }
+
+  async updateEnvironment(input: {
+    uid: string
+    environment: unknown
+  }): Promise<PostmanEnvironment> {
+    const raw = await this.request<{ environment: RawEnvironment }>(
+      'PUT',
+      `/environments/${encodeURIComponent(input.uid)}`,
+      { environment: input.environment },
+    )
+    return mapEnvironment(raw.environment)
   }
 
   async importOpenApi(input: { workspaceId: string; spec: unknown }): Promise<PostmanCollection> {
@@ -135,6 +199,12 @@ interface RawCollection {
   name: string
 }
 
+interface RawEnvironment {
+  id: string
+  uid: string
+  name: string
+}
+
 function mapUser(raw: RawUser): PostmanUser {
   return { id: raw.id, username: raw.username, fullName: raw.fullName }
 }
@@ -144,5 +214,9 @@ function mapWorkspace(raw: RawWorkspace): PostmanWorkspace {
 }
 
 function mapCollection(raw: RawCollection): PostmanCollection {
+  return { id: raw.id, uid: raw.uid, name: raw.name }
+}
+
+function mapEnvironment(raw: RawEnvironment): PostmanEnvironment {
   return { id: raw.id, uid: raw.uid, name: raw.name }
 }

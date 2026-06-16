@@ -28,6 +28,12 @@ export interface PostmanCollection {
   name: string
 }
 
+export interface PostmanEnvironment {
+  id: string
+  uid: string
+  name: string
+}
+
 export interface SyncResult {
   collection: PostmanCollection
   /** True when a previous collection was deleted before this import. */
@@ -64,4 +70,41 @@ export interface PostmanProvider {
     /** Full OpenAPI spec object — the adapter JSON-stringifies it. */
     spec: unknown
   }): Promise<PostmanCollection>
+
+  /**
+   * Create a collection from a local Postman v2.1 collection JSON
+   * (the kind `rando api postman generate` writes). Use this when the
+   * file has hand-authored pm.test() blocks that you want preserved in
+   * Postman — importOpenApi can't carry those because it converts from
+   * the spec, not from a collection.
+   */
+  createCollection(input: { workspaceId: string; collection: unknown }): Promise<PostmanCollection>
+
+  /**
+   * Replace an existing collection's contents while keeping its uid
+   * stable. Stable uid matters because Postman Monitors / shared links
+   * reference the uid; delete-and-recreate breaks those.
+   */
+  updateCollection(input: { uid: string; collection: unknown }): Promise<PostmanCollection>
+
+  /** List environments in a workspace. */
+  listEnvironments(input: { workspaceId: string }): Promise<PostmanEnvironment[]>
+
+  /**
+   * Find an environment by name within a workspace. Returns null when
+   * no match exists — used by `push` to decide create vs update.
+   */
+  findEnvironmentByName(input: {
+    workspaceId: string
+    name: string
+  }): Promise<PostmanEnvironment | null>
+
+  /** Create a new environment from a local Postman environment JSON. */
+  createEnvironment(input: {
+    workspaceId: string
+    environment: unknown
+  }): Promise<PostmanEnvironment>
+
+  /** Replace an existing environment, keeping uid stable. */
+  updateEnvironment(input: { uid: string; environment: unknown }): Promise<PostmanEnvironment>
 }

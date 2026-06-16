@@ -24,6 +24,9 @@ android/
 .env
 .env.local
 .env.*.local
+# `op run` env files — per-developer vault references, copied from .op.env.example
+.op.env
+**/.op.env
 
 # logs
 npm-debug.log*

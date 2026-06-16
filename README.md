@@ -124,7 +124,7 @@ The full spec is auto-generated at `/v1/openapi.json` (zero drift — see [`pack
 
 - **PowerSync**: package stub only. Service + client setup is TODO ([#27](https://github.com/rando-id/rando.id/issues/27)).
 - **Sentry / PostHog**: event names defined, init not wired into apps yet ([#41](https://github.com/rando-id/rando.id/issues/41)).
-- **Postman collection sync**: CLI side is wired — `rando api postman sync` pushes the OpenAPI spec into a Postman workspace. CI runner tracked in [#59](https://github.com/rando-id/rando.id/issues/59).
+- **Postman collection sync**: CLI side is wired — `rando api postman sync` pushes the OpenAPI spec into a Postman workspace for UI exploration. The canonical test loop lives in [`postman/rando-api.postman_collection.json`](./postman/rando-api.postman_collection.json) (collection-as-code) — regenerate via `rando api postman generate`, hand-author `pm.test()` assertions, then run via `pnpm test:api` locally or wait for `.github/workflows/api-tests.yml` to run it against the PR's preview URL on every push.
 - **Storybook + Playwright + CI**: not started.
 
 See [specs/apps.md](./specs/apps.md) §5 for the phased feature plan.

@@ -1,0 +1,155 @@
+name: API tests
+
+# Runs the Postman collection (postman/rando-api.postman_collection.json)
+# via newman against the PR's stable preview URL on every pull_request
+# event, and against staging nightly. Collection-as-code: tests live in
+# the JSON file, reviewed in PRs alongside the contract change that
+# motivated them.
+#
+# On PR events:
+#   - Computes <branch-slug>-api.<nonProd-zone> (matches the URL
+#     `rando deploy branch --stable-url` builds in preview.yml).
+#   - Polls /v1/health on that URL for up to 5 minutes. If it never
+#     comes up (no preview was deployed, or the deploy failed), the
+#     job emits a notice and exits successfully — we don't fail PRs
+#     for preview-deploy issues.
+#   - Runs `pnpm test:api` against the preview URL.
+#   - On failure, posts a comment on the PR with the failure count.
+#
+# Nightly:
+#   - Same flow against staging-api.rando-id.dev.
+#
+# Required repo secrets: none — newman + the collection JSON are the
+# whole input surface; preview URLs are public.
+#
+# vars.POSTMAN_ENABLED=false disables the workflow without removing
+# it (matches the issues-sync.yml + preview.yml pattern).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  schedule:
+    # 07:00 UTC = midnight Pacific. Cron is GitHub-side, no DST handling.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      baseUrl:
+        description: 'Override target URL (defaults to staging)'
+        required: false
+        type: string
+
+concurrency:
+  group: api-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Newman against preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: ${{ vars.POSTMAN_ENABLED != 'false' }}
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - run: pnpm install --frozen-lockfile
+
+      - name: Compute target URL
+        id: target
+        run: |
+          if [ -n "${{ inputs.baseUrl }}" ]; then
+            URL="${{ inputs.baseUrl }}"
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            URL="https://staging-api.rando-id.dev"
+          else
+            # Same slug logic as packages/cli/src/commands/deploy.ts:slugifyBranch —
+            # lowercase, non-alphanum collapsed to '-', leading/trailing '-' stripped.
+            SLUG=$(echo "${{ github.head_ref }}" \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
+            URL="https://${SLUG}-api.rando-id.dev"
+          fi
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "Target: ${URL}"
+
+      - name: Wait for target URL to be reachable
+        id: wait
+        run: |
+          # Poll /v1/health for up to 5 minutes (30 × 10s). The preview
+          # workflow runs in parallel and typically takes 2-4 minutes;
+          # nightly runs against staging which is always up.
+          URL="${{ steps.target.outputs.url }}"
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${URL}/v1/health" || echo "000")
+            if [ "$code" = "200" ]; then
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "${URL} responding 200 on attempt $i"
+              exit 0
+            fi
+            echo "attempt $i: ${URL}/v1/health → ${code}, retrying in 10s..."
+            sleep 10
+          done
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if target not ready
+        if: steps.wait.outputs.ready != 'true'
+        run: |
+          echo "::notice title=API tests skipped::Target URL ${{ steps.target.outputs.url }} did not respond 200 on /v1/health within 5 minutes — likely no preview was deployed, or the deploy failed. Not failing the PR."
+
+      - name: Run newman against target
+        if: steps.wait.outputs.ready == 'true'
+        env:
+          BASE_URL: ${{ steps.target.outputs.url }}
+          FORCE_COLOR: '1'
+        run: pnpm test:api
+
+      - name: Upload JUnit report
+        if: always() && steps.wait.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: newman-results
+          path: test-results/newman.xml
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Comment on PR with failures
+        if: failure() && github.event_name == 'pull_request' && steps.wait.outputs.ready == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            let failures = 0
+            let total = 0
+            try {
+              const xml = fs.readFileSync('test-results/newman.xml', 'utf8')
+              failures = (xml.match(/<failure /g) || []).length
+              total = (xml.match(/<testcase /g) || []).length
+            } catch {}
+            const target = '${{ steps.target.outputs.url }}'
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            const body = [
+              `## API tests failed`,
+              ``,
+              `**${failures} of ${total} assertion(s) failed** running newman against \`${target}\`.`,
+              ``,
+              `Full output: ${run}`,
+              ``,
+              `<sub>Tests live in \`postman/rando-api.postman_collection.json\` — edit there and re-push to update.</sub>`,
+            ].join('\n')
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            })

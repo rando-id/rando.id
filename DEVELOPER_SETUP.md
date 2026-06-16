@@ -88,7 +88,107 @@ pnpm --filter @rando/native dev       # Expo dev tools
 pnpm typecheck                        # all 15 workspaces
 pnpm --filter @rando/db db:generate   # after schema changes
 pnpm --filter @rando/db db:reset      # drop + migrate + seed
+
+pnpm test:api                         # newman against http://localhost:4000 (override w/ BASE_URL=...)
+op run --env-file=postman/.op.env -- pnpm test:api   # inject auth token from 1Password (needed once authed tests land)
+rando api postman generate            # regenerate postman/rando-api.postman_collection.json from the spec
+rando api postman push                # push local collection + env JSONs into your Postman workspace
 ```
+
+## API testing — Postman, newman, 1Password
+
+The canonical API test loop is **collection-as-code**: the Postman
+collection JSON lives at `postman/rando-api.postman_collection.json`
+with hand-authored `pm.test()` assertions, run by newman (in CLI / CI)
+and mirrored to Postman desktop (for UI exploration). 1Password
+provides the auth tokens at runtime via the `op` CLI.
+
+### First-time setup
+
+```bash
+# 1. CLI tools — both already in scripts/Brewfile, install if you skipped:
+brew bundle install --file=scripts/Brewfile   # picks up postman-cli + 1password-cli
+brew install --cask postman                   # desktop app (optional, only for UI exploration)
+
+# 2. Confirm `op` is logged in:
+op account list                               # should show your 1Password account(s)
+op signin                                     # if list is empty / session expired
+
+# 3. Workspace id — only needed if you want to push to Postman desktop.
+#    Open rando.config.json and set "postman": { "workspaceId": "<your-ws-id>" }.
+#    Find the id in Postman desktop: workspace dropdown → ⓘ → copy id from the URL bar.
+
+# 4. (Optional, only needed when authed tests land) per-developer 1Password references:
+cp postman/.op.env.example postman/.op.env
+$EDITOR postman/.op.env                       # adjust the op:// path to your vault layout
+```
+
+### Daily usage
+
+```bash
+# Just run the tests against your local API:
+pnpm --filter @rando/api dev                  # terminal 1
+pnpm test:api                                 # terminal 2
+
+# Hit a deployed env instead:
+BASE_URL=https://staging-api.rando-id.dev pnpm test:api
+
+# Inject 1Password secrets (only matters once you have authed tests):
+op run --env-file=postman/.op.env -- pnpm test:api
+
+# Mirror the local collection + env JSONs to your Postman workspace
+# (so you can browse + edit in the desktop UI). Uses PUT to keep
+# uids stable — Postman Monitors / shared links won't break:
+rando api postman push
+
+# Regenerate the collection skeleton from the OpenAPI spec.
+# IMPORTANT: this refuses to overwrite without --force because it
+# would wipe your hand-authored pm.test() blocks. Generate to a
+# temp path first and merge changes manually.
+rando api postman generate --out /tmp/new-collection.json
+diff postman/rando-api.postman_collection.json /tmp/new-collection.json
+```
+
+### 1Password vault layout
+
+Personal Pro / Family / Business 1Password accounts all work the
+same — the `op` CLI doesn't care which tier you're on. Create one
+item per environment under whichever vault you already use for dev
+secrets (or make a dedicated `Rando` vault for clarity):
+
+| Vault                   | Item                  | Field        |
+| ----------------------- | --------------------- | ------------ |
+| `Rando` (or `Personal`) | `Rando API — dev`     | `credential` |
+| `Rando` (or `Personal`) | `Rando API — staging` | `credential` |
+| `Rando` (or `Personal`) | `Rando API — prod`    | `credential` |
+
+Right-click an item in the 1Password desktop app and pick **Copy
+Secret Reference** to get the URI. It looks like
+`op://Rando/Rando API — dev/credential` — paste into `postman/.op.env`.
+Different vault names per developer are fine; `.op.env` is gitignored
+so it doesn't leak into the repo.
+
+### Where each piece lives
+
+- `postman/rando-api.postman_collection.json` — committed, source of truth, hand-authored tests on top of generated request shapes
+- `postman/environments/{local,staging,prod}.postman_environment.json` — committed, `baseUrl` per env (and `authToken` placeholder, empty until authed tests land)
+- `postman/.op.env.example` — committed, template showing the `op://` reference shape
+- `postman/.op.env` — gitignored, per-developer vault paths
+- `test-results/newman.xml` — gitignored, JUnit output from `pnpm test:api`
+- `.github/workflows/api-tests.yml` — CI, runs newman against PR preview URLs + nightly staging
+
+### Postman desktop import (one-time, optional)
+
+If you want to use the Postman desktop app for exploration (vs only
+the CLI test loop):
+
+1. Run `rando api postman push` once after setting `postman.workspaceId`.
+   This pushes the collection + 3 environment JSONs.
+2. Open Postman desktop → switch to the Rando workspace.
+3. The collection + environments show up automatically; pick an env
+   from the top-right dropdown.
+4. Future pushes update in-place (stable uids) so any bookmarks /
+   Monitor configurations you set up keep working.
 
 ## End-to-end demo flow
 

@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -527,6 +527,143 @@ describe('api postman sync', () => {
     })
   })
 
+  it('generate writes a Postman v2.1 collection from a spec file', async () => {
+    const specPath = join(tmpDir, 'spec.json')
+    writeFileSync(
+      specPath,
+      JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Test API', version: '1.0.0' },
+        paths: {
+          '/health': {
+            get: {
+              operationId: 'health',
+              tags: ['Health'],
+              responses: { '200': { description: 'ok' } },
+            },
+          },
+          '/contacts': {
+            get: {
+              operationId: 'listContacts',
+              tags: ['Contacts'],
+              responses: { '200': { description: 'ok' } },
+            },
+          },
+        },
+      }),
+    )
+    const outPath = join(tmpDir, 'c.json')
+    const io = captureIo()
+    await run(['api', 'postman', 'generate', '--spec', specPath, '--out', outPath], {
+      adapters: mockAdapters({}),
+      io: io.io,
+      exit: noExit,
+    })
+    const raw = readFileSync(outPath, 'utf-8')
+    const parsed = JSON.parse(raw) as {
+      info: { name: string; schema: string }
+      item: Array<{ name: string }>
+    }
+    expect(parsed.info.name).toBe('Test API')
+    expect(parsed.info.schema).toMatch(/v2\.1\.0/)
+    expect(parsed.item.length).toBeGreaterThanOrEqual(2)
+    // Volatile fields should be stripped so committed collection files
+    // produce clean diffs on regenerate.
+    expect(raw).not.toMatch(/"_postman_id"/)
+    expect(raw).not.toMatch(/"id":\s*"[0-9a-f-]{36}"/)
+  })
+
+  it('generate respects --name override', async () => {
+    const specPath = join(tmpDir, 'spec.json')
+    writeFileSync(
+      specPath,
+      JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Default Title', version: '1.0.0' },
+        paths: {
+          '/x': { get: { responses: { '200': { description: 'ok' } } } },
+        },
+      }),
+    )
+    const outPath = join(tmpDir, 'c.json')
+    const io = captureIo()
+    await run(
+      ['api', 'postman', 'generate', '--spec', specPath, '--out', outPath, '--name', 'Renamed'],
+      { adapters: mockAdapters({}), io: io.io, exit: noExit },
+    )
+    const parsed = JSON.parse(readFileSync(outPath, 'utf-8')) as { info: { name: string } }
+    expect(parsed.info.name).toBe('Renamed')
+  })
+
+  it('generate refuses to overwrite an existing --out file without --force', async () => {
+    const specPath = join(tmpDir, 'spec.json')
+    writeFileSync(
+      specPath,
+      JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'X', version: '1.0.0' },
+        paths: { '/x': { get: { responses: { '200': { description: 'ok' } } } } },
+      }),
+    )
+    const outPath = join(tmpDir, 'existing.json')
+    writeFileSync(outPath, '{"hand": "authored"}')
+    const io = captureIo()
+    const exitCalls: number[] = []
+    await run(['api', 'postman', 'generate', '--spec', specPath, '--out', outPath], {
+      adapters: mockAdapters({}),
+      io: io.io,
+      exit: ((c: number) => {
+        exitCalls.push(c)
+      }) as never,
+    })
+    expect(exitCalls[0]).toBe(1)
+    expect(io.stderr.join('\n')).toMatch(/already exists/)
+    // File should be untouched.
+    expect(readFileSync(outPath, 'utf-8')).toBe('{"hand": "authored"}')
+  })
+
+  it('generate overwrites an existing --out file with --force', async () => {
+    const specPath = join(tmpDir, 'spec.json')
+    writeFileSync(
+      specPath,
+      JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'Fresh', version: '1.0.0' },
+        paths: { '/x': { get: { responses: { '200': { description: 'ok' } } } } },
+      }),
+    )
+    const outPath = join(tmpDir, 'existing.json')
+    writeFileSync(outPath, '{"stale": true}')
+    const io = captureIo()
+    await run(['api', 'postman', 'generate', '--spec', specPath, '--out', outPath, '--force'], {
+      adapters: mockAdapters({}),
+      io: io.io,
+      exit: noExit,
+    })
+    const parsed = JSON.parse(readFileSync(outPath, 'utf-8')) as { info: { name: string } }
+    expect(parsed.info.name).toBe('Fresh')
+  })
+
+  it('generate creates intermediate directories for --out', async () => {
+    const specPath = join(tmpDir, 'spec.json')
+    writeFileSync(
+      specPath,
+      JSON.stringify({
+        openapi: '3.0.0',
+        info: { title: 'X', version: '1.0.0' },
+        paths: { '/x': { get: { responses: { '200': { description: 'ok' } } } } },
+      }),
+    )
+    const outPath = join(tmpDir, 'nested/deeply/c.json')
+    const io = captureIo()
+    await run(['api', 'postman', 'generate', '--spec', specPath, '--out', outPath], {
+      adapters: mockAdapters({}),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(readFileSync(outPath, 'utf-8')).toMatch(/"name": "X"/)
+  })
+
   it('reads workspaceId from rando.config.json when --workspace is omitted', async () => {
     const configPath = join(tmpDir, 'rando.config.json')
     writeFileSync(
@@ -552,5 +689,134 @@ describe('api postman sync', () => {
     expect(postman.importOpenApi).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceId: 'ws-from-config' }),
     )
+  })
+
+  it('push updates an existing collection (PUT) when one with the same name exists', async () => {
+    const collectionPath = join(tmpDir, 'rando-api.postman_collection.json')
+    writeFileSync(
+      collectionPath,
+      JSON.stringify({ info: { name: 'Rando API' }, item: [{ name: 'health' }] }),
+    )
+    const postman: Partial<PostmanProvider> = {
+      findCollectionByName: vi.fn(async () => ({ id: 'c-old', uid: 'u-old', name: 'Rando API' })),
+      updateCollection: vi.fn(async () => ({ id: 'c-old', uid: 'u-old', name: 'Rando API' })),
+      createCollection: vi.fn(),
+    }
+    const io = captureIo()
+    await run(
+      [
+        'api',
+        'postman',
+        'push',
+        '--collection',
+        collectionPath,
+        '--workspace',
+        'ws-1',
+        '--no-envs',
+      ],
+      { adapters: mockAdapters({ postman: postman as PostmanProvider }), io: io.io, exit: noExit },
+    )
+    expect(postman.updateCollection).toHaveBeenCalledWith({
+      uid: 'u-old',
+      collection: { info: { name: 'Rando API' }, item: [{ name: 'health' }] },
+    })
+    expect(postman.createCollection).not.toHaveBeenCalled()
+    expect(io.stdout.join('\n')).toContain('https://web.postman.co/workspace/ws-1/collection/u-old')
+  })
+
+  it('push creates a new collection (POST) when no previous exists', async () => {
+    const collectionPath = join(tmpDir, 'c.json')
+    writeFileSync(collectionPath, JSON.stringify({ info: { name: 'Rando API' }, item: [] }))
+    const postman: Partial<PostmanProvider> = {
+      findCollectionByName: vi.fn(async () => null),
+      createCollection: vi.fn(async () => ({ id: 'c-new', uid: 'u-new', name: 'Rando API' })),
+      updateCollection: vi.fn(),
+    }
+    const io = captureIo()
+    await run(
+      [
+        'api',
+        'postman',
+        'push',
+        '--collection',
+        collectionPath,
+        '--workspace',
+        'ws-1',
+        '--no-envs',
+      ],
+      { adapters: mockAdapters({ postman: postman as PostmanProvider }), io: io.io, exit: noExit },
+    )
+    expect(postman.createCollection).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      collection: { info: { name: 'Rando API' }, item: [] },
+    })
+    expect(postman.updateCollection).not.toHaveBeenCalled()
+  })
+
+  it('push also iterates env files in the env-dir and upserts each', async () => {
+    const collectionPath = join(tmpDir, 'c.json')
+    writeFileSync(collectionPath, JSON.stringify({ info: { name: 'Rando API' }, item: [] }))
+    const envDir = join(tmpDir, 'envs')
+    mkdirSync(envDir)
+    writeFileSync(
+      join(envDir, 'local.postman_environment.json'),
+      JSON.stringify({ name: 'local', values: [{ key: 'baseUrl', value: 'http://x' }] }),
+    )
+    writeFileSync(
+      join(envDir, 'staging.postman_environment.json'),
+      JSON.stringify({ name: 'staging', values: [{ key: 'baseUrl', value: 'https://y' }] }),
+    )
+    // a non-env file that should be ignored
+    writeFileSync(join(envDir, 'README.md'), 'noise')
+
+    const postman: Partial<PostmanProvider> = {
+      findCollectionByName: vi.fn(async () => null),
+      createCollection: vi.fn(async () => ({ id: 'c', uid: 'uc', name: 'Rando API' })),
+      findEnvironmentByName: vi.fn(async ({ name }) =>
+        name === 'staging' ? { id: 'es', uid: 'us', name: 'staging' } : null,
+      ),
+      createEnvironment: vi.fn(async () => ({ id: 'e', uid: 'ue', name: 'local' })),
+      updateEnvironment: vi.fn(async () => ({ id: 'es', uid: 'us', name: 'staging' })),
+    }
+    const io = captureIo()
+    await run(
+      [
+        'api',
+        'postman',
+        'push',
+        '--collection',
+        collectionPath,
+        '--env-dir',
+        envDir,
+        '--workspace',
+        'ws-1',
+      ],
+      { adapters: mockAdapters({ postman: postman as PostmanProvider }), io: io.io, exit: noExit },
+    )
+    expect(postman.createEnvironment).toHaveBeenCalledTimes(1)
+    expect(postman.updateEnvironment).toHaveBeenCalledTimes(1)
+    expect(postman.findEnvironmentByName).toHaveBeenCalledTimes(2) // only the two json files
+  })
+
+  it('push errors with exit code 1 when the collection file is missing', async () => {
+    const postman: Partial<PostmanProvider> = {
+      findCollectionByName: vi.fn(),
+      createCollection: vi.fn(),
+    }
+    const io = captureIo()
+    const exitCalls: number[] = []
+    await run(
+      ['api', 'postman', 'push', '--collection', join(tmpDir, 'nope.json'), '--workspace', 'ws-1'],
+      {
+        adapters: mockAdapters({ postman: postman as PostmanProvider }),
+        io: io.io,
+        exit: ((c: number) => {
+          exitCalls.push(c)
+        }) as never,
+      },
+    )
+    expect(exitCalls[0]).toBe(1)
+    expect(io.stderr.join('\n')).toMatch(/Collection file not found/)
+    expect(postman.createCollection).not.toHaveBeenCalled()
   })
 })

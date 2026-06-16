@@ -578,28 +578,83 @@ the supervisor exits non-zero too.
 ### `api` — API surface tooling
 
 ```
-rando api postman sync [--spec <urlOrPath>] [--workspace <id>] [--name <name>] [--config <path>] [--json]
+rando api postman sync     [--spec <urlOrPath>] [--workspace <id>] [--name <name>] [--config <path>] [--json]
+rando api postman generate [--spec <urlOrPath>] [--out <path>] [--name <name>] [-f/--force] [--json]
+rando api postman push     [--collection <path>] [--env-dir <path>] [--no-envs] [--workspace <id>] [--config <path>] [--json]
 ```
 
-**`postman sync`** pushes the auto-generated OpenAPI spec at
-`/v1/openapi.json` into a Postman workspace as a collection. The sync
-is idempotent: if a collection with the same name already exists in
-that workspace, it's deleted and re-imported (Postman has no in-place
-OpenAPI-update endpoint we can rely on, so each sync issues a fresh
-collection id — your saved environments and requests should live in
-the workspace, not on the collection).
+Two complementary flows:
+
+- **`generate`** is the canonical one for the test loop. It runs
+  `openapi-to-postmanv2` against the spec and writes a Postman v2.1
+  collection JSON file to disk (default: `postman/rando-api.postman_collection.json`).
+  No Postman API call. The file is checked into the repo and used by
+  `pnpm test:api` (newman) and the `api-tests.yml` workflow. Hand-author
+  `pm.test()` assertions on top of the generated requests; regenerate
+  only when the contract changes (and merge any test edits back in by
+  hand — there's no auto-merge today). The command **refuses to
+  overwrite an existing file** unless `--force` is passed — pass
+  `--out /tmp/regen.json` first to diff against the canonical file.
+- **`postman push`** mirrors the local collection JSON (with
+  hand-authored `pm.test()` blocks intact) + every Postman environment
+  JSON under `postman/environments/` into the configured workspace.
+  Uses `PUT` when an entity with the same name already exists, so
+  collection + environment uids stay stable across pushes — Postman
+  Monitors and shared links won't break. Different from `sync`, which
+  converts from OpenAPI and rotates the uid. Pass `--no-envs` to push
+  only the collection.
+- **`postman sync`** is for UI exploration. It pushes the OpenAPI spec
+  into a Postman workspace as a collection so you can poke at endpoints
+  in the Postman app. The sync is idempotent: if a collection with the
+  same name already exists, it's deleted and re-imported. The collection
+  id changes per sync, so don't pin secrets to it.
 
 Defaults:
 
-- `--spec` is `http://localhost:4000/v1/openapi.json` (point it at a
-  deployed env or a local file when needed).
-- `--workspace` reads from `postman.workspaceId` in `rando.config.json`
-  when omitted. `rando init` will help you pick one and write it.
-- `--name` is `"Rando API"`.
+- `--spec` is `http://localhost:4000/v1/openapi.json`. Point it at a
+  deployed env or a local file when needed.
+- `--out` (generate only) is `postman/rando-api.postman_collection.json`.
+- `--workspace` (sync only) reads from `postman.workspaceId` in
+  `rando.config.json` when omitted. `rando init` will help you pick
+  one and write it.
+- `--name` defaults to the spec's `info.title` (generate) or `"Rando API"`
+  (sync).
 
-CI shape (see issue #59) plus the doctor check are both wired off
-`POSTMAN_API_KEY` — set it in `.env` to opt in. Without it, the rest
-of the CLI still works.
+`POSTMAN_API_KEY` is only required for `sync`. `generate` is pure
+file I/O — runnable in CI with no secrets.
+
+#### Auth tokens via 1Password (`op run`)
+
+Postman has a native 1Password integration, but it's gated behind the
+Enterprise plan with the Advanced Security Administration add-on
+(see [Postman docs](https://learning.postman.com/docs/use/postman-vault/1password)).
+For Free/Pro tiers, the same end state is achievable via the
+1Password CLI:
+
+```bash
+# One-time setup
+cp postman/.op.env.example postman/.op.env
+$EDITOR postman/.op.env             # adjust op:// references to your vault paths
+
+# Per-run
+op signin                           # if not already
+op run --env-file=postman/.op.env -- pnpm test:api
+```
+
+`op run` reads the `.op.env` file, replaces every `op://...` reference
+with the live value from 1Password, and invokes the command with those
+values in its environment. Newman picks up `$AUTH_TOKEN` via the
+`test:api` script and exposes it inside the collection as
+`{{authToken}}`. Tokens never touch disk and never appear in shell
+history. `.op.env` itself is gitignored — per-developer vault names
+stay out of the repo.
+
+For the Postman desktop UI, use **Settings → Vault** (Postman's own
+local Vault Secrets, available on Free) — paste a value copied from
+1Password's desktop app once, reference it as `{{vault:authToken}}` in
+the environment. The two flows compose: 1Password is the source of
+truth, `op run` handles the CLI/CI path, Postman's local vault is the
+UI convenience.
 
 ### `dns` — DNS records
 
