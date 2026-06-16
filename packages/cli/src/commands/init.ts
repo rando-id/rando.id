@@ -345,7 +345,7 @@ export function initCommand(adapters: Adapters, io: Io): Command {
       io.stdout(colors.bold('Final health check…'))
       io.stdout('')
       const freshAdapters = adapters // .env on disk; bin's --env-file already loaded it for this process
-      const report = await runChecks([
+      const finalChecks = [
         ...envChecks(freshAdapters),
         ...configChecks(opts.config),
         ...hooksChecks(),
@@ -354,7 +354,18 @@ export function initCommand(adapters: Adapters, io: Io): Command {
         ...trackerChecks(freshAdapters, opts.config),
         ...secretsChecks(freshAdapters, opts.config),
         ...terminalChecks(),
-      ])
+      ]
+      // Spinner while the checks run — keeps the terminal alive
+      // through `op` biometric prompts and the tracker round-trip.
+      const finalSp = io.spinner(`Running ${finalChecks.length} checks…`)
+      let report
+      try {
+        report = await runChecks(finalChecks)
+      } catch (e) {
+        finalSp.fail('Final health check failed')
+        throw e
+      }
+      finalSp.stop()
       renderReport(io, report)
 
       // 7. Suggested next commands — only shown when the env is in a
