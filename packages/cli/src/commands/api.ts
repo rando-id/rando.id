@@ -124,7 +124,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
   postman
     .command('generate')
     .description(
-      'Generate a Postman v2.1 collection JSON file from the OpenAPI spec. Pure conversion — no Postman API call. Use the file with newman or commit it to the repo for collection-as-code testing.',
+      'Generate a Postman v2.1 collection JSON file from the OpenAPI spec. Pure conversion — no Postman API call. Use the file with `postman collection run` or commit it to the repo for collection-as-code testing.',
     )
     .option(
       '--spec <urlOrPath>',
@@ -336,7 +336,7 @@ function listEnvironmentFiles(dir: string): string[] {
  * Convert an OpenAPI spec object into a Postman v2.1 collection via
  * openapi-to-postmanv2. The library is callback-based and we want a
  * promise — wrap it. `convertV2` is the v2.1 collection format, which
- * is what newman + the Postman UI both expect today.
+ * is what postman-cli + the Postman UI both expect today.
  *
  * `name` overrides the collection name (info.name in the output JSON)
  * when supplied; otherwise the converter inherits info.title from the
@@ -399,7 +399,7 @@ async function openApiToCollection(
  *   1. Random UUIDs on the collection root + every nested item /
  *      response — Postman regenerates these on import, so we drop them.
  *   2. Random enum-value picks inside example response bodies — these
- *      are display-only (newman never reads `response[].body`), so we
+ *      are display-only (postman-cli never reads `response[].body`), so we
  *      drop response examples entirely. Request bodies are kept;
  *      their enum noise comes through on actual regeneration runs
  *      where the spec has changed, which is when we expect a diff.

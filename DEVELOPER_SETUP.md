@@ -343,7 +343,8 @@ pnpm typecheck                        # all 15 workspaces
 pnpm --filter @rando/db db:generate   # after schema changes
 pnpm --filter @rando/db db:reset      # drop + migrate + seed
 
-pnpm test:api                         # newman against http://localhost:4000 (override w/ BASE_URL=...)
+pnpm test:api                         # postman-cli collection run against http://localhost:4000 (override w/ BASE_URL=...)
+pnpm spec:lint                        # postman api lint against the live /v1/openapi.json
 op run --env-file=postman/.op.env -- pnpm test:api   # inject auth token from 1Password (needed once authed tests land)
 rando api postman generate            # regenerate postman/rando-api.postman_collection.json from the spec
 rando api postman push                # push local collection + env JSONs into your Postman workspace
@@ -353,13 +354,15 @@ rando secrets sync --env staging      # pull from the staging vault instead
 rando secrets set NEW_KEY --all       # store a new secret in every configured env vault
 ```
 
-## API testing — Postman, newman, 1Password
+## API testing — Postman CLI + 1Password
 
 The canonical API test loop is **collection-as-code**: the Postman
 collection JSON lives at `postman/rando-api.postman_collection.json`
-with hand-authored `pm.test()` assertions, run by newman (in CLI / CI)
-and mirrored to Postman desktop (for UI exploration). 1Password
-provides the auth tokens at runtime via the `op` CLI.
+with hand-authored `pm.test()` assertions, run by the official
+Postman CLI (locally + in CI) and mirrored to Postman desktop (for
+UI exploration). The same CLI also lints the OpenAPI spec
+(`postman api lint`) — drift / breaking changes get caught before
+merge. 1Password provides the auth tokens at runtime via the `op` CLI.
 
 ### First-time setup
 
@@ -432,8 +435,8 @@ so it doesn't leak into the repo.
 - `postman/environments/{local,staging,prod}.postman_environment.json` — committed, `baseUrl` per env (and `authToken` placeholder, empty until authed tests land)
 - `postman/.op.env.example` — committed, template showing the `op://` reference shape
 - `postman/.op.env` — gitignored, per-developer vault paths
-- `test-results/newman.xml` — gitignored, JUnit output from `pnpm test:api`
-- `.github/workflows/api-tests.yml` — CI, runs newman against PR preview URLs + nightly staging
+- `test-results/postman.xml` — gitignored, JUnit output from `pnpm test:api`
+- `.github/workflows/api-tests.yml` — CI, runs `pnpm test:api` + `pnpm spec:lint` against PR preview URLs + nightly staging
 
 ### Postman desktop import (one-time, optional)
 

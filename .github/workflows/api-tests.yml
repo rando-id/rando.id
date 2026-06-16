@@ -1,10 +1,11 @@
 name: API tests
 
 # Runs the Postman collection (postman/rando-api.postman_collection.json)
-# via newman against the PR's stable preview URL on every pull_request
-# event, and against staging nightly. Collection-as-code: tests live in
-# the JSON file, reviewed in PRs alongside the contract change that
-# motivated them.
+# via the official Postman CLI against the PR's stable preview URL on
+# every pull_request event, and against staging nightly. Also lints
+# the OpenAPI spec via `postman api lint`. Collection-as-code: tests
+# live in the JSON file, reviewed in PRs alongside the contract
+# change that motivated them.
 #
 # On PR events:
 #   - Computes <branch-slug>-api.<nonProd-zone> (matches the URL
@@ -14,13 +15,15 @@ name: API tests
 #     job emits a notice and exits successfully — we don't fail PRs
 #     for preview-deploy issues.
 #   - Runs `pnpm test:api` against the preview URL.
+#   - Runs `pnpm spec:lint` against the preview URL.
 #   - On failure, posts a comment on the PR with the failure count.
 #
 # Nightly:
 #   - Same flow against staging-api.rando-id.dev.
 #
-# Required repo secrets: none — newman + the collection JSON are the
-# whole input surface; preview URLs are public.
+# Required: `POSTMAN_API_KEY` env var (auto-loaded from the staging
+# vault via 1password/load-secrets-action) — both `collection run`
+# and `api lint` need it to authenticate.
 #
 # vars.POSTMAN_ENABLED=false disables the workflow without removing
 # it (matches the issues-sync.yml + preview.yml pattern).
@@ -44,7 +47,7 @@ concurrency:
 
 jobs:
   test:
-    name: Newman against preview
+    name: Postman collection + spec lint against preview
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: ${{ vars.POSTMAN_ENABLED != 'false' }}
@@ -107,19 +110,35 @@ jobs:
         run: |
           echo "::notice title=API tests skipped::Target URL ${{ steps.target.outputs.url }} did not respond 200 on /v1/health within 5 minutes — likely no preview was deployed, or the deploy failed. Not failing the PR."
 
-      - name: Run newman against target
+      - name: Load Postman API key from 1Password
+        if: steps.wait.outputs.ready == 'true'
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          POSTMAN_API_KEY: op://ftd3n4l5egcfjai7f7tm2f7ytq/POSTMAN_API_KEY/credential
+
+      - name: Run Postman collection against target
         if: steps.wait.outputs.ready == 'true'
         env:
           BASE_URL: ${{ steps.target.outputs.url }}
           FORCE_COLOR: '1'
         run: pnpm test:api
 
+      - name: Lint OpenAPI spec
+        if: steps.wait.outputs.ready == 'true'
+        env:
+          SPEC_URL: ${{ steps.target.outputs.url }}/v1/openapi.json
+          FORCE_COLOR: '1'
+        run: pnpm spec:lint
+
       - name: Upload JUnit report
         if: always() && steps.wait.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
-          name: newman-results
-          path: test-results/newman.xml
+          name: postman-results
+          path: test-results/postman.xml
           retention-days: 7
           if-no-files-found: ignore
 
@@ -132,7 +151,7 @@ jobs:
             let failures = 0
             let total = 0
             try {
-              const xml = fs.readFileSync('test-results/newman.xml', 'utf8')
+              const xml = fs.readFileSync('test-results/postman.xml', 'utf8')
               failures = (xml.match(/<failure /g) || []).length
               total = (xml.match(/<testcase /g) || []).length
             } catch {}
@@ -141,7 +160,7 @@ jobs:
             const body = [
               `## API tests failed`,
               ``,
-              `**${failures} of ${total} assertion(s) failed** running newman against \`${target}\`.`,
+              `**${failures} of ${total} assertion(s) failed** running the Postman collection against \`${target}\`.`,
               ``,
               `Full output: ${run}`,
               ``,

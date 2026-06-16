@@ -589,7 +589,7 @@ Two complementary flows:
   `openapi-to-postmanv2` against the spec and writes a Postman v2.1
   collection JSON file to disk (default: `postman/rando-api.postman_collection.json`).
   No Postman API call. The file is checked into the repo and used by
-  `pnpm test:api` (newman) and the `api-tests.yml` workflow. Hand-author
+  `pnpm test:api` (postman-cli) and the `api-tests.yml` workflow. Hand-author
   `pm.test()` assertions on top of the generated requests; regenerate
   only when the contract changes (and merge any test edits back in by
   hand — there's no auto-merge today). The command **refuses to
@@ -643,7 +643,7 @@ op run --env-file=postman/.op.env -- pnpm test:api
 
 `op run` reads the `.op.env` file, replaces every `op://...` reference
 with the live value from 1Password, and invokes the command with those
-values in its environment. Newman picks up `$AUTH_TOKEN` via the
+values in its environment. The Postman CLI picks up `$AUTH_TOKEN` via the
 `test:api` script and exposes it inside the collection as
 `{{authToken}}`. Tokens never touch disk and never appear in shell
 history. `.op.env` itself is gitignored — per-developer vault names
