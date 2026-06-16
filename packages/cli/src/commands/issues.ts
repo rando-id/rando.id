@@ -27,6 +27,7 @@ import {
   getCachedJiraKey,
   getCurrentBranch,
   JIRA_SKIP_SENTINEL,
+  lintCommitMessage,
   listCommits,
   parseJiraRefs,
   setCachedJiraKey,
@@ -189,6 +190,50 @@ export function issuesCommand(adapters: Adapters, io: Io, deps: IssuesCommandDep
         )
       },
     )
+
+  cmd
+    .command('lint-commit-msg <file>')
+    .description(
+      'Reject the commit if its message has no issue reference. Wired into `.husky/commit-msg` as the final gate after the auto-Fixes-append. Skips merge/revert commits and GitHub squash-merge subjects that end in `(#N)`. Set RANDO_NO_JIRA=1 in env to bypass.',
+    )
+    .action(async (file: string) => {
+      if (process.env.RANDO_NO_JIRA) {
+        process.exit(0)
+      }
+      const { readFileSync } = await import('node:fs')
+      let message: string
+      try {
+        message = readFileSync(file, 'utf-8')
+      } catch (e) {
+        io.stderr(
+          `${io.colors.error('error:')} couldn't read commit message file ${io.colors.resource(file)}: ${e instanceof Error ? e.message : String(e)}`,
+        )
+        process.exit(1)
+      }
+      const verdict = lintCommitMessage(message)
+      if (verdict.ok) {
+        process.exit(0)
+      }
+      io.stderr('')
+      io.stderr(`${io.colors.error('✗ commit rejected:')} ${verdict.reason}`)
+      io.stderr('')
+      io.stderr(io.colors.hint('  Examples of accepted messages:'))
+      io.stderr(io.colors.hint('    fix(api): close session leak\n\n    Fixes: #42'))
+      io.stderr(
+        io.colors.hint('    chore: bump deps  (#123)               ← GitHub squash-merge style'),
+      )
+      io.stderr(
+        io.colors.hint('    Merge pull request ...                 ← merge commits auto-pass'),
+      )
+      io.stderr('')
+      io.stderr(
+        io.colors.hint(
+          '  To skip just this commit: `git commit --no-verify` (try not to make this a habit).',
+        ),
+      )
+      io.stderr(io.colors.hint('  To skip globally: `export RANDO_NO_JIRA=1`.'))
+      process.exit(1)
+    })
 
   cmd
     .command('refs <range>')

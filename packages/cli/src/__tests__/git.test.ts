@@ -175,6 +175,69 @@ describe('parseJiraRefs', () => {
   })
 })
 
+describe('lintCommitMessage', () => {
+  it('passes when a Fixes: footer is present', async () => {
+    const { lintCommitMessage } = await import('../git')
+    expect(lintCommitMessage('feat: ship it\n\nFixes: #42')).toEqual({ ok: true })
+  })
+
+  it('passes for any of Fixes/Closes/Resolves/Refs', async () => {
+    const { lintCommitMessage } = await import('../git')
+    for (const kw of ['Fixes', 'Closes', 'Resolves', 'Refs']) {
+      expect(lintCommitMessage(`feat: x\n\n${kw}: #1`).ok).toBe(true)
+    }
+  })
+
+  it('passes for GitHub squash-merge subject ending in (#N)', async () => {
+    const { lintCommitMessage } = await import('../git')
+    expect(lintCommitMessage('chore: bump deps (#123)').ok).toBe(true)
+    expect(lintCommitMessage('feat(api): foo bar (#1)\n\nbody text').ok).toBe(true)
+  })
+
+  it('passes for merge-commit auto-messages', async () => {
+    const { lintCommitMessage } = await import('../git')
+    expect(lintCommitMessage("Merge branch 'main' into feature").ok).toBe(true)
+    expect(lintCommitMessage('Merge pull request #42 from owner/branch').ok).toBe(true)
+    expect(lintCommitMessage("Merge remote-tracking branch 'origin/main'").ok).toBe(true)
+  })
+
+  it('passes for revert commits (original ref carried forward)', async () => {
+    const { lintCommitMessage } = await import('../git')
+    expect(lintCommitMessage('Revert "feat: bad idea"').ok).toBe(true)
+  })
+
+  it('rejects a bare commit with no ref', async () => {
+    const { lintCommitMessage } = await import('../git')
+    const result = lintCommitMessage('fix: typo')
+    expect(result.ok).toBe(false)
+    if (!result.ok) expect(result.reason).toMatch(/no issue reference/)
+  })
+
+  it('rejects an empty message', async () => {
+    const { lintCommitMessage } = await import('../git')
+    expect(lintCommitMessage('')).toEqual({ ok: false, reason: 'commit message is empty' })
+    expect(lintCommitMessage('   \n\n  ')).toEqual({
+      ok: false,
+      reason: 'commit message is empty',
+    })
+  })
+
+  it('strips `# ...` git comment lines before checking', async () => {
+    const { lintCommitMessage } = await import('../git')
+    // A message that's all comments is empty.
+    expect(lintCommitMessage('# Please enter a commit message\n# Lines starting with #').ok).toBe(
+      false,
+    )
+    // Real subject + a footer that's hidden by a leading `#` shouldn't count as a footer.
+    expect(lintCommitMessage('fix: typo\n# Fixes: #42').ok).toBe(false)
+  })
+
+  it('rejects #N appearing only in the body (must be in a footer or squash-merge subject)', async () => {
+    const { lintCommitMessage } = await import('../git')
+    expect(lintCommitMessage('fix: x\n\nthis fixes #42 maybe').ok).toBe(false)
+  })
+})
+
 describe('defaultGitRunner', () => {
   it('swallows exec errors and returns null', async () => {
     // Run an obviously-bogus command via the real runner to exercise the

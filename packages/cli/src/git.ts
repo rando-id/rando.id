@@ -139,3 +139,46 @@ export function parseJiraRefs(message: string): string[] {
   }
   return keys
 }
+
+/**
+ * Validate a commit message for ticket-reference coverage. Used by
+ * the `.husky/commit-msg` hook (via `rando issues lint-commit-msg`)
+ * to reject bare commits before they land.
+ *
+ * Accepts (any of):
+ *   - A `Fixes:`/`Closes:`/`Resolves:`/`Refs:` footer (parseJiraRefs).
+ *   - A subject ending in `(#N)` — GitHub squash-merge default.
+ *   - A merge-commit auto-message (`Merge branch`, `Merge pull request`,
+ *     `Merge remote-tracking`). Git generates these; users don't
+ *     curate them.
+ *   - A revert auto-message (`Revert "<original subject>"`). The
+ *     original commit had its own ref; the revert shouldn't need a new one.
+ *
+ * Rejects everything else with a hint string.
+ */
+export function lintCommitMessage(message: string): { ok: true } | { ok: false; reason: string } {
+  // Strip comment lines (anything starting with `#` after trim) — git
+  // injects helpers into the editor file that aren't part of the
+  // final commit.
+  const stripped = message
+    .split('\n')
+    .filter((l) => !l.startsWith('#'))
+    .join('\n')
+    .trim()
+  if (!stripped) {
+    return { ok: false, reason: 'commit message is empty' }
+  }
+  const subject = stripped.split('\n')[0] ?? ''
+  // Merge / revert auto-messages: pass.
+  if (/^Merge (branch|pull request|remote-tracking)/i.test(subject)) return { ok: true }
+  if (/^Revert "/.test(subject)) return { ok: true }
+  // GitHub squash-merge default: subject ends with `(#N)`.
+  if (/\(#\d+\)\s*$/.test(subject)) return { ok: true }
+  // Explicit Fixes/Closes/Resolves/Refs footer.
+  if (parseJiraRefs(stripped).length > 0) return { ok: true }
+  return {
+    ok: false,
+    reason:
+      'commit message has no issue reference. Add a `Fixes: #N` / `Closes: #N` footer (preferred — auto-closes the issue on merge), or run `rando issues pick` to cache a key for this branch and re-commit.',
+  }
+}

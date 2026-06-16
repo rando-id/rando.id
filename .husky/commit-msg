@@ -1,32 +1,44 @@
 #!/usr/bin/env sh
-# Safety net: re-append `Fixes: <ISSUE-KEY>` to the commit message
-# AFTER the editor closes, in case the user pasted over the footer
-# that prepare-commit-msg wrote earlier into the template.
+# Two passes over the commit message:
 #
-# Idempotent — skips when the message already contains a
-# Fixes/Closes/Resolves/Refs footer.
+# 1. Safety net: re-append `Fixes: <ISSUE-KEY>` if the user pasted
+#    over the footer that prepare-commit-msg wrote earlier into the
+#    template. Soft-fix — only fires when we already have a cached
+#    key for this branch.
+#
+# 2. Strict gate: `rando issues lint-commit-msg <file>` rejects the
+#    commit outright if it still has no `Fixes:`/`Closes:`/etc.
+#    footer (and isn't a merge/revert/squash-style commit). This is
+#    what catches "I forgot to run `rando issues pick`" before the
+#    bare commit lands.
+#
+# Skip toggles:
+#   RANDO_NO_JIRA=1     skip both passes
+#   git commit --no-verify   skip the hook entirely
 #
 # Args from git:
 #   $1 = commit message file (final, post-edit)
 
 set +e
 
-# Skip merge commits (they're noise — see git's auto-generated
-# "Merge branch '...'" message). Anything else: re-append.
+# ── pass 1: re-append cached key if footer missing ────────────────────
 if head -1 "$1" 2>/dev/null | grep -qE '^Merge (branch|pull request|remote-tracking)'; then
   exit 0
 fi
 
 if [ -n "$RANDO_NO_JIRA" ]; then exit 0; fi
 
-# Footer already present (from prepare-commit-msg or user-typed) — done.
-if grep -qiE '^(Fixes|Closes|Resolves|Refs): ' "$1" 2>/dev/null; then exit 0; fi
+if ! grep -qiE '^(Fixes|Closes|Resolves|Refs): ' "$1" 2>/dev/null; then
+  branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
+  if [ -n "$branch" ] && [ "$branch" != "HEAD" ]; then
+    key=$(git config "branch.$branch.jira-key" 2>/dev/null)
+    if [ -n "$key" ] && [ "$key" != "skip" ]; then
+      printf '\nFixes: %s\n' "$key" >> "$1"
+    fi
+  fi
+fi
 
-branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
-if [ -z "$branch" ] || [ "$branch" = "HEAD" ]; then exit 0; fi
-
-key=$(git config "branch.$branch.jira-key" 2>/dev/null)
-if [ "$key" = "skip" ] || [ -z "$key" ]; then exit 0; fi
-
-# Make sure there's a blank line before the trailer block.
-printf '\nFixes: %s\n' "$key" >> "$1"
+# ── pass 2: strict gate ───────────────────────────────────────────────
+# `rando issues lint-commit-msg` exits non-zero with a helpful error
+# if the message still lacks an issue reference after pass 1.
+exec rando issues lint-commit-msg "$1"
