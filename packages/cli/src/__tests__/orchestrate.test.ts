@@ -1,4 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
+import { mkdtempSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import {
   ProductionDestroyForbiddenError,
   runDestroy,
@@ -10,6 +13,7 @@ import type { DeployProvider } from '../domain/deploy'
 import type { DnsProvider } from '../domain/dns'
 import type { TunnelProvider } from '../domain/tunnel'
 import type { VercelCliProvisioner } from '../domain/vercel-cli'
+import type { SecretsProvider } from '../domain/secrets'
 import { ProviderApiError } from '../domain/errors'
 import type { SetupConfig } from '../setup-config'
 
@@ -214,6 +218,175 @@ describe('runSetup — staging env', () => {
     expect(messages(events)).toContainEqual(
       'step-skip: vercel domain staging-api.rando-id.dev already configured',
     )
+  })
+})
+
+describe('runSetup — push 1P → Vercel env vars', () => {
+  it('pushes vars declared in .env.example with values from the matching 1P env', async () => {
+    // Set up an .env.example file at a tmp path the test config will point at.
+    const dir = mkdtempSync(join(tmpdir(), 'orchestrate-env-'))
+    writeFileSync(
+      join(dir, '.env.example'),
+      ['NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=', 'CLERK_SECRET_KEY=', 'SOMETHING_NOT_IN_1P='].join(
+        '\n',
+      ),
+    )
+    // Spy on process.cwd so resolve(cwd, app.rootDirectory) finds our tmp.
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(dir)
+    try {
+      const setEnv = vi.fn(async () => ({ id: 'e', key: 'k', scopes: ['preview' as const] }))
+      const deploy: DeployProvider = {
+        createProject: vi.fn(),
+        listProjects: vi.fn(),
+        getProjectByName: vi.fn(async ({ name }) => ({
+          id: `p_${name}`,
+          name,
+          rootDirectory: null,
+        })),
+        setEnv,
+        listEnv: vi.fn(),
+        addDomain: vi.fn(async ({ hostname, branch }) => ({
+          name: hostname,
+          branch: branch ?? null,
+        })),
+        removeDomain: vi.fn(),
+        deleteProject: vi.fn(),
+        triggerDeployment: vi.fn(),
+        getDeployment: vi.fn(),
+      }
+      const db: DbProvider = {
+        createProject: vi.fn(),
+        listProjects: vi.fn(async () => [{ id: 'p1', name: 'rando' }]),
+        createBranch: vi.fn(),
+        listBranches: vi.fn(async () => [
+          { id: 'br_main', name: 'main', parentId: null, createdAt: 'x' },
+          { id: 'br_staging', name: 'staging', parentId: 'br_main', createdAt: 'x' },
+        ]),
+        getConnectionString: vi.fn(),
+        enableExtension: vi.fn(),
+        deleteBranch: vi.fn(),
+        deleteProject: vi.fn(),
+        resetBranch: vi.fn(),
+      }
+      const dns: DnsProvider = {
+        addRecord: vi.fn(async (input) => ({
+          id: 'r',
+          type: input.type,
+          name: input.name,
+          content: input.content,
+          ttl: 1,
+          proxied: false,
+        })),
+        listRecords: vi.fn(async () => []),
+        removeRecord: vi.fn(),
+      }
+      const secrets: SecretsProvider = {
+        whoami: vi.fn(),
+        listAccounts: vi.fn(),
+        read: vi.fn(),
+        write: vi.fn(),
+        readEnvironment: vi.fn(async () => ({
+          NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_test_xxx',
+          CLERK_SECRET_KEY: 'sk_test_xxx',
+          UNRELATED: 'irrelevant',
+        })),
+      }
+      const cfgWithSecrets: SetupConfig = {
+        ...config,
+        // Override app rootDirectory to '.' so resolve(tmpDir, '.') finds the .env.example.
+        apps: [{ name: 'api', rootDirectory: '.', port: 4000, prodApex: false }],
+        secrets: {
+          kind: '1password',
+          field: 'credential',
+          environments: { local: 'env-local', staging: 'env-staging', prod: 'env-prod' },
+        },
+      }
+      const { events, emit } = captureEvents()
+      await runSetup(stubAll({ db, deploy, dns, secrets }), {
+        config: cfgWithSecrets,
+        envs: ['staging'],
+        apps: [],
+        emit,
+      })
+      // Read the staging env (not prod).
+      expect(secrets.readEnvironment).toHaveBeenCalledWith('env-staging')
+      // Pushed only the intersection of .env.example × 1P env.
+      const setEnvCalls = setEnv.mock.calls as unknown as Array<[{ key: string; scopes: string[] }]>
+      const pushedKeys = setEnvCalls.map((c) => c[0].key).sort()
+      expect(pushedKeys).toEqual(['CLERK_SECRET_KEY', 'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY'])
+      // All on the `preview` scope (since env=staging → preview).
+      for (const call of setEnvCalls) {
+        expect(call[0].scopes).toEqual(['preview'])
+      }
+      // SOMETHING_NOT_IN_1P was in .env.example but missing from 1P — note in the summary.
+      expect(messages(events).join('\n')).toMatch(
+        /2 env var\(s\) → vercel `preview`.*1 declared but missing/,
+      )
+    } finally {
+      cwdSpy.mockRestore()
+    }
+  })
+
+  it('soft-skips when config.secrets is absent', async () => {
+    const deploy: DeployProvider = {
+      createProject: vi.fn(),
+      listProjects: vi.fn(),
+      getProjectByName: vi.fn(async ({ name }) => ({ id: `p_${name}`, name, rootDirectory: null })),
+      setEnv: vi.fn(),
+      listEnv: vi.fn(),
+      addDomain: vi.fn(async ({ hostname, branch }) => ({
+        name: hostname,
+        branch: branch ?? null,
+      })),
+      removeDomain: vi.fn(),
+      deleteProject: vi.fn(),
+      triggerDeployment: vi.fn(),
+      getDeployment: vi.fn(),
+    }
+    const db: DbProvider = {
+      createProject: vi.fn(),
+      listProjects: vi.fn(async () => [{ id: 'p1', name: 'rando' }]),
+      createBranch: vi.fn(),
+      listBranches: vi.fn(async () => [
+        { id: 'br_main', name: 'main', parentId: null, createdAt: 'x' },
+        { id: 'br_staging', name: 'staging', parentId: 'br_main', createdAt: 'x' },
+      ]),
+      getConnectionString: vi.fn(),
+      enableExtension: vi.fn(),
+      deleteBranch: vi.fn(),
+      deleteProject: vi.fn(),
+      resetBranch: vi.fn(),
+    }
+    const dns: DnsProvider = {
+      addRecord: vi.fn(async (input) => ({
+        id: 'r',
+        type: input.type,
+        name: input.name,
+        content: input.content,
+        ttl: 1,
+        proxied: false,
+      })),
+      listRecords: vi.fn(async () => []),
+      removeRecord: vi.fn(),
+    }
+    const secrets: SecretsProvider = {
+      whoami: vi.fn(),
+      listAccounts: vi.fn(),
+      read: vi.fn(),
+      write: vi.fn(),
+      readEnvironment: vi.fn(),
+    }
+    const { events, emit } = captureEvents()
+    // config without secrets block
+    await runSetup(stubAll({ db, deploy, dns, secrets }), {
+      config,
+      envs: ['staging'],
+      apps: ['api'],
+      emit,
+    })
+    expect(secrets.readEnvironment).not.toHaveBeenCalled()
+    expect(deploy.setEnv).not.toHaveBeenCalled()
+    expect(messages(events).join('\n')).toMatch(/no `secrets` block in config — skipping/)
   })
 })
 
@@ -563,6 +736,7 @@ type Partials = Partial<{
   deploy: DeployProvider
   dns: DnsProvider
   vercelCli: VercelCliProvisioner
+  secrets: SecretsProvider
 }>
 
 function stubAll(overrides: Partials) {
@@ -572,6 +746,7 @@ function stubAll(overrides: Partials) {
     deploy: overrides.deploy ?? (notProvided('deploy') as DeployProvider),
     dns: overrides.dns ?? (notProvided('dns') as DnsProvider),
     vercelCli: overrides.vercelCli ?? (notProvided('vercelCli') as VercelCliProvisioner),
+    secrets: overrides.secrets ?? (notProvided('secrets') as SecretsProvider),
   }
 }
 

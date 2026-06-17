@@ -69,4 +69,17 @@ export interface SecretsProvider {
    * exists, update its field; otherwise create.
    */
   write(input: { vault: string; item: string; field: string; value: string }): Promise<void>
+
+  /**
+   * Bulk-read every secret from a 1Password Environment. Returns a
+   * key→value map. Used by `rando infrastructure setup` to push
+   * staging/prod secrets onto Vercel projects without having to
+   * enumerate each var individually.
+   *
+   * Requires the underlying CLI (`op` >= 2.35) to support the
+   * `environment read` subcommand. Service accounts that have access
+   * to the environment can call this; user accounts with biometric
+   * unlock also work.
+   */
+  readEnvironment(environmentId: string): Promise<Record<string, string>>
 }
