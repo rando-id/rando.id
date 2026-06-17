@@ -23,7 +23,7 @@ function adapter(spawn: ReturnType<typeof vi.fn>): ClerkCliAdapter {
 
 describe('ClerkCliAdapter', () => {
   it('whoami parses /users/count and returns the total', async () => {
-    const spawn = vi.fn(() => ok('{"total_count":7}'))
+    const spawn = vi.fn((_cmd: string, _args: string[]) => ok('{"total_count":7}'))
     const result = await adapter(spawn).whoami()
     expect(result).toEqual({ count: 7 })
     const args = spawn.mock.calls[0]?.[1] as string[]
@@ -68,7 +68,7 @@ describe('ClerkCliAdapter', () => {
   })
 
   it('createUser POSTs the expected body and returns id + email', async () => {
-    const spawn = vi.fn(() =>
+    const spawn = vi.fn((_cmd: string, _args: string[]) =>
       ok(
         JSON.stringify({
           id: 'user_123',
