@@ -104,6 +104,6 @@ can run partial setups without all keys.
 
 After build:
 
-- New section in `INFRASTRUCTURE.md` showing how each manual step in that
+- New section in `MAINTAINING.md` showing how each manual step in that
   doc maps to a `rando` command.
 - New `packages/cli/README.md` with full command reference.

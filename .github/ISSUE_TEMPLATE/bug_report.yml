@@ -1,0 +1,88 @@
+name: Bug report
+description: Something's broken or behaving unexpectedly.
+title: '[bug]: '
+labels: ['bug']
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for taking the time to file a bug. The clearer the
+        reproduction, the faster we can fix it.
+
+        For security issues, please follow [SECURITY.md](../SECURITY.md)
+        instead — do not file a public issue.
+
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: One sentence on what's wrong.
+      placeholder: e.g. "rando secrets sync writes empty values when the 1P env contains spaces"
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: A minimal, deterministic sequence.
+      placeholder: |
+        1. Run `rando secrets sync --env staging`
+        2. Inspect `apps/api/.env`
+        3. Observe NEXT_PUBLIC_FOO is empty
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Expected behavior
+      placeholder: 'rando should write the value from 1P verbatim.'
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: Actual behavior
+      description: Include exact error output if any.
+    validations:
+      required: true
+
+  - type: input
+    id: area
+    attributes:
+      label: Area
+      description: 'Which surface? CLI / web / admin / api / native / infra.'
+      placeholder: 'cli'
+    validations:
+      required: true
+
+  - type: input
+    id: commit
+    attributes:
+      label: Commit / branch
+      description: Output of `git rev-parse HEAD` or the branch you're on.
+      placeholder: 'main @ abc1234'
+
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: OS, Node version, pnpm version. `node -v && pnpm -v && uname -srm`
+      render: shell
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs / output
+      description: Paste console output, error stacks, screenshots, etc.
+      render: shell
+
+  - type: checkboxes
+    id: code-of-conduct
+    attributes:
+      label: Code of Conduct
+      options:
+        - label: I agree to follow this project's [Code of Conduct](../CODE_OF_CONDUCT.md).
+          required: true

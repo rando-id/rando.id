@@ -374,8 +374,8 @@ projects exist:
    DATABASE_URL="$(pnpm rando db connection-string <proj> <branch> --pooled --json | jq -r .url)" \
      pnpm --filter @rando/db db:migrate
    ```
-3. Wire the Clerk webhooks (no Clerk adapter in v1 — see
-   [INFRASTRUCTURE.md](../../INFRASTRUCTURE.md#clerk)).
+3. Wire the Clerk webhooks via `rando clerk webhook setup --env <env>` (see
+   [MAINTAINING.md → Clerk](../../.github/MAINTAINING.md#clerk)).
 
 ## Commands
 
@@ -852,7 +852,7 @@ rando secrets push OP_SERVICE_ACCOUNT_TOKEN \
   --ref op://Personal/OP_SERVICE_ACCOUNT_TOKEN/credential
 ```
 
-See [DEVELOPER_SETUP.md → CI side](../../DEVELOPER_SETUP.md#ci-side--bootstrapping-op_service_account_token)
+See [CONTRIBUTING.md → Bootstrapping `OP_SERVICE_ACCOUNT_TOKEN` for CI](../../.github/CONTRIBUTING.md#bootstrapping-op_service_account_token-for-ci)
 for the full bootstrap (creating the service account, storing the
 token in 1Password, rotation).
 

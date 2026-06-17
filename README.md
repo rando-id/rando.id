@@ -45,10 +45,10 @@ rando secrets set NEW_VAR --all    # add a new secret to every env vault at once
 rando secrets sync                 # re-pull from the local 1P vault into .env
 ```
 
-**Secrets live in 1Password, not `.env`.** Rando uses three vaults
-(local / staging / prod) and the `.env` file is just a working cache
-populated by `rando secrets sync`. See
-[DEVELOPER_SETUP.md → 1Password integration](./DEVELOPER_SETUP.md#1password-integration-required-path)
+**Secrets live in 1Password, not `.env`.** Rando uses three 1P
+Environments (local / staging / prod) and the `.env` files are just
+working caches populated by `rando secrets sync`. See
+[.github/CONTRIBUTING.md → 1Password integration](./.github/CONTRIBUTING.md#1password-integration-required-path)
 for the full convention + CI side.
 
 **Linux / Windows**: skip the Brewfile, install equivalents however
@@ -66,18 +66,23 @@ rando init
 **Per-app `.env` files** (Clerk keys, app-specific config) are
 written by `rando secrets sync` — one per app under `apps/*`,
 scoped by each app's `.env.example`. See
-[DEVELOPER_SETUP.md](./DEVELOPER_SETUP.md) for the deeper details
+[.github/CONTRIBUTING.md](./.github/CONTRIBUTING.md) for the deeper details
 on the Clerk webhook tunnel and the smoke test.
 
 **Deeper docs:**
 
-- [DEVELOPER_SETUP.md](./DEVELOPER_SETUP.md) — env config, local
-  infrastructure, the Clerk webhook tunnel, end-to-end smoke test.
-- [INFRASTRUCTURE.md](./INFRASTRUCTURE.md) — GitHub, Vercel, CI,
-  prod webhooks, deployment.
+- [.github/CONTRIBUTING.md](./.github/CONTRIBUTING.md) — local setup,
+  env config, 1Password integration, the Clerk webhook tunnel, API
+  testing, end-to-end smoke test.
+- [.github/MAINTAINING.md](./.github/MAINTAINING.md) — environments,
+  GitHub, Vercel, Neon, Clerk, DNS, CI, deploy strategy.
 - [packages/cli/README.md](./packages/cli/README.md) — the `rando`
   CLI surface (`init`, `doctor`, `issues`, `db`, `deploy`, `dev`,
-  `infrastructure`, `tunnel`, `dns`).
+  `infrastructure`, `tunnel`, `dns`, `clerk`).
+- [CLAUDE.md](./CLAUDE.md) — conventions and patterns we work by.
+- [.github/SECURITY.md](./.github/SECURITY.md) — reporting vulnerabilities.
+- [.github/CODE_OF_CONDUCT.md](./.github/CODE_OF_CONDUCT.md) — community guidelines.
+- [LICENSE](./LICENSE) — PolyForm Noncommercial 1.0.0.
 
 ## Layout
 
