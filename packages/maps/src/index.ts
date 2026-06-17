@@ -1,2 +1,2 @@
 export * from './adapter'
-export { osmAdapter } from './osm'
+export { osmAdapter, GeocodingError } from './osm'

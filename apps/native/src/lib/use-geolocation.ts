@@ -12,13 +12,13 @@ export function useGeolocation(): GeolocationState {
   useEffect(() => {
     let cancelled = false
     ;(async () => {
-      const { status } = await Location.requestForegroundPermissionsAsync()
-      if (cancelled) return
-      if (status !== 'granted') {
-        setState({ status: 'denied', error: 'Permission not granted' })
-        return
-      }
       try {
+        const { status } = await Location.requestForegroundPermissionsAsync()
+        if (cancelled) return
+        if (status !== 'granted') {
+          setState({ status: 'denied', error: 'Permission not granted' })
+          return
+        }
         const pos = await Location.getCurrentPositionAsync({
           accuracy: Location.Accuracy.Balanced,
         })

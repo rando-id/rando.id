@@ -35,7 +35,10 @@ export async function reverseGeocode(
       headers: { 'User-Agent': USER_AGENT_HEADER_VALUE },
       signal,
     })
-    if (!res.ok) return null
+    if (!res.ok) {
+      console.warn(`[geocode] Nominatim returned HTTP ${res.status} for reverse geocode`)
+      return null
+    }
     const body = (await res.json()) as {
       display_name?: string
       name?: string
@@ -61,7 +64,9 @@ export async function reverseGeocode(
       fullAddress.split(',').slice(0, 2).join(',').trim()
     if (!short) return null
     return { displayName: short, fullAddress }
-  } catch {
+  } catch (e) {
+    if (e instanceof DOMException && e.name === 'AbortError') return null
+    console.warn(`[geocode] reverse geocode failed:`, e instanceof Error ? e.message : e)
     return null
   }
 }
