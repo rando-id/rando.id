@@ -44,6 +44,11 @@ export class NeonDbProvider implements DbProvider {
     name: string
     fromBranchId?: string
   }): Promise<DbBranch> {
+    // Provision a read_write compute endpoint as part of the branch
+    // create — without it Neon returns "endpoint not found" when you
+    // later ask for a connection URI. The API accepts an `endpoints`
+    // array on the same call; doing it inline avoids a second request
+    // + the inconsistent state if it fails after the branch lands.
     const body = await this.request<{ branch: NeonBranchShape }>(
       'POST',
       `/projects/${input.projectId}/branches`,
@@ -52,6 +57,7 @@ export class NeonDbProvider implements DbProvider {
           name: input.name,
           ...(input.fromBranchId ? { parent_id: input.fromBranchId } : {}),
         },
+        endpoints: [{ type: 'read_write' }],
       },
     )
     return mapBranch(body.branch)
