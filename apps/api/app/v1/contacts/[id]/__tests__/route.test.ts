@@ -128,3 +128,19 @@ describe('PATCH /v1/contacts/[id]', () => {
     })
   })
 })
+
+describe('unauthorized branches', () => {
+  beforeEach(() => {
+    reqUser.mockRejectedValue(new Response('Unauthorized', { status: 401 }))
+  })
+
+  it('GET /v1/contacts/[id] returns 404 (auth → not found)', async () => {
+    const res = await GET(getReq('http://localhost/v1/contacts/c_1'))
+    expect(res.status).toBe(404)
+  })
+
+  it('PATCH /v1/contacts/[id] returns 404 (auth → not found)', async () => {
+    const res = await PATCH(patchReq('c_1', { favorite: true }))
+    expect(res.status).toBe(404)
+  })
+})

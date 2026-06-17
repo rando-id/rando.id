@@ -3,6 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { run } from '../cli'
+import type { ClerkProvider } from '../domain/clerk'
 import type { Adapters } from '../config'
 import type { DbProvider } from '../domain/db'
 import type { DeployProvider } from '../domain/deploy'
@@ -1367,3 +1368,202 @@ describe('secrets push', () => {
     expect(gh.setRepoSecret).not.toHaveBeenCalled()
   })
 })
+
+// The clerk command resolves CLERK_SECRET_KEY from 1P then constructs
+// a ClerkCliAdapter. Stub the adapter at the module level so we can
+// drive each subcommand without shelling out to `npx clerk@latest`.
+const clerkMocks = vi.hoisted(() => ({
+  whoami: vi.fn(),
+  ensureSvixApp: vi.fn(),
+  getSvixDashboardUrl: vi.fn(),
+  createUser: vi.fn(),
+}))
+vi.mock('../adapters/clerk-cli', () => ({
+  ClerkCliAdapter: class {
+    whoami = clerkMocks.whoami
+    ensureSvixApp = clerkMocks.ensureSvixApp
+    getSvixDashboardUrl = clerkMocks.getSvixDashboardUrl
+    createUser = clerkMocks.createUser
+  },
+}))
+
+describe('clerk commands', () => {
+  let tmpDir: string
+
+  beforeEach(() => {
+    vi.clearAllMocks()
+    tmpDir = mkdtempSync(join(tmpdir(), 'rando-clerk-test-'))
+  })
+  afterEach(() => {
+    rmSync(tmpDir, { recursive: true, force: true })
+  })
+
+  function writeConfig(): string {
+    const configPath = join(tmpDir, 'rando.config.json')
+    writeFileSync(
+      configPath,
+      JSON.stringify({
+        project: 'rando',
+        repo: 'rando-id/rando',
+        domains: { nonProd: 'rando-id.dev', production: 'rando.id' },
+        apps: [{ name: 'api', rootDirectory: 'apps/api', port: 4000 }],
+        secrets: {
+          kind: '1password',
+          field: 'credential',
+          environments: { local: 'env-local', staging: 'env-staging', prod: 'env-prod' },
+        },
+      }),
+    )
+    return configPath
+  }
+
+  function secretsStub(values: Record<string, string>): Partial<SecretsProvider> {
+    return {
+      whoami: vi.fn(async () => ({ account: 'dev', url: 'u' })),
+      readEnvironment: vi.fn(async () => values),
+    }
+  }
+
+  it('clerk whoami probes /users/count and reports the total', async () => {
+    const configPath = writeConfig()
+    clerkMocks.whoami.mockResolvedValue({ count: 12 })
+
+    const io = captureIo()
+    await run(['clerk', 'whoami', '--config', configPath, '--env', 'local'], {
+      adapters: mockAdapters({
+        secrets: secretsStub({ CLERK_SECRET_KEY: 'sk_test_FAKE' }) as SecretsProvider,
+      }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(clerkMocks.whoami).toHaveBeenCalledTimes(1)
+    expect(io.stdout.join('\n')).toMatch(/12 user/)
+  })
+
+  it('clerk whoami errors when CLERK_SECRET_KEY is empty in the 1P environment', async () => {
+    const configPath = writeConfig()
+    const io = captureIo()
+    const exitCalls: number[] = []
+    await run(['clerk', 'whoami', '--config', configPath, '--env', 'staging'], {
+      adapters: mockAdapters({
+        secrets: secretsStub({}) as SecretsProvider,
+      }),
+      io: io.io,
+      exit: ((c: number) => exitCalls.push(c)) as never,
+    })
+    expect(exitCalls[0]).toBe(1)
+    expect(io.stderr.join('\n')).toMatch(/CLERK_SECRET_KEY is empty/)
+  })
+
+  it('clerk users create POSTs the user and prints the new id', async () => {
+    const configPath = writeConfig()
+    clerkMocks.createUser.mockResolvedValue({ id: 'user_abc', email: 'ada@example.com' })
+
+    const io = captureIo()
+    await run(
+      [
+        'clerk',
+        'users',
+        'create',
+        '--config',
+        configPath,
+        '--env',
+        'staging',
+        '--email',
+        'ada@example.com',
+        '--password',
+        'pw_1234567',
+        '--first-name',
+        'Ada',
+      ],
+      {
+        adapters: mockAdapters({
+          secrets: secretsStub({ CLERK_SECRET_KEY: 'sk_test_FAKE' }) as SecretsProvider,
+        }),
+        io: io.io,
+        exit: noExit,
+      },
+    )
+    expect(clerkMocks.createUser).toHaveBeenCalledWith({
+      email: 'ada@example.com',
+      password: 'pw_1234567',
+      firstName: 'Ada',
+      lastName: undefined,
+    })
+    expect(io.stdout.join('\n')).toMatch(/ada@example\.com/)
+  })
+
+  it('clerk webhook setup ensures the Svix app, prompts for the secret, and pushes everywhere', async () => {
+    const configPath = writeConfig()
+    clerkMocks.ensureSvixApp.mockResolvedValue({ alreadyExists: false })
+    clerkMocks.getSvixDashboardUrl.mockResolvedValue({
+      url: 'https://app.svix.com/login#token=abc',
+    })
+
+    const opWrite = vi.fn(async () => undefined)
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'dev', url: 'u' })),
+      readEnvironment: vi.fn(async () => ({ CLERK_SECRET_KEY: 'sk_test_FAKE' })),
+      write: opWrite,
+    }
+    const setEnv = vi.fn(async () => ({
+      id: 'env_1',
+      key: 'CLERK_WEBHOOK_SECRET',
+      scopes: ['preview' as const],
+    }))
+    const deploy: Partial<DeployProvider> = {
+      getProjectByName: vi.fn(async () => ({
+        id: 'p_rando-api',
+        name: 'rando-api',
+        rootDirectory: null,
+      })),
+      setEnv,
+    }
+    // Drive io.input to return the signing secret on the single prompt.
+    const io = captureIo({ inputResponses: ['whsec_abc123'] })
+    await run(['clerk', 'webhook', 'setup', '--config', configPath, '--env', 'staging'], {
+      adapters: mockAdapters({
+        secrets: secrets as SecretsProvider,
+        deploy: deploy as DeployProvider,
+      }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(clerkMocks.ensureSvixApp).toHaveBeenCalledTimes(1)
+    expect(clerkMocks.getSvixDashboardUrl).toHaveBeenCalledTimes(1)
+    expect(opWrite).toHaveBeenCalledWith({
+      vault: 'env-staging',
+      item: 'CLERK_WEBHOOK_SECRET',
+      field: 'credential',
+      value: 'whsec_abc123',
+    })
+    expect(setEnv).toHaveBeenCalledWith({
+      projectId: 'p_rando-api',
+      key: 'CLERK_WEBHOOK_SECRET',
+      value: 'whsec_abc123',
+      scopes: ['preview'],
+    })
+  })
+
+  it('clerk webhook setup refuses signing secrets without the whsec_ prefix', async () => {
+    const configPath = writeConfig()
+    clerkMocks.ensureSvixApp.mockResolvedValue({ alreadyExists: true })
+    clerkMocks.getSvixDashboardUrl.mockResolvedValue({ url: 'https://app.svix.com/login' })
+
+    const io = captureIo({ inputResponses: ['not-a-whsec-value'] })
+    const exitCalls: number[] = []
+    await run(['clerk', 'webhook', 'setup', '--config', configPath, '--env', 'staging'], {
+      adapters: mockAdapters({
+        secrets: secretsStub({ CLERK_SECRET_KEY: 'sk_test_FAKE' }) as SecretsProvider,
+      }),
+      io: io.io,
+      exit: ((c: number) => exitCalls.push(c)) as never,
+    })
+    expect(exitCalls[0]).toBe(1)
+    expect(io.stderr.join('\n')).toMatch(/whsec_/)
+  })
+})
+
+// Reference for unused-symbol linter — ClerkProvider type is imported
+// so future tests that need a more elaborate stub can reach for it.
+void ({} as Partial<ClerkProvider>)

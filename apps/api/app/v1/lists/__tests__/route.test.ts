@@ -244,3 +244,58 @@ describe('DELETE /v1/lists/[id]/members/[contactId]', () => {
     expect(res.status).toBe(404)
   })
 })
+
+describe('unauthorized branches', () => {
+  // Every route catches the Response thrown by requireCurrentUser and
+  // maps it to an env-appropriate status. Exercise each here so the
+  // catch arms aren't dead coverage.
+  beforeEach(() => {
+    reqUser.mockRejectedValue(new Response('Unauthorized', { status: 401 }))
+  })
+
+  it('GET /v1/lists returns 200 with []', async () => {
+    const res = await listsGET(new NextRequest(new Request('http://localhost/v1/lists')))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([])
+  })
+
+  it('POST /v1/lists returns 400', async () => {
+    const res = await listsPOST(jsonReq('http://localhost/v1/lists', 'POST', { name: 'X' }))
+    expect(res.status).toBe(400)
+  })
+
+  it('GET /v1/lists/[id] returns 404', async () => {
+    const res = await listGET(new NextRequest(new Request('http://localhost/v1/lists/l_1')))
+    expect(res.status).toBe(404)
+  })
+
+  it('PATCH /v1/lists/[id] returns 404', async () => {
+    const res = await listPATCH(jsonReq('http://localhost/v1/lists/l_1', 'PATCH', { name: 'X' }))
+    expect(res.status).toBe(404)
+  })
+
+  it('DELETE /v1/lists/[id] returns 404', async () => {
+    const res = await listDELETE(
+      new NextRequest(new Request('http://localhost/v1/lists/l_1', { method: 'DELETE' })),
+    )
+    expect(res.status).toBe(404)
+  })
+
+  it('POST /v1/lists/[id]/members returns 400', async () => {
+    const res = await memberPOST(
+      jsonReq('http://localhost/v1/lists/l_1/members', 'POST', {
+        contactId: '00000000-0000-0000-0000-000000000001',
+      }),
+    )
+    expect(res.status).toBe(400)
+  })
+
+  it('DELETE /v1/lists/[id]/members/[contactId] returns 404', async () => {
+    const res = await memberDELETE(
+      new NextRequest(
+        new Request('http://localhost/v1/lists/l_1/members/c_2', { method: 'DELETE' }),
+      ),
+    )
+    expect(res.status).toBe(404)
+  })
+})

@@ -19,11 +19,11 @@ Conventions for working on Rando. Loaded automatically by Claude Code into every
 
 ## Quality
 
-- **Run lint + typecheck + tests before declaring work done OR drafting a commit message.** This is non-negotiable — CI runs the same checks and finding out from a failed CI run after pushing wastes a round trip. The canonical form is:
+- **Run lint + typecheck + tests-with-coverage before declaring work done OR drafting a commit message.** This is non-negotiable — CI runs the same checks and finding out from a failed CI run after pushing wastes a round trip. The canonical form is:
   ```
-  pnpm typecheck && pnpm lint && pnpm test
+  pnpm typecheck && pnpm lint && pnpm test:coverage
   ```
-  These each go through Turbo at the workspace root, which only re-runs affected packages (cache hits for everything else). Lint + typecheck + tests are NOT all wired as per-package scripts — only some packages have a `lint` script — so `pnpm --filter <pkg> lint` may error with "no script". Root-level is the safe default. For test files with `vi.fn(async () => ...)`, explicitly type the mock signature (`vi.fn(async (_a: X, _b?: Y) => ...)`) — implicit 0-arg inference breaks `.mock.calls[i][n]` access and tsc only catches it at typecheck time, not at `vitest run`. **Failing local checks = not done. Do not announce success, do not draft a commit message, until everything is green.**
+  **Use `test:coverage`, not `test`.** CI runs `pnpm test:coverage` (via `unit-tests.yml`); the coverage variant enforces per-package thresholds in each vitest config and is the only way to catch threshold regressions locally. Plain `pnpm test` skips them. All three commands go through Turbo at the workspace root, which only re-runs affected packages (cache hits for everything else). Lint + typecheck + tests are NOT all wired as per-package scripts — only some packages have a `lint` script — so `pnpm --filter <pkg> lint` may error with "no script". Root-level is the safe default. For test files with `vi.fn(async () => ...)`, explicitly type the mock signature (`vi.fn(async (_a: X, _b?: Y) => ...)`) — implicit 0-arg inference breaks `.mock.calls[i][n]` access and tsc only catches it at typecheck time, not at `vitest run`. **Failing local checks (including coverage thresholds) = not done. Do not announce success, do not draft a commit message, until everything is green.**
 - **File follow-ups instead of widening scope.** Half-finished implementations are worse than a fresh ticket.
 - **Edit existing files over creating new ones.** New file = explicit reason. New doc file = explicit user request.
 - **Commit messages follow `feat(scope):` / `fix(scope):` / `chore(scope):` / `test(scope):` / `docs(scope):` / `ci(scope):` style** with a one-line subject and optional body. Include `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>` for assisted work.

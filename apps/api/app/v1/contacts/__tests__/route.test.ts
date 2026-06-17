@@ -247,3 +247,24 @@ describe('POST /v1/contacts', () => {
     expect(res.status).toBe(500)
   })
 })
+
+describe('unauthorized branches', () => {
+  beforeEach(() => {
+    reqUser.mockRejectedValue(new Response('Unauthorized', { status: 401 }))
+  })
+
+  it('GET /v1/contacts returns 401', async () => {
+    const res = await GET(getReq('http://localhost/v1/contacts'))
+    expect(res.status).toBe(401)
+  })
+
+  it('POST /v1/contacts returns 401', async () => {
+    const res = await POST(
+      postReq({
+        firstName: 'Jane',
+        location: { lat: 0, lng: 0, name: 'X' },
+      }),
+    )
+    expect(res.status).toBe(401)
+  })
+})
