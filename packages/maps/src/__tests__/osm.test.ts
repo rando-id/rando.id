@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { osmAdapter } from '../osm'
+import { GeocodingError, osmAdapter } from '../osm'
 
 afterEach(() => {
   vi.restoreAllMocks()
@@ -53,10 +53,11 @@ describe('osmAdapter.reverseGeocode', () => {
     expect(headers['user-agent']).toContain('rando.id')
   })
 
-  it('returns null when the API returns a non-ok response', async () => {
+  it('throws GeocodingError when the API returns a non-ok response', async () => {
     stubFetch({ ok: false, body: {} })
-    const result = await osmAdapter.reverseGeocode({ lat: 0, lng: 0 })
-    expect(result).toBeNull()
+    await expect(osmAdapter.reverseGeocode({ lat: 0, lng: 0 })).rejects.toBeInstanceOf(
+      GeocodingError,
+    )
   })
 
   it('returns null when display_name is missing', async () => {
@@ -110,10 +111,9 @@ describe('osmAdapter.search', () => {
     expect(calls[0]?.url).toContain(encodeURIComponent('café & bar'))
   })
 
-  it('returns an empty array on non-ok response', async () => {
+  it('throws GeocodingError on non-ok response', async () => {
     stubFetch({ ok: false, body: null })
-    const results = await osmAdapter.search('test')
-    expect(results).toEqual([])
+    await expect(osmAdapter.search('test')).rejects.toBeInstanceOf(GeocodingError)
   })
 
   it('returns an empty array when API returns empty results', async () => {

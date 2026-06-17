@@ -3,7 +3,7 @@ description: Install the `op` CLI (pinned to a version that supports `op environ
 
 inputs:
   service-account-token:
-    description: 1Password service account token. Pass `${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}` from the calling workflow — composite actions can't read `secrets.*` directly.
+    description: 1Password service account token. The calling workflow must pass the OP_SERVICE_ACCOUNT_TOKEN secret in explicitly (composite actions can't access the `secrets` context themselves — wire the value through this input).
     required: true
   environment-id:
     description: 1Password Environment to read. Defaults to the staging environment.
