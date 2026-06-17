@@ -5,6 +5,7 @@ import { Command } from 'commander'
 import { createAdapters, type Adapters } from './config'
 import { defaultIo, type Io } from './output'
 import { apiCommand } from './commands/api'
+import { clerkCommand } from './commands/clerk'
 import { dbCommand } from './commands/db'
 import { tunnelCommand } from './commands/tunnel'
 import { deployCommand } from './commands/deploy'
@@ -45,6 +46,7 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<voi
     .showHelpAfterError() // and shows --help so users see options after errors
 
   program.addCommand(apiCommand(adapters, io))
+  program.addCommand(clerkCommand(adapters, io))
   program.addCommand(dbCommand(adapters, io))
   program.addCommand(tunnelCommand(adapters, io))
   program.addCommand(deployCommand(adapters, io))
