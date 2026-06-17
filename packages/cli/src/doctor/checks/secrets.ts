@@ -14,15 +14,17 @@ export function secretsChecks(adapters: Adapters, configPath = 'rando.config.jso
       name: '1Password',
       async run(): Promise<CheckResult> {
         let secretsConfig:
-          | { localVault: string; field: string; envCount: number; account?: string }
+          | { localEnv: string; field: string; envCount: number; account?: string }
           | undefined
         try {
           const cfg = loadSetupConfig(configPath)
           if (cfg.secrets) {
             const envCount =
-              1 + (cfg.secrets.vaults.staging ? 1 : 0) + (cfg.secrets.vaults.prod ? 1 : 0)
+              1 +
+              (cfg.secrets.environments.staging ? 1 : 0) +
+              (cfg.secrets.environments.prod ? 1 : 0)
             secretsConfig = {
-              localVault: cfg.secrets.vaults.local,
+              localEnv: cfg.secrets.environments.local,
               field: cfg.secrets.field,
               envCount,
               account: cfg.secrets.account,
@@ -83,7 +85,7 @@ export function secretsChecks(adapters: Adapters, configPath = 'rando.config.jso
           const me = await provider.whoami()
           return {
             status: 'ok',
-            subject: `signed in as ${me.account} → ${secretsConfig.envCount} vault(s) configured`,
+            subject: `signed in as ${me.account} → ${secretsConfig.envCount} environment(s) configured`,
           }
         } catch (e) {
           return {

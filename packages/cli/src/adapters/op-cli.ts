@@ -113,6 +113,32 @@ export class OpCliProvider implements SecretsProvider {
     return result.stdout
   }
 
+  async readEnvironment(environmentId: string): Promise<Record<string, string>> {
+    // `op environment read <id>` streams KEY=VALUE lines to stdout.
+    // Note: per-line format is intentionally minimal — no quoting, no
+    // escaping. If a value contains a literal newline, that's a problem
+    // for the underlying environment, not this parser.
+    const result = this.run(['environment', 'read', environmentId])
+    if (!result.ok) {
+      throw new ProviderApiError(
+        '1password',
+        404,
+        result.stderr || `op environment read ${environmentId} failed`,
+      )
+    }
+    const out: Record<string, string> = {}
+    for (const line of result.stdout.split('\n')) {
+      const trimmed = line.trim()
+      if (!trimmed || trimmed.startsWith('#')) continue
+      const eq = trimmed.indexOf('=')
+      if (eq < 0) continue
+      const key = trimmed.slice(0, eq)
+      const value = trimmed.slice(eq + 1)
+      out[key] = value
+    }
+    return out
+  }
+
   async write(input: { vault: string; item: string; field: string; value: string }): Promise<void> {
     // `op item edit` returns non-zero when the item doesn't exist;
     // probe first so we can fall back to create. Using `op item get`

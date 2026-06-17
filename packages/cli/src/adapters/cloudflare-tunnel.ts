@@ -120,15 +120,22 @@ export class CloudflareTunnelProvider implements TunnelProvider {
   }
 
   private async request<T = unknown>(method: string, path: string, body?: unknown): Promise<T> {
-    const response = await this.fetch(`${this.baseUrl}${path}`, {
-      method,
-      headers: {
-        Authorization: `Bearer ${this.options.apiToken}`,
-        'Content-Type': 'application/json',
-        Accept: 'application/json',
-      },
-      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
-    })
+    const fullUrl = `${this.baseUrl}${path}`
+    let response: Response
+    try {
+      response = await this.fetch(fullUrl, {
+        method,
+        headers: {
+          Authorization: `Bearer ${this.options.apiToken}`,
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+      })
+    } catch (e) {
+      const detail = e instanceof Error ? `${e.name}: ${e.message}` : String(e)
+      throw new ProviderApiError('cloudflare', 0, `fetch ${method} ${fullUrl} failed: ${detail}`)
+    }
     const text = await response.text()
     if (!response.ok) throw new ProviderApiError('cloudflare', response.status, text)
     if (!text) return undefined as T

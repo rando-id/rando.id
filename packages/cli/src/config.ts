@@ -16,6 +16,7 @@ import type { IssueTrackerProvider } from './domain/tracker'
 import type { PostmanProvider } from './domain/postman'
 import type { SecretsProvider } from './domain/secrets'
 import type { TunnelProvider } from './domain/tunnel'
+import type { VercelCliProvisioner } from './domain/vercel-cli'
 import { MissingConfigError } from './domain/errors'
 import { NeonDbProvider } from './adapters/neon'
 import { CloudflareTunnelProvider } from './adapters/cloudflare-tunnel'
@@ -25,6 +26,7 @@ import { GitHubIssuesProvider } from './adapters/github-issues'
 import { JiraCloudProvider } from './adapters/jira-cloud'
 import { OpCliProvider } from './adapters/op-cli'
 import { PostmanRestProvider } from './adapters/postman'
+import { VercelCliAdapter } from './adapters/vercel-cli'
 import { VercelDeployProvider } from './adapters/vercel'
 import { loadSetupConfig } from './setup-config'
 
@@ -80,6 +82,12 @@ export interface Adapters {
    * by `gh` itself (keychain / GH_TOKEN env var).
    */
   gh(): GhProvider
+  /**
+   * Vercel CLI — for marketplace-storage ops the REST API doesn't
+   * expose (Vercel-managed Neon provisioning, currently). Auth is
+   * handled by `vercel` itself (login session / VERCEL_TOKEN env).
+   */
+  vercelCli(): VercelCliProvisioner
 }
 
 /**
@@ -172,6 +180,14 @@ export function createAdapters(env: NodeJS.ProcessEnv = process.env): Adapters {
       return new OpCliProvider({ account })
     },
     gh: () => new GhCliProvider(),
+    vercelCli: () => {
+      // Pass the token + team scope if they're set so commands target
+      // the team that owns the project. VERCEL_TEAM_ID accepts either
+      // the team slug ("rando-id") or the UUID; both work as --scope.
+      const token = env.VERCEL_TOKEN ?? undefined
+      const scope = env.VERCEL_TEAM_ID ?? undefined
+      return new VercelCliAdapter({ token, scope })
+    },
   }
 }
 

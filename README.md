@@ -63,10 +63,11 @@ DATABASE_URL=postgres://rando:rando@localhost:5432/rando \
 rando init
 ```
 
-**Per-app `.env.local` files** (Clerk keys, app-specific config) stay
-manual today — see [DEVELOPER_SETUP.md](./DEVELOPER_SETUP.md) for
-those + the deep details on the Clerk webhook tunnel and the smoke
-test. Folding those into `rando init` is tracked separately.
+**Per-app `.env` files** (Clerk keys, app-specific config) are
+written by `rando secrets sync` — one per app under `apps/*`,
+scoped by each app's `.env.example`. See
+[DEVELOPER_SETUP.md](./DEVELOPER_SETUP.md) for the deeper details
+on the Clerk webhook tunnel and the smoke test.
 
 **Deeper docs:**
 

@@ -69,6 +69,7 @@ describe('NeonDbProvider', () => {
     expect(result.parentId).toBe('br_1')
     expect(stub.calls[0]?.body).toEqual({
       branch: { name: 'staging', parent_id: 'br_1' },
+      endpoints: [{ type: 'read_write' }],
     })
   })
 

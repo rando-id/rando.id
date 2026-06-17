@@ -27,11 +27,16 @@
   "postman": {
     "workspaceId": "92182519-b2a9-4ca4-8997-2b250fd1cd47"
   },
+  "db": {
+    "kind": "neon",
+    "managedBy": "vercel",
+    "plan": "free_v3"
+  },
   "secrets": {
     "kind": "1password",
     "account": "PWOFKAZW3JFCLLMUD2WWDOSIXE",
     "field": "credential",
-    "vaults": {
+    "environments": {
       "local": "jkimas55rfb5pr3g6xqwuejrpy",
       "staging": "ftd3n4l5egcfjai7f7tm2f7ytq",
       "prod": "ma4jp2piap7otpnnpvqmc4cgkq"

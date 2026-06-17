@@ -148,6 +148,51 @@ describe('OpCliProvider', () => {
       )
     })
 
+    it('readEnvironment parses KEY=VALUE lines into a record', async () => {
+      const stdout = [
+        '# leading comment',
+        '',
+        'NEON_API_KEY=napi_abc',
+        'VERCEL_TOKEN=vcp_def',
+        'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_xyz',
+        '   ',
+      ].join('\n')
+      const spawn = vi.fn(() => ok(stdout))
+      const result = await adapter(spawn).readEnvironment('env-id-1')
+      expect(result).toEqual({
+        NEON_API_KEY: 'napi_abc',
+        VERCEL_TOKEN: 'vcp_def',
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_test_xyz',
+      })
+      expect(spawn).toHaveBeenCalledWith(
+        'op',
+        ['environment', 'read', 'env-id-1'],
+        expect.anything(),
+      )
+    })
+
+    it('readEnvironment passes --account when configured', async () => {
+      const spawn = vi.fn(() => ok('K=V'))
+      const a = new OpCliProvider({
+        spawn: spawn as unknown as typeof spawnSyncType,
+        account: 'ACC1',
+      })
+      await a.readEnvironment('env-1')
+      expect(spawn).toHaveBeenCalledWith(
+        'op',
+        ['--account', 'ACC1', 'environment', 'read', 'env-1'],
+        expect.anything(),
+      )
+    })
+
+    it('readEnvironment throws ProviderApiError when the env id is unknown', async () => {
+      const spawn = vi.fn(() => fail('environment not found', 1))
+      await expect(adapter(spawn).readEnvironment('bogus')).rejects.toMatchObject({
+        provider: '1password',
+        status: 404,
+      })
+    })
+
     it('throws on spawn error (op binary not on PATH)', async () => {
       const spawn = vi.fn(() => ({
         ...fail(''),

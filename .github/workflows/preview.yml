@@ -3,17 +3,21 @@ name: PR preview
 # Spins up a Vercel preview deploy for every PR with a stable
 # `<branch-slug>-<app>.rando-id.dev` URL, and tears it down on close.
 #
-# Secrets are resolved from 1Password at job start via the official
-# load-secrets-action — the only GitHub repo secret you need is
+# Secrets are resolved from a **1Password Environment** (not a Vault)
+# at job start. The only GitHub repo secret you need is
 # `OP_SERVICE_ACCOUNT_TOKEN` (Settings → Secrets and variables →
-# Actions → New repository secret). Everything else lives in the
-# **staging** 1P vault (ftd3n4l5egcfjai7f7tm2f7ytq) following the
-# convention from rando.config.json: item title === env var name,
-# field === "credential". The service account needs read access to
-# the staging vault; production-bound workflows would use a different
-# vault entirely.
+# Actions → New repository secret); everything else is read from the
+# staging environment (`ftd3n4l5egcfjai7f7tm2f7ytq`) via
+# `op environment read`, which streams `KEY=VALUE` lines that we
+# append straight to `$GITHUB_ENV`.
 #
-# Items expected in the staging vault:
+# Why Environments and not Vaults: secrets are organized by deploy
+# environment (local/staging/prod) on the 1Password side. The
+# service account is scoped to those Environments specifically; it
+# cannot read from arbitrary vaults. `op environment read` is the
+# correct tool — `op read op://...` only resolves against Vaults.
+#
+# Items expected in the staging Environment:
 #   - NEON_API_KEY            (only if RANDO_NEON_PROJECT_ID is set)
 #   - VERCEL_TOKEN
 #   - CLOUDFLARE_API_TOKEN
@@ -23,6 +27,9 @@ name: PR preview
 # Optional repo variables (Settings → Secrets and variables → Actions → Variables):
 #   RANDO_NEON_PROJECT_ID   — needed only by the optional per-PR Neon branch steps
 #   TRACKER_ENABLED=false   — disables the issue-tracker sync step
+#   PREVIEW_ENABLED=false   — disables this whole workflow (use until the
+#                             Vercel projects exist; see #75). Both preview
+#                             AND teardown skip when set.
 
 on:
   pull_request:
@@ -35,7 +42,7 @@ concurrency:
 
 jobs:
   preview:
-    if: github.event.action != 'closed'
+    if: ${{ vars.PREVIEW_ENABLED != 'false' && github.event.action != 'closed' }}
     name: Deploy preview
     runs-on: ubuntu-latest
     timeout-minutes: 15
@@ -43,8 +50,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
@@ -55,25 +60,20 @@ jobs:
 
       - run: pnpm setup:cli
 
-      # Pull secrets from 1Password into env vars for the remaining
-      # steps. References use the same convention as `rando secrets
-      # sync` — vault "Rando", item title === var name, field
-      # "credential". Add a line + a new vault item to expose more.
-      - name: Load secrets from 1Password
-        uses: 1password/load-secrets-action@v2
+      # TODO(#73): drop the `version:` pin once `op environment` lands in stable.
+      - name: Install 1Password CLI (>= 2.35 for `op environment`)
+        uses: 1password/install-cli-action@v1
         with:
-          export-env: true
+          version: 2.35.0-beta.01
+
+      # Stream the staging 1Password Environment into $GITHUB_ENV. Every
+      # KEY=VALUE line lands as an environment variable for subsequent
+      # steps. Adding a new secret means adding it to the Environment in
+      # the 1Password UI — no workflow change required.
+      - name: Load secrets from 1Password Environment
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          VERCEL_TOKEN: op://ftd3n4l5egcfjai7f7tm2f7ytq/VERCEL_TOKEN/credential
-          CLOUDFLARE_API_TOKEN: op://ftd3n4l5egcfjai7f7tm2f7ytq/CLOUDFLARE_API_TOKEN/credential
-          CLOUDFLARE_ACCOUNT_ID: op://ftd3n4l5egcfjai7f7tm2f7ytq/CLOUDFLARE_ACCOUNT_ID/credential
-          # Tracker creds — optional, only consumed by the issue-sync
-          # step below when tracker.kind=jira. GitHub Issues uses the
-          # auto-provided GITHUB_TOKEN, not these.
-          JIRA_BASE_URL: op://ftd3n4l5egcfjai7f7tm2f7ytq/JIRA_BASE_URL/credential
-          JIRA_EMAIL: op://ftd3n4l5egcfjai7f7tm2f7ytq/JIRA_EMAIL/credential
-          JIRA_API_TOKEN: op://ftd3n4l5egcfjai7f7tm2f7ytq/JIRA_API_TOKEN/credential
+        run: op environment read ftd3n4l5egcfjai7f7tm2f7ytq >> "$GITHUB_ENV"
 
       # Optional: spin up a per-PR Neon branch off main so migrations and
       # seed data are isolated. Requires RANDO_NEON_PROJECT_ID variable.
@@ -82,7 +82,7 @@ jobs:
       #   run: rando db branch create ${{ vars.RANDO_NEON_PROJECT_ID }} pr-${{ github.event.pull_request.number }} --from main
 
       - name: Trigger preview deploys
-        run: rando deploy branch '${{ github.head_ref }}' --stable-url --yes
+        run: rando deploy branch '${{ github.head_ref }}' --stable-url
         env:
           FORCE_COLOR: '1'
 
@@ -110,7 +110,7 @@ jobs:
           FORCE_COLOR: '1'
 
   teardown:
-    if: github.event.action == 'closed'
+    if: ${{ vars.PREVIEW_ENABLED != 'false' && github.event.action == 'closed' }}
     name: Teardown preview
     runs-on: ubuntu-latest
     timeout-minutes: 10
@@ -118,8 +118,6 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: pnpm/action-setup@v4
-        with:
-          version: 10
 
       - uses: actions/setup-node@v4
         with:
@@ -130,15 +128,16 @@ jobs:
 
       - run: pnpm setup:cli
 
-      - name: Load secrets from 1Password
-        uses: 1password/load-secrets-action@v2
+      # TODO(#73): drop the `version:` pin once `op environment` lands in stable.
+      - name: Install 1Password CLI (>= 2.35 for `op environment`)
+        uses: 1password/install-cli-action@v1
         with:
-          export-env: true
+          version: 2.35.0-beta.01
+
+      - name: Load secrets from 1Password Environment
         env:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-          VERCEL_TOKEN: op://ftd3n4l5egcfjai7f7tm2f7ytq/VERCEL_TOKEN/credential
-          CLOUDFLARE_API_TOKEN: op://ftd3n4l5egcfjai7f7tm2f7ytq/CLOUDFLARE_API_TOKEN/credential
-          CLOUDFLARE_ACCOUNT_ID: op://ftd3n4l5egcfjai7f7tm2f7ytq/CLOUDFLARE_ACCOUNT_ID/credential
+        run: op environment read ftd3n4l5egcfjai7f7tm2f7ytq >> "$GITHUB_ENV"
 
       - name: Remove stable URLs
         run: rando deploy teardown '${{ github.head_ref }}' --yes

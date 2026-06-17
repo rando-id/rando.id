@@ -85,6 +85,7 @@ function mockAdapters(trackerFactory: (() => IssueTrackerProvider) | (() => neve
     postman: never,
     secrets: never,
     gh: never,
+    vercelCli: never,
   }
 }
 

@@ -57,6 +57,8 @@ export function infrastructureCommand(adapters: Adapters, io: Io): Command {
           tunnel: adapters.tunnel(),
           deploy: adapters.deploy(),
           dns: adapters.dns(),
+          vercelCli: adapters.vercelCli(),
+          secrets: adapters.secrets(),
         },
         { config, envs, apps, emit },
       )
@@ -124,6 +126,8 @@ export function infrastructureCommand(adapters: Adapters, io: Io): Command {
             tunnel: adapters.tunnel(),
             deploy: adapters.deploy(),
             dns: adapters.dns(),
+            vercelCli: adapters.vercelCli(),
+            secrets: adapters.secrets(),
           },
           { config, env, apps, emit },
         )

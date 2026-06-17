@@ -32,6 +32,7 @@ function fakeAdapters(overrides: Partial<Adapters> = {}): Adapters {
     postman: never,
     secrets: never,
     gh: never,
+    vercelCli: never,
     ...overrides,
   }
 }
@@ -438,7 +439,7 @@ describe('secretsChecks', () => {
     const secrets = {
       kind: '1password',
       field: 'credential',
-      vaults: { local: 'v-local' },
+      environments: { local: 'v-local' },
       ...(account ? { account } : {}),
     }
     writeFileSync(

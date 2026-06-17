@@ -110,6 +110,35 @@ export const SetupConfigSchema = z.object({
     .optional(),
 
   /**
+   * Database provisioning + behavior. Only meaningful for the
+   * `rando infrastructure setup` orchestrator; everyday CLI commands
+   * (`rando db ...`) talk to Neon directly and ignore this block.
+   *
+   * `managedBy: 'vercel'` switches the project-creation step from
+   * direct Neon-API calls to `vercel install neon`, because
+   * Vercel-managed Neon orgs reject direct creates with
+   * "action restricted; reason: organization is managed by Vercel".
+   */
+  db: z
+    .object({
+      /**
+       * Database provider. Currently only Neon is supported — the
+       * field exists to mirror the `kind` pattern in `tracker` and
+       * `secrets` and to leave room for alternatives (Supabase, RDS)
+       * without a breaking schema change.
+       */
+      kind: z.enum(['neon']).default('neon'),
+      managedBy: z.enum(['standalone', 'vercel']).default('standalone'),
+      /**
+       * Vercel marketplace plan for `vercel install neon`. Vercel
+       * versioned these (`free` → `free_v3` etc.) — keep this in sync
+       * with the upstream marketplace.
+       */
+      plan: z.string().min(1).default('free_v3'),
+    })
+    .optional(),
+
+  /**
    * Postman workspace integration. Optional — `rando api postman sync`
    * + `rando init`'s Postman step both read this. workspaceId can also
    * be passed via --workspace on the CLI.
@@ -123,18 +152,22 @@ export const SetupConfigSchema = z.object({
     .optional(),
 
   /**
-   * Secret-vault integration. When set, `rando init`, `rando secrets
-   * sync`, and `rando secrets set` route every secret through the
-   * configured 1Password vault before/instead of touching `.env`.
+   * 1Password Secret-manager integration. When set, `rando init`,
+   * `rando secrets sync`, and `rando secrets set` route every secret
+   * through the configured 1Password **Environment** before/instead
+   * of touching `.env`.
    *
    * Convention: item title === env var name (e.g. NEON_API_KEY →
-   * `op://<vault-id>/NEON_API_KEY/<field>`). Means zero per-secret
-   * config — adding a new env var just means creating an item with
-   * that name in each environment's vault.
+   * `op://<environment-id>/NEON_API_KEY/<field>` for user-account
+   * access, or `op environment read <environment-id>` for service
+   * accounts in CI). Adding a new env var means adding an item with
+   * that name to whichever Environment(s) need it.
    *
-   * One vault per environment so dev/staging/prod credentials can't
-   * cross-contaminate. The `local` vault is used by default; `--env
-   * staging|prod` overrides where supported.
+   * Note: these are 1Password **Environments**, not Vaults — distinct
+   * 1Password features. Vault-based references (`op read op://...`)
+   * work only for user accounts; CI service accounts use
+   * `op environment read` to stream the whole Environment as
+   * KEY=VALUE pairs.
    */
   secrets: z
     .object({
@@ -149,12 +182,12 @@ export const SetupConfigSchema = z.object({
       /** Field on each item that holds the credential value. */
       field: z.string().min(1).default('credential'),
       /**
-       * 1Password vault IDs per environment. UUIDs (not names) because
-       * names can change without breaking the integration. `local` is
+       * 1Password Environment IDs per deploy environment. `local` is
        * required since it's the default for everyday dev work;
-       * `staging` + `prod` are optional until you need them.
+       * `staging` + `prod` are optional until you need them. Find IDs
+       * via the 1Password desktop app's Developer panel.
        */
-      vaults: z.object({
+      environments: z.object({
         local: z.string().min(1),
         staging: z.string().min(1).optional(),
         prod: z.string().min(1).optional(),
@@ -163,7 +196,7 @@ export const SetupConfigSchema = z.object({
     .optional(),
 })
 
-/** Valid environment names for the `secrets` block's vaults map. */
+/** Valid env names for the `secrets.environments` block. */
 export type SecretsEnv = 'local' | 'staging' | 'prod'
 export const ALL_SECRETS_ENVS: SecretsEnv[] = ['local', 'staging', 'prod']
 

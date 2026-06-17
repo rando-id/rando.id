@@ -405,7 +405,7 @@ Three webhook endpoints across the two Clerk instances:
 
 | Environment | Clerk instance | Endpoint URL                                         | Signing secret stored in                         |
 | ----------- | -------------- | ---------------------------------------------------- | ------------------------------------------------ |
-| Local       | Development    | `https://dev-api.rando-id.dev/v1/webhooks/clerk`     | `apps/api/.env.local`                            |
+| Local       | Development    | `https://dev-api.rando-id.dev/v1/webhooks/clerk`     | `apps/api/.env`                                  |
 | Staging     | Development    | `https://staging-api.rando-id.dev/v1/webhooks/clerk` | `rando-api` Vercel project, **Preview** scope    |
 | Production  | Production     | `https://api.rando.id/v1/webhooks/clerk`             | `rando-api` Vercel project, **Production** scope |
 
@@ -443,7 +443,7 @@ _TBD — populate when first published._ Key steps will be:
 - `eas submit` → store submission
 
 For native API endpoints: the `EXPO_PUBLIC_RANDO_API_URL` env var in
-`apps/native/.env.local` (and EAS build profiles) determines which environment
+`apps/native/.env` (and EAS build profiles) determines which environment
 the app hits.
 
 | Build profile        | `EXPO_PUBLIC_RANDO_API_URL`        |
