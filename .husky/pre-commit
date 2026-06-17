@@ -6,8 +6,13 @@ set +e
 
 # Pre-commit pipeline (picker first, lint-staged second):
 #
-#   1. If the current branch has no cached issue key and a tracker is
-#      configured, prompt for one.
+#   1. Invoke `rando issues pick --from-hook`. The picker itself
+#      decides whether to actually prompt:
+#        - Protected branches (main/master per `tracker.protectedBranches`
+#          in rando.config.json) always re-prompt, ignoring any cached
+#          key. Trunk commits are typically unrelated concerns, so a
+#          stale cache shouldn't silently get applied.
+#        - Other branches use the cached key when present.
 #   2. lint-staged formats/lints staged files.
 #
 # Picker-first because lint-staged's stash/restore dance disturbs
@@ -23,21 +28,18 @@ set +e
 if [ -z "$RANDO_NO_JIRA" ]; then
   branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null)
   if [ -n "$branch" ] && [ "$branch" != "HEAD" ]; then
-    key=$(git config "branch.$branch.jira-key" 2>/dev/null)
-    if [ -z "$key" ]; then
-      RANDO_BIN="$(git rev-parse --show-toplevel)/packages/cli/bin/rando.mjs"
-      # Probe: only enforce when a tracker is configured.
-      if "$RANDO_BIN" issues pick --check >/dev/null 2>&1; then
-        if [ ! -e /dev/tty ]; then
-          echo >&2
-          echo "✗ Commit blocked: no issue cached for branch '$branch' and no TTY to prompt." >&2
-          echo "  Set RANDO_NO_JIRA=1 for a one-off, or run \`rando issues pick\` first." >&2
-          exit 1
-        fi
-        if ! "$RANDO_BIN" issues pick --from-hook </dev/tty >/dev/tty 2>&1; then
-          echo "✗ Issue picker failed — commit aborted." >&2
-          exit 1
-        fi
+    RANDO_BIN="$(git rev-parse --show-toplevel)/packages/cli/bin/rando.mjs"
+    # Probe: only enforce when a tracker is configured.
+    if "$RANDO_BIN" issues pick --check >/dev/null 2>&1; then
+      if [ ! -e /dev/tty ]; then
+        echo >&2
+        echo "✗ Commit blocked: no TTY to prompt for issue pick." >&2
+        echo "  Set RANDO_NO_JIRA=1 for a one-off, or run \`rando issues pick\` first." >&2
+        exit 1
+      fi
+      if ! "$RANDO_BIN" issues pick --from-hook </dev/tty >/dev/tty 2>&1; then
+        echo "✗ Issue picker failed — commit aborted." >&2
+        exit 1
       fi
     fi
   fi

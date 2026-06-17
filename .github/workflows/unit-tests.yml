@@ -1,0 +1,136 @@
+name: Unit tests
+
+# Runs vitest across every workspace with --coverage. Each workspace
+# emits Cobertura XML alongside LCOV; we upload each to GitHub Code
+# Quality (public preview — GA July 2026) for per-PR coverage
+# comments, gated on whether that workspace (or one of its deps) was
+# actually touched. Dependency map lives in .github/actions/changes
+# so it's shared with the other monorepo-gated workflows.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: unit-tests-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: vitest + coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      # Required by actions/upload-code-coverage. Repo-level setting
+      # is also required: Settings → Code security → Code quality
+      # must be enabled before uploads start landing.
+      code-quality: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+
+      - id: changes
+        uses: ./.github/actions/changes
+
+      # The Code Quality upload action needs write access to comment on
+      # the PR, which fork token scopes don't grant. Compute once here
+      # so every per-workspace upload step can gate off the same value
+      # instead of repeating the expression.
+      - id: pr
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" != "pull_request" ] || [ "${{ github.event.pull_request.head.repo.full_name }}" = "${{ github.repository }}" ]; then
+            echo "trusted=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "trusted=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Run tests with coverage
+        run: pnpm test:coverage
+        env:
+          FORCE_COLOR: '1'
+
+      # Stash every coverage dir as a single artifact so the LCOV +
+      # HTML reports are reachable from the run page regardless of
+      # whether the upload steps below succeed.
+      - name: Upload coverage artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage
+          path: |
+            apps/*/coverage
+            packages/*/coverage
+          retention-days: 14
+          if-no-files-found: warn
+
+      # GitHub Code Quality coverage — one upload per workspace,
+      # gated on the per-workspace boolean from the changes action.
+      # Skipped for fork PRs because posting the comment needs write
+      # access that fork token scopes don't grant.
+      - name: Upload coverage — packages/cli
+        if: ${{ steps.changes.outputs.cli == 'true' && steps.pr.outputs.trusted == 'true' }}
+        uses: actions/upload-code-coverage@v1
+        with:
+          file: packages/cli/coverage/cobertura-coverage.xml
+          language: TypeScript
+          label: packages/cli
+
+      - name: Upload coverage — packages/db
+        if: ${{ steps.changes.outputs.db == 'true' && steps.pr.outputs.trusted == 'true' }}
+        uses: actions/upload-code-coverage@v1
+        with:
+          file: packages/db/coverage/cobertura-coverage.xml
+          language: TypeScript
+          label: packages/db
+
+      - name: Upload coverage — packages/maps
+        if: ${{ steps.changes.outputs.maps == 'true' && steps.pr.outputs.trusted == 'true' }}
+        uses: actions/upload-code-coverage@v1
+        with:
+          file: packages/maps/coverage/cobertura-coverage.xml
+          language: TypeScript
+          label: packages/maps
+
+      - name: Upload coverage — packages/config
+        if: ${{ steps.changes.outputs.config == 'true' && steps.pr.outputs.trusted == 'true' }}
+        uses: actions/upload-code-coverage@v1
+        with:
+          file: packages/config/coverage/cobertura-coverage.xml
+          language: TypeScript
+          label: packages/config
+
+      - name: Upload coverage — packages/auth
+        if: ${{ steps.changes.outputs.auth == 'true' && steps.pr.outputs.trusted == 'true' }}
+        uses: actions/upload-code-coverage@v1
+        with:
+          file: packages/auth/coverage/cobertura-coverage.xml
+          language: TypeScript
+          label: packages/auth
+
+      - name: Upload coverage — packages/api-client
+        if: ${{ steps.changes.outputs.apiClient == 'true' && steps.pr.outputs.trusted == 'true' }}
+        uses: actions/upload-code-coverage@v1
+        with:
+          file: packages/api-client/coverage/cobertura-coverage.xml
+          language: TypeScript
+          label: packages/api-client
+
+      - name: Upload coverage — apps/api
+        if: ${{ steps.changes.outputs.api == 'true' && steps.pr.outputs.trusted == 'true' }}
+        uses: actions/upload-code-coverage@v1
+        with:
+          file: apps/api/coverage/cobertura-coverage.xml
+          language: TypeScript
+          label: apps/api
+
+      - name: Upload coverage — apps/web
+        if: ${{ steps.changes.outputs.web == 'true' && steps.pr.outputs.trusted == 'true' }}
+        uses: actions/upload-code-coverage@v1
+        with:
+          file: apps/web/coverage/cobertura-coverage.xml
+          language: TypeScript
+          label: apps/web

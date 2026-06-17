@@ -1,26 +1,31 @@
-// /v1/lists/[id]/members/[contactId] — remove a contact from a list.
+// /v1/lists/:id/members/:contactId — remove a contact from a list.
 
-import { NextResponse } from 'next/server'
+import { createNextHandler } from '@ts-rest/serverless/next'
+import { contract } from '@rando/api-client'
 import { removeListMember } from '@rando/db'
 import { getDb } from '@/lib/db'
 import { requireCurrentUser } from '@/lib/current-user'
 
-interface RouteCtx {
-  params: Promise<{ id: string; contactId: string }>
-}
+const handler = createNextHandler(
+  { removeListMember: contract.removeListMember },
+  {
+    removeListMember: async ({ params }) => {
+      try {
+        const user = await requireCurrentUser()
+        const removed = await removeListMember(getDb(), user.id, params.id, params.contactId)
+        if (removed === 0) {
+          return { status: 404 as const, body: { error: 'not found' } }
+        }
+        return { status: 200 as const, body: { ok: true as const } }
+      } catch (e) {
+        if (e instanceof Response) {
+          return { status: 404 as const, body: { error: 'unauthorized' } }
+        }
+        throw e
+      }
+    },
+  },
+  { handlerType: 'app-router' },
+)
 
-export async function DELETE(_req: Request, ctx: RouteCtx) {
-  try {
-    const user = await requireCurrentUser()
-    const { id, contactId } = await ctx.params
-
-    const removed = await removeListMember(getDb(), user.id, id, contactId)
-    if (removed === 0) {
-      return NextResponse.json({ error: 'not found' }, { status: 404 })
-    }
-    return NextResponse.json({ ok: true })
-  } catch (e) {
-    if (e instanceof Response) return e
-    throw e
-  }
-}
+export { handler as DELETE }

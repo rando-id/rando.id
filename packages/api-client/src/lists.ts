@@ -1,4 +1,8 @@
-import type { ApiClient } from './client'
+// Public wrappers around the typed ts-rest client for /v1/lists*.
+// Same shape as contacts.ts — the contract owns URL/header/encoding,
+// these functions just adapt call-site args to the ts-rest shape.
+
+import { unwrap, type ApiClient } from './client'
 import type { ContactListItem } from './contacts'
 
 export type ListKind = 'custom' | 'location' | 'group' | 'favorites' | 'promoted'
@@ -17,32 +21,32 @@ export type ListWithMembers = ListItem & {
   members: ContactListItem[]
 }
 
+export type GetListQuery = { lat?: number; lng?: number }
+
+function nearStr(q: { lat?: number; lng?: number }): string | undefined {
+  return q.lat != null && q.lng != null ? `${q.lat},${q.lng}` : undefined
+}
+
 export async function listLists(client: ApiClient): Promise<ListItem[]> {
-  return client.request<ListItem[]>('/v1/lists')
+  const res = await client.tsRest.listLists()
+  return unwrap(res, '/v1/lists') as ListItem[]
 }
 
 export async function createList(client: ApiClient, name: string): Promise<ListItem> {
-  return client.request<ListItem>('/v1/lists', {
-    method: 'POST',
-    body: JSON.stringify({ name }),
-  })
+  const res = await client.tsRest.createList({ body: { name } })
+  return unwrap(res, '/v1/lists') as ListItem
 }
-
-export type GetListQuery = { lat?: number; lng?: number }
 
 export async function getList(
   client: ApiClient,
   id: string,
   query: GetListQuery = {},
 ): Promise<ListWithMembers> {
-  const params = new URLSearchParams()
-  if (query.lat != null && query.lng != null) {
-    params.set('near', `${query.lat},${query.lng}`)
-  }
-  const path = params.toString()
-    ? `/v1/lists/${encodeURIComponent(id)}?${params}`
-    : `/v1/lists/${encodeURIComponent(id)}`
-  return client.request<ListWithMembers>(path)
+  const res = await client.tsRest.getList({
+    params: { id },
+    query: { near: nearStr(query) },
+  })
+  return unwrap(res, `/v1/lists/${id}`) as ListWithMembers
 }
 
 export async function updateList(
@@ -50,16 +54,16 @@ export async function updateList(
   id: string,
   patch: { name: string },
 ): Promise<ListItem> {
-  return client.request<ListItem>(`/v1/lists/${encodeURIComponent(id)}`, {
-    method: 'PATCH',
-    body: JSON.stringify(patch),
+  const res = await client.tsRest.updateList({
+    params: { id },
+    body: patch,
   })
+  return unwrap(res, `/v1/lists/${id}`) as ListItem
 }
 
 export async function deleteList(client: ApiClient, id: string): Promise<{ ok: true }> {
-  return client.request<{ ok: true }>(`/v1/lists/${encodeURIComponent(id)}`, {
-    method: 'DELETE',
-  })
+  const res = await client.tsRest.deleteList({ params: { id }, body: undefined })
+  return unwrap(res, `/v1/lists/${id}`) as { ok: true }
 }
 
 export async function addListMember(
@@ -67,13 +71,11 @@ export async function addListMember(
   listId: string,
   contactId: string,
 ): Promise<{ ok: true; added: boolean }> {
-  return client.request<{ ok: true; added: boolean }>(
-    `/v1/lists/${encodeURIComponent(listId)}/members`,
-    {
-      method: 'POST',
-      body: JSON.stringify({ contactId }),
-    },
-  )
+  const res = await client.tsRest.addListMember({
+    params: { id: listId },
+    body: { contactId },
+  })
+  return unwrap(res, `/v1/lists/${listId}/members`) as { ok: true; added: boolean }
 }
 
 export async function removeListMember(
@@ -81,8 +83,9 @@ export async function removeListMember(
   listId: string,
   contactId: string,
 ): Promise<{ ok: true }> {
-  return client.request<{ ok: true }>(
-    `/v1/lists/${encodeURIComponent(listId)}/members/${encodeURIComponent(contactId)}`,
-    { method: 'DELETE' },
-  )
+  const res = await client.tsRest.removeListMember({
+    params: { id: listId, contactId },
+    body: undefined,
+  })
+  return unwrap(res, `/v1/lists/${listId}/members/${contactId}`) as { ok: true }
 }

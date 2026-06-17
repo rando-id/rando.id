@@ -18,6 +18,10 @@ function adaptersWithDb(db: DbProvider): Adapters {
     dns: never as never,
     deploy: never as never,
     tracker: never as never,
+    postman: never as never,
+    secrets: never as never,
+    gh: never as never,
+    vercelCli: never as never,
   }
 }
 

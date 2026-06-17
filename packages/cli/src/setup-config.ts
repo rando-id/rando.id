@@ -55,6 +55,15 @@ export const SetupConfigSchema = z.object({
   tracker: z
     .object({
       kind: z.enum(['github', 'jira']).default('github'),
+      /**
+       * Branches where the picker always prompts, ignoring any cached
+       * key. Feature-branch caching makes sense (one ticket per
+       * branch's lifetime); trunk branches don't — every commit on
+       * `main` is typically a different concern. The picker treats
+       * these as "always reset" so a stale cache from weeks ago
+       * doesn't silently get re-applied.
+       */
+      protectedBranches: z.array(z.string().min(1)).default(['main', 'master']),
       /** Required when kind is "github". Defaults give sensible label names. */
       github: z
         .object({
@@ -99,7 +108,97 @@ export const SetupConfigSchema = z.object({
         .optional(),
     })
     .optional(),
+
+  /**
+   * Database provisioning + behavior. Only meaningful for the
+   * `rando infrastructure setup` orchestrator; everyday CLI commands
+   * (`rando db ...`) talk to Neon directly and ignore this block.
+   *
+   * `managedBy: 'vercel'` switches the project-creation step from
+   * direct Neon-API calls to `vercel install neon`, because
+   * Vercel-managed Neon orgs reject direct creates with
+   * "action restricted; reason: organization is managed by Vercel".
+   */
+  db: z
+    .object({
+      /**
+       * Database provider. Currently only Neon is supported — the
+       * field exists to mirror the `kind` pattern in `tracker` and
+       * `secrets` and to leave room for alternatives (Supabase, RDS)
+       * without a breaking schema change.
+       */
+      kind: z.enum(['neon']).default('neon'),
+      managedBy: z.enum(['standalone', 'vercel']).default('standalone'),
+      /**
+       * Vercel marketplace plan for `vercel install neon`. Vercel
+       * versioned these (`free` → `free_v3` etc.) — keep this in sync
+       * with the upstream marketplace.
+       */
+      plan: z.string().min(1).default('free_v3'),
+    })
+    .optional(),
+
+  /**
+   * Postman workspace integration. Optional — `rando api postman sync`
+   * + `rando init`'s Postman step both read this. workspaceId can also
+   * be passed via --workspace on the CLI.
+   */
+  postman: z
+    .object({
+      workspaceId: z.string().min(1).optional(),
+      /** Collection name shown in Postman. Defaults to "Rando API". */
+      collectionName: z.string().min(1).optional(),
+    })
+    .optional(),
+
+  /**
+   * 1Password Secret-manager integration. When set, `rando init`,
+   * `rando secrets sync`, and `rando secrets set` route every secret
+   * through the configured 1Password **Environment** before/instead
+   * of touching `.env`.
+   *
+   * Convention: item title === env var name (e.g. NEON_API_KEY →
+   * `op://<environment-id>/NEON_API_KEY/<field>` for user-account
+   * access, or `op environment read <environment-id>` for service
+   * accounts in CI). Adding a new env var means adding an item with
+   * that name to whichever Environment(s) need it.
+   *
+   * Note: these are 1Password **Environments**, not Vaults — distinct
+   * 1Password features. Vault-based references (`op read op://...`)
+   * work only for user accounts; CI service accounts use
+   * `op environment read` to stream the whole Environment as
+   * KEY=VALUE pairs.
+   */
+  secrets: z
+    .object({
+      kind: z.enum(['1password']).default('1password'),
+      /**
+       * 1Password account UUID — passed as --account on every `op`
+       * call so commands always target the right account, even when
+       * the user has multiple accounts configured. Find it via
+       * `op account list --format=json`.
+       */
+      account: z.string().min(1).optional(),
+      /** Field on each item that holds the credential value. */
+      field: z.string().min(1).default('credential'),
+      /**
+       * 1Password Environment IDs per deploy environment. `local` is
+       * required since it's the default for everyday dev work;
+       * `staging` + `prod` are optional until you need them. Find IDs
+       * via the 1Password desktop app's Developer panel.
+       */
+      environments: z.object({
+        local: z.string().min(1),
+        staging: z.string().min(1).optional(),
+        prod: z.string().min(1).optional(),
+      }),
+    })
+    .optional(),
 })
+
+/** Valid env names for the `secrets.environments` block. */
+export type SecretsEnv = 'local' | 'staging' | 'prod'
+export const ALL_SECRETS_ENVS: SecretsEnv[] = ['local', 'staging', 'prod']
 
 export type SetupConfig = z.infer<typeof SetupConfigSchema>
 

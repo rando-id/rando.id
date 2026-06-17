@@ -1,3 +1,5 @@
 export * from './client'
 export * from './contacts'
 export * from './lists'
+export { contract } from './contract'
+export type { Contract } from './contract'

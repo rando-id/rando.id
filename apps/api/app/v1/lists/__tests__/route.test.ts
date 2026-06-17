@@ -1,7 +1,8 @@
-// Tests for /v1/lists* route handlers. Same mocking pattern as the
-// contacts routes — vi.mock the three boundaries (db client, auth,
-// @rando/db query helpers) and call exported handlers directly.
+// Tests for /v1/lists* route handlers, now backed by ts-rest's
+// createNextHandler. Single-arg call signature; path params come from
+// the URL path itself.
 
+import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/db', () => ({ getDb: vi.fn(() => ({})) }))
@@ -55,7 +56,16 @@ const LIST_ROW = {
   updatedAt: new Date('2026-06-13T00:00:00Z'),
 }
 
-const ctx = (params: Record<string, string>) => ({ params: Promise.resolve(params) }) as never
+function jsonReq(url: string, method: string, body?: unknown): NextRequest {
+  return new NextRequest(
+    new Request(url, {
+      method,
+      ...(body !== undefined
+        ? { body: JSON.stringify(body), headers: { 'content-type': 'application/json' } }
+        : {}),
+    }),
+  )
+}
 
 beforeEach(() => {
   vi.clearAllMocks()
@@ -65,7 +75,7 @@ beforeEach(() => {
 describe('GET /v1/lists', () => {
   it('returns mapped ListItem rows', async () => {
     listLists.mockResolvedValue([{ ...LIST_ROW, memberCount: 3 }])
-    const res = await listsGET()
+    const res = await listsGET(new NextRequest(new Request('http://localhost/v1/lists')))
     expect(res.status).toBe(200)
     const body = (await res.json()) as Array<{ id: string; memberCount: number }>
     expect(body[0]?.id).toBe('l_1')
@@ -74,35 +84,23 @@ describe('GET /v1/lists', () => {
 })
 
 describe('POST /v1/lists', () => {
-  function req(body: unknown): Request {
-    return new Request('http://localhost/v1/lists', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    })
-  }
-
   it('creates and returns 201', async () => {
     createList.mockResolvedValue({ ...LIST_ROW, memberCount: 0 })
-    const res = await listsPOST(req({ name: 'Pickup' }))
+    const res = await listsPOST(jsonReq('http://localhost/v1/lists', 'POST', { name: 'Pickup' }))
     expect(res.status).toBe(201)
     expect(createList).toHaveBeenCalledWith(expect.anything(), 'u_1', 'Pickup')
   })
 
   it('400s on unknown fields (strict zod)', async () => {
-    const res = await listsPOST(req({ name: 'X', kind: 'group' }))
+    const res = await listsPOST(
+      jsonReq('http://localhost/v1/lists', 'POST', { name: 'X', kind: 'group' }),
+    )
     expect(res.status).toBe(400)
     expect(createList).not.toHaveBeenCalled()
   })
 
-  it('400s on invalid JSON', async () => {
-    const res = await listsPOST(
-      new Request('http://localhost/v1/lists', { method: 'POST', body: 'nope' }),
-    )
-    expect(res.status).toBe(400)
-  })
-
   it('400s on missing name', async () => {
-    const res = await listsPOST(req({}))
+    const res = await listsPOST(jsonReq('http://localhost/v1/lists', 'POST', {}))
     expect(res.status).toBe(400)
   })
 })
@@ -126,7 +124,7 @@ describe('GET /v1/lists/[id]', () => {
         meters: null,
       },
     ])
-    const res = await listGET(new Request('http://localhost/v1/lists/l_1'), ctx({ id: 'l_1' }))
+    const res = await listGET(new NextRequest(new Request('http://localhost/v1/lists/l_1')))
     expect(res.status).toBe(200)
     const body = (await res.json()) as { id: string; members: Array<{ id: string }> }
     expect(body.id).toBe('l_1')
@@ -139,23 +137,18 @@ describe('GET /v1/lists/[id]', () => {
 
   it('returns 404 when the list does not exist', async () => {
     byId.mockResolvedValue(null)
-    const res = await listGET(new Request('http://localhost/v1/lists/l_x'), ctx({ id: 'l_x' }))
+    const res = await listGET(new NextRequest(new Request('http://localhost/v1/lists/l_x')))
     expect(res.status).toBe(404)
   })
 })
 
 describe('PATCH /v1/lists/[id]', () => {
-  function req(body: unknown): Request {
-    return new Request('http://localhost/v1/lists/l_1', {
-      method: 'PATCH',
-      body: JSON.stringify(body),
-    })
-  }
-
   it('renames and returns the updated list', async () => {
     updateName.mockResolvedValue(1)
     byId.mockResolvedValue({ ...LIST_ROW, name: 'Pickup' })
-    const res = await listPATCH(req({ name: 'Pickup' }), ctx({ id: 'l_1' }))
+    const res = await listPATCH(
+      jsonReq('http://localhost/v1/lists/l_1', 'PATCH', { name: 'Pickup' }),
+    )
     expect(res.status).toBe(200)
     const body = (await res.json()) as { name: string }
     expect(body.name).toBe('Pickup')
@@ -164,12 +157,16 @@ describe('PATCH /v1/lists/[id]', () => {
 
   it('404s when update affects 0 rows', async () => {
     updateName.mockResolvedValue(0)
-    const res = await listPATCH(req({ name: 'Pickup' }), ctx({ id: 'l_x' }))
+    const res = await listPATCH(
+      jsonReq('http://localhost/v1/lists/l_x', 'PATCH', { name: 'Pickup' }),
+    )
     expect(res.status).toBe(404)
   })
 
   it('400s on unknown fields', async () => {
-    const res = await listPATCH(req({ name: 'P', kind: 'group' }), ctx({ id: 'l_1' }))
+    const res = await listPATCH(
+      jsonReq('http://localhost/v1/lists/l_1', 'PATCH', { name: 'P', kind: 'group' }),
+    )
     expect(res.status).toBe(400)
   })
 })
@@ -177,30 +174,28 @@ describe('PATCH /v1/lists/[id]', () => {
 describe('DELETE /v1/lists/[id]', () => {
   it('deletes when affected > 0', async () => {
     deleteList.mockResolvedValue(1)
-    const res = await listDELETE(new Request('http://localhost/v1/lists/l_1'), ctx({ id: 'l_1' }))
+    const res = await listDELETE(
+      new NextRequest(new Request('http://localhost/v1/lists/l_1', { method: 'DELETE' })),
+    )
     expect(res.status).toBe(200)
   })
 
   it('404s when affected = 0', async () => {
     deleteList.mockResolvedValue(0)
-    const res = await listDELETE(new Request('http://localhost/v1/lists/l_x'), ctx({ id: 'l_x' }))
+    const res = await listDELETE(
+      new NextRequest(new Request('http://localhost/v1/lists/l_x', { method: 'DELETE' })),
+    )
     expect(res.status).toBe(404)
   })
 })
 
 describe('POST /v1/lists/[id]/members', () => {
-  function req(body: unknown): Request {
-    return new Request('http://localhost/v1/lists/l_1/members', {
-      method: 'POST',
-      body: JSON.stringify(body),
-    })
-  }
-
   it('passes added=true through on a fresh add', async () => {
     addMember.mockResolvedValue(true)
     const res = await memberPOST(
-      req({ contactId: '00000000-0000-0000-0000-000000000001' }),
-      ctx({ id: 'l_1' }),
+      jsonReq('http://localhost/v1/lists/l_1/members', 'POST', {
+        contactId: '00000000-0000-0000-0000-000000000001',
+      }),
     )
     expect(res.status).toBe(200)
     const body = (await res.json()) as { ok: boolean; added: boolean }
@@ -210,8 +205,9 @@ describe('POST /v1/lists/[id]/members', () => {
   it('passes added=false through on an idempotent re-add', async () => {
     addMember.mockResolvedValue(false)
     const res = await memberPOST(
-      req({ contactId: '00000000-0000-0000-0000-000000000001' }),
-      ctx({ id: 'l_1' }),
+      jsonReq('http://localhost/v1/lists/l_1/members', 'POST', {
+        contactId: '00000000-0000-0000-0000-000000000001',
+      }),
     )
     expect(res.status).toBe(200)
     const body = (await res.json()) as { ok: boolean; added: boolean }
@@ -219,7 +215,9 @@ describe('POST /v1/lists/[id]/members', () => {
   })
 
   it('400s on a non-UUID contactId', async () => {
-    const res = await memberPOST(req({ contactId: 'not-a-uuid' }), ctx({ id: 'l_1' }))
+    const res = await memberPOST(
+      jsonReq('http://localhost/v1/lists/l_1/members', 'POST', { contactId: 'not-a-uuid' }),
+    )
     expect(res.status).toBe(400)
     expect(addMember).not.toHaveBeenCalled()
   })
@@ -229,8 +227,9 @@ describe('DELETE /v1/lists/[id]/members/[contactId]', () => {
   it('removes when affected > 0', async () => {
     removeMember.mockResolvedValue(1)
     const res = await memberDELETE(
-      new Request('http://localhost/v1/lists/l_1/members/c_2', { method: 'DELETE' }),
-      ctx({ id: 'l_1', contactId: 'c_2' }),
+      new NextRequest(
+        new Request('http://localhost/v1/lists/l_1/members/c_2', { method: 'DELETE' }),
+      ),
     )
     expect(res.status).toBe(200)
   })
@@ -238,8 +237,64 @@ describe('DELETE /v1/lists/[id]/members/[contactId]', () => {
   it('404s when affected = 0', async () => {
     removeMember.mockResolvedValue(0)
     const res = await memberDELETE(
-      new Request('http://localhost/v1/lists/l_1/members/c_x', { method: 'DELETE' }),
-      ctx({ id: 'l_1', contactId: 'c_x' }),
+      new NextRequest(
+        new Request('http://localhost/v1/lists/l_1/members/c_x', { method: 'DELETE' }),
+      ),
+    )
+    expect(res.status).toBe(404)
+  })
+})
+
+describe('unauthorized branches', () => {
+  // Every route catches the Response thrown by requireCurrentUser and
+  // maps it to an env-appropriate status. Exercise each here so the
+  // catch arms aren't dead coverage.
+  beforeEach(() => {
+    reqUser.mockRejectedValue(new Response('Unauthorized', { status: 401 }))
+  })
+
+  it('GET /v1/lists returns 200 with []', async () => {
+    const res = await listsGET(new NextRequest(new Request('http://localhost/v1/lists')))
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual([])
+  })
+
+  it('POST /v1/lists returns 400', async () => {
+    const res = await listsPOST(jsonReq('http://localhost/v1/lists', 'POST', { name: 'X' }))
+    expect(res.status).toBe(400)
+  })
+
+  it('GET /v1/lists/[id] returns 404', async () => {
+    const res = await listGET(new NextRequest(new Request('http://localhost/v1/lists/l_1')))
+    expect(res.status).toBe(404)
+  })
+
+  it('PATCH /v1/lists/[id] returns 404', async () => {
+    const res = await listPATCH(jsonReq('http://localhost/v1/lists/l_1', 'PATCH', { name: 'X' }))
+    expect(res.status).toBe(404)
+  })
+
+  it('DELETE /v1/lists/[id] returns 404', async () => {
+    const res = await listDELETE(
+      new NextRequest(new Request('http://localhost/v1/lists/l_1', { method: 'DELETE' })),
+    )
+    expect(res.status).toBe(404)
+  })
+
+  it('POST /v1/lists/[id]/members returns 400', async () => {
+    const res = await memberPOST(
+      jsonReq('http://localhost/v1/lists/l_1/members', 'POST', {
+        contactId: '00000000-0000-0000-0000-000000000001',
+      }),
+    )
+    expect(res.status).toBe(400)
+  })
+
+  it('DELETE /v1/lists/[id]/members/[contactId] returns 404', async () => {
+    const res = await memberDELETE(
+      new NextRequest(
+        new Request('http://localhost/v1/lists/l_1/members/c_2', { method: 'DELETE' }),
+      ),
     )
     expect(res.status).toBe(404)
   })

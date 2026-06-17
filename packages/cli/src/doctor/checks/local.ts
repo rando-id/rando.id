@@ -91,11 +91,12 @@ export function localChecks(): Check[] {
         if (dump && restore) {
           return { status: 'ok', subject: 'present' }
         }
+        // Not a warning — only `rando db copy` actually needs these,
+        // and that's not a daily-driver command. Surface the gap as
+        // an OK row with a subtle hint instead of polluting warnings.
         return {
-          status: 'warn',
-          subject: 'missing',
-          hint: '`rando db copy` needs both. PostgreSQL 16+ recommended (matches Neon).',
-          fix: 'local:postgres-client',
+          status: 'ok',
+          subject: 'not installed (optional — only `rando db copy` needs them)',
         }
       },
     },

@@ -1,13 +1,12 @@
-// /v1/lists — list of lists (GET) + create a custom list (POST).
+// /v1/lists — list + create, served from one ts-rest handler.
 
-import { NextResponse } from 'next/server'
-import { z } from 'zod'
-import type { ListItem } from '@rando/api-client'
+import { createNextHandler } from '@ts-rest/serverless/next'
+import { contract } from '@rando/api-client'
 import { createList, listLists, type ListRow } from '@rando/db'
 import { getDb } from '@/lib/db'
 import { requireCurrentUser } from '@/lib/current-user'
 
-function mapList(r: ListRow): ListItem {
+function mapList(r: ListRow) {
   return {
     id: r.id,
     name: r.name,
@@ -19,45 +18,36 @@ function mapList(r: ListRow): ListItem {
   }
 }
 
-export async function GET() {
-  try {
-    const user = await requireCurrentUser()
-    const rows = await listLists(getDb(), user.id)
-    return NextResponse.json(rows.map(mapList))
-  } catch (e) {
-    if (e instanceof Response) return e
-    throw e
-  }
-}
+const handler = createNextHandler(
+  { listLists: contract.listLists, createList: contract.createList },
+  {
+    listLists: async () => {
+      try {
+        const user = await requireCurrentUser()
+        const rows = await listLists(getDb(), user.id)
+        return { status: 200 as const, body: rows.map(mapList) }
+      } catch (e) {
+        if (e instanceof Response) {
+          return { status: 200 as const, body: [] }
+        }
+        throw e
+      }
+    },
 
-const CreateListBody = z
-  .object({
-    name: z.string().trim().min(1).max(120),
-  })
-  .strict()
+    createList: async ({ body }) => {
+      try {
+        const user = await requireCurrentUser()
+        const list = await createList(getDb(), user.id, body.name)
+        return { status: 201 as const, body: mapList(list) }
+      } catch (e) {
+        if (e instanceof Response) {
+          return { status: 400 as const, body: { error: 'unauthorized' } }
+        }
+        throw e
+      }
+    },
+  },
+  { handlerType: 'app-router' },
+)
 
-export async function POST(req: Request) {
-  try {
-    const user = await requireCurrentUser()
-
-    let raw: unknown
-    try {
-      raw = await req.json()
-    } catch {
-      return NextResponse.json({ error: 'invalid JSON body' }, { status: 400 })
-    }
-    const parsed = CreateListBody.safeParse(raw)
-    if (!parsed.success) {
-      return NextResponse.json(
-        { error: 'validation failed', issues: parsed.error.issues },
-        { status: 400 },
-      )
-    }
-
-    const list = await createList(getDb(), user.id, parsed.data.name)
-    return NextResponse.json(mapList(list), { status: 201 })
-  } catch (e) {
-    if (e instanceof Response) return e
-    throw e
-  }
-}
+export { handler as GET, handler as POST }

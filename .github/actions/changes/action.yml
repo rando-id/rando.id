@@ -1,0 +1,135 @@
+name: Detect changes
+description: Compute per-workspace + aggregate "did anything relevant change?" booleans for monorepo workflows. File-pattern aggregates (`docs`, `code`, `shared`) come from dorny/paths-filter; per-workspace booleans come from Turbo's `--filter='...[base]'` so the dep graph is sourced from package.json (single source of truth — no manual map to maintain).
+
+outputs:
+  # --- per-workspace (from Turbo --filter='...[base]' dry-run) ---
+  # Each is `true` when the workspace's own files OR a runtime dep
+  # was touched. Computed by Turbo against the PR base ref, so adding
+  # a new @rando/* dep in package.json is automatically reflected
+  # here — no YAML edit required.
+  cli:
+    description: '@rando/cli affected'
+    value: ${{ steps.affected.outputs.cli }}
+  db:
+    description: '@rando/db affected'
+    value: ${{ steps.affected.outputs.db }}
+  maps:
+    description: '@rando/maps affected'
+    value: ${{ steps.affected.outputs.maps }}
+  config:
+    description: '@rando/config affected'
+    value: ${{ steps.affected.outputs.config }}
+  auth:
+    description: '@rando/auth affected'
+    value: ${{ steps.affected.outputs.auth }}
+  apiClient:
+    description: '@rando/api-client affected'
+    value: ${{ steps.affected.outputs.apiClient }}
+  api:
+    description: '@rando/api affected (own files OR a runtime dep)'
+    value: ${{ steps.affected.outputs.api }}
+  web:
+    description: '@rando/web affected (own files OR a runtime dep)'
+    value: ${{ steps.affected.outputs.web }}
+
+  # --- aggregates (from dorny/paths-filter) ---
+  # File-pattern signals Turbo can't easily express. Used to skip
+  # workflows wholesale on docs-only PRs, gate lint/typecheck on any
+  # code change, etc.
+  shared:
+    description: Lockfile / turbo.json / root package.json changed — touches everything.
+    value: ${{ steps.filter.outputs.shared }}
+  code:
+    description: Any TS/JS source file or root tsconfig changed.
+    value: ${{ steps.filter.outputs.code }}
+  docs:
+    description: Only docs / license / GitHub templates changed.
+    value: ${{ steps.filter.outputs.docs }}
+
+runs:
+  using: composite
+  steps:
+    - id: filter
+      uses: dorny/paths-filter@v3
+      with:
+        filters: |
+          shared:
+            - 'pnpm-lock.yaml'
+            - 'turbo.json'
+            - 'package.json'
+          code:
+            - '**/*.{ts,tsx,js,jsx,mjs,cjs}'
+            - 'pnpm-lock.yaml'
+            - 'tsconfig*.json'
+          docs:
+            - '**/*.md'
+            - 'LICENSE'
+            - '.github/ISSUE_TEMPLATE/**'
+            - '.github/PULL_REQUEST_TEMPLATE.md'
+
+    # Resolve the base ref (PR base, or HEAD~1 on push, or "everything"
+    # for schedule / workflow_dispatch). Fetched shallowly so Turbo's
+    # diff has a target — the default checkout depth of 1 isn't enough.
+    - name: Compute affected workspaces (Turbo)
+      id: affected
+      shell: bash
+      run: |
+        set -e
+
+        # Workspaces we care about + their Turbo package name. Keep
+        # in sync with the `outputs:` block above. Any change to the
+        # PACKAGE.JSON dep graph is picked up automatically by Turbo;
+        # this list only needs an entry per workspace whose coverage
+        # we want gated.
+        declare -A PKG=(
+          [cli]="@rando/cli"
+          [db]="@rando/db"
+          [maps]="@rando/maps"
+          [config]="@rando/config"
+          [auth]="@rando/auth"
+          [apiClient]="@rando/api-client"
+          [api]="@rando/api"
+          [web]="@rando/web"
+        )
+
+        case "${{ github.event_name }}" in
+          pull_request)
+            BASE_SHA="${{ github.event.pull_request.base.sha }}"
+            git fetch --no-tags --depth=50 origin "$BASE_SHA" 2>/dev/null || true
+            FILTER="...[$BASE_SHA]"
+            ;;
+          push)
+            # Diff against the parent of the current commit.
+            git fetch --no-tags --depth=2 origin "${{ github.sha }}" 2>/dev/null || true
+            FILTER="...[HEAD^]"
+            ;;
+          *)
+            # schedule / workflow_dispatch / etc — no meaningful diff;
+            # treat everything as affected so the run is a full pass.
+            FILTER=""
+            ;;
+        esac
+
+        if [ -n "$FILTER" ]; then
+          # Use `test` (the broadest task that touches every workspace
+          # with a vitest config) so the affected set covers anything
+          # we'd want to upload coverage for.
+          AFFECTED=$(pnpm exec turbo run test --filter="$FILTER" --dry-run=json 2>/dev/null \
+            | jq -r '[.tasks[].package] | unique | .[]' \
+            || echo "")
+          echo "::group::Affected workspaces ($FILTER)"
+          echo "$AFFECTED"
+          echo "::endgroup::"
+        else
+          AFFECTED="ALL"
+          echo "::notice::Non-PR event — treating all workspaces as affected."
+        fi
+
+        for key in "${!PKG[@]}"; do
+          pkg="${PKG[$key]}"
+          if [ "$AFFECTED" = "ALL" ] || echo "$AFFECTED" | grep -qx "$pkg"; then
+            echo "${key}=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "${key}=false" >> "$GITHUB_OUTPUT"
+          fi
+        done

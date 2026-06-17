@@ -23,7 +23,7 @@ interface EnvTokenSpec {
   optional?: boolean
 }
 
-const TOKENS: EnvTokenSpec[] = [
+export const TOKENS: EnvTokenSpec[] = [
   {
     name: 'GITHUB_TOKEN',
     label: 'GITHUB_TOKEN (issues, when tracker.kind=github)',
@@ -80,6 +80,14 @@ const TOKENS: EnvTokenSpec[] = [
     name: 'JIRA_API_TOKEN',
     label: 'JIRA_API_TOKEN (issues, when tracker.kind=jira)',
     probe: async () => {},
+    optional: true,
+  },
+  {
+    name: 'POSTMAN_API_KEY',
+    label: 'POSTMAN_API_KEY (rando api postman sync)',
+    probe: async (a) => {
+      await a.postman().getMyself()
+    },
     optional: true,
   },
 ]

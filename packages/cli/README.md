@@ -21,8 +21,7 @@ git clone https://github.com/rando-id/rando.id.git && cd rando.id
 That's it. `scripts/bootstrap` is a shell script that:
 
 1. **`brew bundle install`** — installs every system dep listed in
-   `Brewfile` (gh, pnpm, node@22, postgresql@16, cloudflared,
-   1password-cli, orbstack).
+   `scripts/Brewfile` (gh, pnpm, node@22, 1password-cli, orbstack).
 2. **`pnpm install`** — JS deps + husky regenerates the hook shims via
    the `prepare` script.
 3. **`node scripts/setup-cli.mjs`** — symlinks `rando` into
@@ -115,17 +114,19 @@ Typos surface "Did you mean…?" suggestions (`rando dbb` → `(Did you mean db?
 
 Env vars (set in your shell or in repo-root `.env`):
 
-| Variable                | Used by                               |
-| ----------------------- | ------------------------------------- |
-| `NEON_API_KEY`          | `db`                                  |
-| `CLOUDFLARE_API_TOKEN`  | `tunnel`, `dns`                       |
-| `CLOUDFLARE_ACCOUNT_ID` | `tunnel`                              |
-| `VERCEL_TOKEN`          | `deploy`                              |
-| `VERCEL_TEAM_ID`        | `deploy` (optional)                   |
-| `GITHUB_TOKEN`          | `issues` (when tracker.kind="github") |
-| `JIRA_BASE_URL`         | `issues` (when tracker.kind="jira")   |
-| `JIRA_EMAIL`            | `issues` (when tracker.kind="jira")   |
-| `JIRA_API_TOKEN`        | `issues` (when tracker.kind="jira")   |
+| Variable                   | Used by                                              |
+| -------------------------- | ---------------------------------------------------- |
+| `NEON_API_KEY`             | `db`                                                 |
+| `CLOUDFLARE_API_TOKEN`     | `tunnel`, `dns`                                      |
+| `CLOUDFLARE_ACCOUNT_ID`    | `tunnel`                                             |
+| `VERCEL_TOKEN`             | `deploy`                                             |
+| `VERCEL_TEAM_ID`           | `deploy` (optional)                                  |
+| `GITHUB_TOKEN`             | `issues` (when tracker.kind="github")                |
+| `JIRA_BASE_URL`            | `issues` (when tracker.kind="jira")                  |
+| `JIRA_EMAIL`               | `issues` (when tracker.kind="jira")                  |
+| `JIRA_API_TOKEN`           | `issues` (when tracker.kind="jira")                  |
+| `POSTMAN_API_KEY`          | `api postman sync` (optional)                        |
+| `OP_SERVICE_ACCOUNT_TOKEN` | CI only — `1password/load-secrets-action` (optional) |
 
 A repo-root `.env` is auto-loaded via Node's `--env-file-if-exists` flag
 in the bin shebang — no `source .env` needed. Shell-exported vars still
@@ -255,6 +256,23 @@ repo, the statuses the adapter exposes, and the lifecycle map from
 
 Reference: <https://developer.atlassian.com/cloud/jira/platform/basic-auth-for-rest-apis/>
 
+#### `POSTMAN_API_KEY` (optional — only needed for `api postman sync`)
+
+If you're not using Postman, leave this unset and skip the `api postman`
+commands; everything else works.
+
+1. Sign in at <https://web.postman.co>.
+2. Avatar (top right) → **Settings** → **API keys**, or go to
+   <https://web.postman.co/settings/me/api-keys>.
+3. **Generate API key**. Label it `rando-cli`.
+4. Copy the value — Postman only displays it once.
+5. The key uses `X-Api-Key` header auth (no `Bearer` prefix); `rando init`
+   validates it for you by calling `GET /me`.
+
+`rando init` will also offer to pick a default workspace and write the id
+into `rando.config.json` (`postman.workspaceId`) so `rando api postman sync`
+runs with no flags by default.
+
 #### `VERCEL_TEAM_ID` (only if your projects live in a team)
 
 If you're using a personal Vercel account, **leave unset**.
@@ -356,8 +374,8 @@ projects exist:
    DATABASE_URL="$(pnpm rando db connection-string <proj> <branch> --pooled --json | jq -r .url)" \
      pnpm --filter @rando/db db:migrate
    ```
-3. Wire the Clerk webhooks (no Clerk adapter in v1 — see
-   [INFRASTRUCTURE.md](../../INFRASTRUCTURE.md#clerk)).
+3. Wire the Clerk webhooks via `rando clerk webhook setup --env <env>` (see
+   [MAINTAINING.md → Clerk](../../.github/MAINTAINING.md#clerk)).
 
 ## Commands
 
@@ -471,7 +489,7 @@ themselves are left alone — Vercel auto-GCs them on its own retention
 schedule.
 
 ```yaml
-# .github/workflows/preview.yml
+# .github/workflows/deploy.yml
 name: PR preview
 on:
   pull_request:
@@ -521,7 +539,7 @@ Result: each PR gets its own preview URLs at predictable
 `<branch-slug>-<app>.rando-id.dev` and (optionally) a fresh Neon branch.
 Both vanish on PR close.
 
-The repo ships this workflow at [`.github/workflows/preview.yml`](../../.github/workflows/preview.yml) —
+The repo ships this workflow at [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml) —
 the Neon-branch steps are commented out by default; uncomment + set
 `RANDO_NEON_PROJECT_ID` as a repo variable to enable per-PR Neon
 branches.
@@ -556,6 +574,87 @@ Wraps the muscle-memory of "is Docker up? is cloudflared up? did I run
 
 If any child exits with a non-zero code, the others are torn down and
 the supervisor exits non-zero too.
+
+### `api` — API surface tooling
+
+```
+rando api postman sync     [--spec <urlOrPath>] [--workspace <id>] [--name <name>] [--config <path>] [--json]
+rando api postman generate [--spec <urlOrPath>] [--out <path>] [--name <name>] [-f/--force] [--json]
+rando api postman push     [--collection <path>] [--env-dir <path>] [--no-envs] [--workspace <id>] [--config <path>] [--json]
+```
+
+Two complementary flows:
+
+- **`generate`** is the canonical one for the test loop. It runs
+  `openapi-to-postmanv2` against the spec and writes a Postman v2.1
+  collection JSON file to disk (default: `postman/rando-api.postman_collection.json`).
+  No Postman API call. The file is checked into the repo and used by
+  `pnpm test:api` (postman-cli) and the `integration-tests.yml` workflow. Hand-author
+  `pm.test()` assertions on top of the generated requests; regenerate
+  only when the contract changes (and merge any test edits back in by
+  hand — there's no auto-merge today). The command **refuses to
+  overwrite an existing file** unless `--force` is passed — pass
+  `--out /tmp/regen.json` first to diff against the canonical file.
+- **`postman push`** mirrors the local collection JSON (with
+  hand-authored `pm.test()` blocks intact) + every Postman environment
+  JSON under `postman/environments/` into the configured workspace.
+  Uses `PUT` when an entity with the same name already exists, so
+  collection + environment uids stay stable across pushes — Postman
+  Monitors and shared links won't break. Different from `sync`, which
+  converts from OpenAPI and rotates the uid. Pass `--no-envs` to push
+  only the collection.
+- **`postman sync`** is for UI exploration. It pushes the OpenAPI spec
+  into a Postman workspace as a collection so you can poke at endpoints
+  in the Postman app. The sync is idempotent: if a collection with the
+  same name already exists, it's deleted and re-imported. The collection
+  id changes per sync, so don't pin secrets to it.
+
+Defaults:
+
+- `--spec` is `http://localhost:4000/v1/openapi.json`. Point it at a
+  deployed env or a local file when needed.
+- `--out` (generate only) is `postman/rando-api.postman_collection.json`.
+- `--workspace` (sync only) reads from `postman.workspaceId` in
+  `rando.config.json` when omitted. `rando init` will help you pick
+  one and write it.
+- `--name` defaults to the spec's `info.title` (generate) or `"Rando API"`
+  (sync).
+
+`POSTMAN_API_KEY` is only required for `sync`. `generate` is pure
+file I/O — runnable in CI with no secrets.
+
+#### Auth tokens via 1Password (`op run`)
+
+Postman has a native 1Password integration, but it's gated behind the
+Enterprise plan with the Advanced Security Administration add-on
+(see [Postman docs](https://learning.postman.com/docs/use/postman-vault/1password)).
+For Free/Pro tiers, the same end state is achievable via the
+1Password CLI:
+
+```bash
+# One-time setup
+cp postman/.op.env.example postman/.op.env
+$EDITOR postman/.op.env             # adjust op:// references to your vault paths
+
+# Per-run
+op signin                           # if not already
+op run --env-file=postman/.op.env -- pnpm test:api
+```
+
+`op run` reads the `.op.env` file, replaces every `op://...` reference
+with the live value from 1Password, and invokes the command with those
+values in its environment. The Postman CLI picks up `$AUTH_TOKEN` via the
+`test:api` script and exposes it inside the collection as
+`{{authToken}}`. Tokens never touch disk and never appear in shell
+history. `.op.env` itself is gitignored — per-developer vault names
+stay out of the repo.
+
+For the Postman desktop UI, use **Settings → Vault** (Postman's own
+local Vault Secrets, available on Free) — paste a value copied from
+1Password's desktop app once, reference it as `{{vault:authToken}}` in
+the environment. The two flows compose: 1Password is the source of
+truth, `op run` handles the CLI/CI path, Postman's local vault is the
+UI convenience.
 
 ### `dns` — DNS records
 
@@ -680,12 +779,12 @@ and the commit is rejected.
 
 Two workflows handle the lifecycle on PR events:
 
-- **`.github/workflows/issues-sync.yml`** — on every `pull_request`
+- **`.github/workflows/issues.yml`** — on every `pull_request`
   event, runs `rando issues refs base..head` to discover issues, then
   `rando issues lifecycle <KEY> in-progress` on opened / synchronize /
   reopened, or `... done --message "Merged in #N (<url>)"` on
   close-with-merged.
-- **`.github/workflows/preview.yml`** — after the Vercel branch deploy
+- **`.github/workflows/deploy.yml`** — after the Vercel branch deploy
   succeeds, runs `rando issues lifecycle <KEY> in-review --message
 "<deploy urls>"` for each referenced issue.
 
@@ -710,10 +809,77 @@ adapters live in the codebase side-by-side; cached `branch.<name>.
 jira-key` values from the previous tracker stay put (just legacy text
 in git config) and are overwritten by the next picker pick.
 
+### `secrets` — 1Password ↔ `.env` bridge
+
+```
+rando secrets sync [--env <local|staging|prod>] [--env-file <path>] [--config <path>] [-f/--force]
+rando secrets set  <VAR> [--value <v>] [--env <list>|--all] [--config <path>]
+rando secrets push <VAR> [--from <env>] [--ref <op-ref>] [--repo <owner/name>] [--config <path>]
+```
+
+The CLI treats **1Password as the source of truth** and `.env` as a
+local cache. **One vault per environment** (local/staging/prod) so
+dev/staging/prod credentials can't cross-contaminate — vault UUIDs
+live in `rando.config.json` under `secrets.vaults`.
+
+**`sync`** pulls every var listed in the env-token table from the
+target environment's vault into `.env`. Defaults to `local`; pass
+`--env staging` or `--env prod` only when you need to debug another
+environment's values locally. Skips vars already set unless `--force`.
+
+**`set <VAR>`** stores a value across one or more environments at
+once — `--env local,staging,prod` for a list, `--all` for every
+configured env, or skip both for an interactive multi-select.
+Prompts (masked) for the value when `--value` isn't passed.
+Upserts: edits the existing item if found, creates if not.
+
+**`push <VAR>`** reads a secret from 1Password and writes it to
+GitHub Actions repo secrets via `gh secret set`. Solves the
+`OP_SERVICE_ACCOUNT_TOKEN` bootstrap: CI can't read from 1Password
+until it has the service-account token, which has to come from
+somewhere `gh` can reach. Defaults to reading from the `local` vault
+and pushing to the repo declared in `rando.config.json`. `--ref` lets
+you read from a vault that isn't in the config (e.g. your Personal
+vault, where you stash the service-account token). The value is
+piped via stdin so it never appears in argv / shell history / `ps`.
+
+Canonical one-shot for the CI bootstrap:
+
+```bash
+op signin
+gh auth login
+rando secrets push OP_SERVICE_ACCOUNT_TOKEN \
+  --ref op://Personal/OP_SERVICE_ACCOUNT_TOKEN/credential
+```
+
+See [CONTRIBUTING.md → Bootstrapping `OP_SERVICE_ACCOUNT_TOKEN` for CI](../../.github/CONTRIBUTING.md#bootstrapping-op_service_account_token-for-ci)
+for the full bootstrap (creating the service account, storing the
+token in 1Password, rotation).
+
+Convention (set in `rando.config.json`'s `secrets` block):
+
+- **account**: 1Password account UUID passed as `--account` on every
+  `op` call. Found via `op account list --format=json`.
+- **field**: `credential` (1Password's default for API credentials).
+- **vaults.{local,staging,prod}**: vault UUIDs. `local` is required;
+  staging/prod are optional until you need them.
+- **item title** === env var name (`NEON_API_KEY` → an item literally
+  called `NEON_API_KEY` inside each environment's vault).
+
+So `NEON_API_KEY` in local resolves to
+`op://<local-vault-uuid>/NEON_API_KEY/credential`. Zero per-secret
+config — adding a new env var just means adding the item with that
+name to whichever environment vaults need it.
+
+`rando init` also tries 1Password (local vault) before each prompt:
+if you're signed in via `op signin` and the item exists, the var is
+fetched silently and the prompt is skipped. Pass `--no-1password` to
+disable.
+
 ### `init` and `doctor`
 
 ```
-rando init                                # interactive bootstrap (first clone)
+rando init [--no-1password]               # interactive bootstrap (first clone)
 rando doctor [--skip-tracker]             # full read-only health check
 ```
 
@@ -737,6 +903,7 @@ the current health of the setup. It walks six surfaces:
 | Hooks    | `.husky/_/` shims exist, `core.hooksPath` is set, all three hook files present + executable.                                                |
 | Local    | Node ≥22, `rando` on PATH, `gh` / `pg_dump` / `docker` installed (warnings, not failures, since each is only needed for specific commands). |
 | Tracker  | Delegates to `rando issues doctor` for auth + lifecycle-map lint.                                                                           |
+| Secrets  | `op` CLI signed in + `secrets` block present in `rando.config.json`. Warn (not fail) — 1Password is optional.                               |
 | Terminal | `isTTY` + `chalk.level` (preserved from the old terminal-only doctor).                                                                      |
 
 Each row shows `✓` / `⚠` / `✗`. Doctor exits non-zero on any `✗` so you

@@ -10,7 +10,7 @@ export default defineConfig({
     exclude: ['node_modules', '.next', 'dist'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'html', 'json-summary'],
+      reporter: ['text', 'html', 'json-summary', 'cobertura'],
       include: ['src/**/*.{ts,tsx}'],
       exclude: [
         'src/**/__tests__/**',

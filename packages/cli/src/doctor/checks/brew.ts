@@ -1,8 +1,14 @@
 // Brewfile satisfaction check. macOS-only — on Linux/Windows `brew`
 // won't be on PATH so we warn (rather than fail) and let the user
 // install the deps however they want.
+//
+// Smart-detection: many tools in scripts/Brewfile can also come from
+// elsewhere (pnpm via corepack, op via the 1Password desktop app,
+// docker via Docker Desktop, node via nvm/n). The check filters out
+// formulae whose primary command is already on PATH so users with
+// mixed toolchains don't see false-positive warnings.
 
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import type { Check, CheckResult } from '../types'
@@ -14,6 +20,50 @@ function brewInstalled(): boolean {
   } catch {
     return false
   }
+}
+
+/**
+ * Map of Brewfile formula/cask name → command(s) we expect on PATH
+ * when the tool is available. If ANY of the commands resolves, we
+ * treat the formula as "installed via an alternate route" and don't
+ * warn about it.
+ *
+ * Add new entries here whenever a Brewfile line could plausibly be
+ * satisfied by a non-brew install (npm global, .dmg, app store, etc.).
+ */
+const ALT_INSTALL_PROBES: Record<string, string[]> = {
+  // Casks
+  orbstack: ['orb', 'docker'],
+  docker: ['docker'],
+  // Container runtimes / DBs that Docker Desktop / Postgres.app might provide
+  'postgresql@16': ['pg_dump', 'pg_restore', 'psql'],
+  'postgresql@15': ['pg_dump'],
+  // Tools commonly installed via npm / corepack / etc.
+  pnpm: ['pnpm'],
+  yarn: ['yarn'],
+  node: ['node'],
+  'node@22': ['node'],
+  'node@20': ['node'],
+  // CLI-with-companion-app pattern
+  '1password-cli': ['op'],
+  gh: ['gh'],
+  cloudflared: ['cloudflared'],
+  'postman-cli': ['postman'],
+}
+
+/**
+ * Does the named formula have a working command available somewhere
+ * on PATH? Conservative: if the formula isn't in our probe table we
+ * return false (so brew's own answer wins).
+ */
+function isAlternativelyInstalled(formula: string): boolean {
+  const probes = ALT_INSTALL_PROBES[formula]
+  if (!probes) return false
+  for (const cmd of probes) {
+    const result = spawnSync('command', ['-v', cmd], { shell: '/bin/sh', stdio: 'pipe' })
+    if (result.status === 0) return true
+  }
+  return false
 }
 
 function brewBundleStatus(brewfilePath: string): {
@@ -72,13 +122,20 @@ export function brewChecks(repoRoot = process.cwd()): Check[] {
         if (status.satisfied) {
           return { status: 'ok', subject: 'all Brewfile deps installed' }
         }
-        const list =
-          status.missing.length > 0
-            ? status.missing.join(', ')
-            : 'see `brew bundle check --verbose`'
+        // Filter out formulae whose primary command is on PATH — they
+        // were installed via some other route (npm, app store, manual
+        // download) and work fine. Only flag the ones that are
+        // genuinely missing AND have no alternate install detected.
+        const reallyMissing = status.missing.filter((name) => !isAlternativelyInstalled(name))
+        if (reallyMissing.length === 0) {
+          return {
+            status: 'ok',
+            subject: 'all Brewfile deps available (some via alt installs)',
+          }
+        }
         return {
           status: 'warn',
-          subject: `missing: ${list}`,
+          subject: `missing: ${reallyMissing.join(', ')}`,
           hint: 'run `brew bundle install` (or `rando init` to install interactively)',
           fix: 'brew:bundle',
         }

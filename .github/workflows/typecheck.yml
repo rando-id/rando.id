@@ -1,0 +1,31 @@
+name: Typecheck
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: typecheck-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  typecheck:
+    name: tsc --noEmit (every workspace)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+
+      - id: changes
+        uses: ./.github/actions/changes
+
+      - name: Run typecheck
+        if: steps.changes.outputs.code == 'true'
+        run: pnpm typecheck
+
+      - name: Skip (no code touched)
+        if: steps.changes.outputs.code != 'true'
+        run: echo "::notice title=Typecheck skipped::No code files changed in this PR."

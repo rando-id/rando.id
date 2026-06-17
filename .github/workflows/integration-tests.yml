@@ -1,0 +1,180 @@
+name: Integration tests
+
+# Runs the Postman collection (postman/rando-api.postman_collection.json)
+# via the official Postman CLI against the PR's stable preview URL on
+# every pull_request event, and against staging nightly. Also lints
+# the OpenAPI spec via `postman api lint`. Collection-as-code: tests
+# live in the JSON file, reviewed in PRs alongside the contract
+# change that motivated them.
+#
+# On PR events:
+#   - Computes <branch-slug>-api.<nonProd-zone> (matches the URL
+#     `rando deploy branch --stable-url` builds in deploy.yml).
+#   - Polls /v1/health on that URL for up to 5 minutes. If it never
+#     comes up (no preview was deployed, or the deploy failed), the
+#     job emits a notice and exits successfully — we don't fail PRs
+#     for preview-deploy issues.
+#   - Runs `pnpm test:api` against the preview URL.
+#   - Runs `pnpm spec:lint` against the preview URL.
+#   - On failure, posts a comment on the PR with the failure count.
+#
+# Nightly:
+#   - Same flow against staging-api.rando-id.dev.
+#
+# Required: `POSTMAN_API_KEY` env var (auto-loaded from the staging
+# 1Password Environment via `op environment read`) — both
+# `collection run` and `api lint` need it to authenticate.
+#
+# vars.POSTMAN_ENABLED=false disables the workflow without removing
+# it (matches the issues.yml + deploy.yml pattern).
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+  schedule:
+    # 07:00 UTC = midnight Pacific. Cron is GitHub-side, no DST handling.
+    - cron: '0 7 * * *'
+  workflow_dispatch:
+    inputs:
+      baseUrl:
+        description: 'Override target URL (defaults to staging)'
+        required: false
+        type: string
+
+concurrency:
+  group: integration-tests-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  test:
+    name: Postman collection + spec lint against preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    if: ${{ vars.POSTMAN_ENABLED != 'false' }}
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: ./.github/actions/setup
+
+      - id: changes
+        uses: ./.github/actions/changes
+
+      # Skip on PR events when nothing API-relevant changed. Scheduled
+      # nightly runs and workflow_dispatch always proceed — they're
+      # against staging or a user-specified URL, not the PR's preview.
+      - name: Skip when no API code touched
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ steps.changes.outputs.api }}" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Integration tests skipped::No API code (or its deps) changed in this PR."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Compute target URL
+        if: steps.gate.outputs.skip != 'true'
+        id: target
+        run: |
+          if [ -n "${{ inputs.baseUrl }}" ]; then
+            URL="${{ inputs.baseUrl }}"
+          elif [ "${{ github.event_name }}" = "schedule" ]; then
+            URL="https://staging-api.rando-id.dev"
+          else
+            # Same slug logic as packages/cli/src/commands/deploy.ts:slugifyBranch —
+            # lowercase, non-alphanum collapsed to '-', leading/trailing '-' stripped.
+            SLUG=$(echo "${{ github.head_ref }}" \
+              | tr '[:upper:]' '[:lower:]' \
+              | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
+            URL="https://${SLUG}-api.rando-id.dev"
+          fi
+          echo "url=${URL}" >> "$GITHUB_OUTPUT"
+          echo "Target: ${URL}"
+
+      - name: Wait for target URL to be reachable
+        if: steps.gate.outputs.skip != 'true'
+        id: wait
+        run: |
+          # Poll /v1/health for up to 5 minutes (30 × 10s). The deploy
+          # workflow runs in parallel and typically takes 2-4 minutes;
+          # nightly runs against staging which is always up.
+          URL="${{ steps.target.outputs.url }}"
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${URL}/v1/health" || echo "000")
+            if [ "$code" = "200" ]; then
+              echo "ready=true" >> "$GITHUB_OUTPUT"
+              echo "${URL} responding 200 on attempt $i"
+              exit 0
+            fi
+            echo "attempt $i: ${URL}/v1/health → ${code}, retrying in 10s..."
+            sleep 10
+          done
+          echo "ready=false" >> "$GITHUB_OUTPUT"
+
+      - name: Skip if target not ready
+        if: steps.gate.outputs.skip != 'true' && steps.wait.outputs.ready != 'true'
+        run: |
+          echo "::notice title=Integration tests skipped::Target URL ${{ steps.target.outputs.url }} did not respond 200 on /v1/health within 5 minutes — likely no preview was deployed, or the deploy failed. Not failing the PR."
+
+      - name: Load 1Password Environment
+        if: steps.gate.outputs.skip != 'true' && steps.wait.outputs.ready == 'true'
+        uses: ./.github/actions/op-env
+        with:
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - name: Run Postman collection against target
+        if: steps.gate.outputs.skip != 'true' && steps.wait.outputs.ready == 'true'
+        env:
+          BASE_URL: ${{ steps.target.outputs.url }}
+          FORCE_COLOR: '1'
+        run: pnpm test:api
+
+      - name: Lint OpenAPI spec
+        if: steps.gate.outputs.skip != 'true' && steps.wait.outputs.ready == 'true'
+        env:
+          SPEC_URL: ${{ steps.target.outputs.url }}/v1/openapi.json
+          FORCE_COLOR: '1'
+        run: pnpm spec:lint
+
+      - name: Upload JUnit report
+        if: always() && steps.gate.outputs.skip != 'true' && steps.wait.outputs.ready == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: postman-results
+          path: test-results/postman.xml
+          retention-days: 7
+          if-no-files-found: ignore
+
+      - name: Comment on PR with failures
+        if: failure() && steps.gate.outputs.skip != 'true' && github.event_name == 'pull_request' && steps.wait.outputs.ready == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs')
+            let failures = 0
+            let total = 0
+            try {
+              const xml = fs.readFileSync('test-results/postman.xml', 'utf8')
+              failures = (xml.match(/<failure /g) || []).length
+              total = (xml.match(/<testcase /g) || []).length
+            } catch {}
+            const target = '${{ steps.target.outputs.url }}'
+            const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            const body = [
+              `## Integration tests failed`,
+              ``,
+              `**${failures} of ${total} assertion(s) failed** running the Postman collection against \`${target}\`.`,
+              ``,
+              `Full output: ${run}`,
+              ``,
+              `<sub>Tests live in \`postman/rando-api.postman_collection.json\` — edit there and re-push to update.</sub>`,
+            ].join('\n')
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body,
+            })

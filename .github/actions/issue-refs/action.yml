@@ -1,0 +1,20 @@
+name: Collect issue refs from PR commits
+description: "Scan the current PR's commit range for `Refs: <KEY>` footers via `rando issues refs`, returning the unique list as a multiline output. Assumes the setup composite has already installed deps + put `rando` on PATH (i.e. ran with `install-cli: 'true'`). Only meaningful on `pull_request` events."
+
+outputs:
+  keys:
+    description: Newline-separated list of issue keys referenced in the PR's commits. Empty when none found.
+    value: ${{ steps.refs.outputs.keys }}
+
+runs:
+  using: composite
+  steps:
+    - id: refs
+      shell: bash
+      run: |
+        KEYS=$(rando issues refs '${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}')
+        {
+          echo "keys<<EOF"
+          echo "$KEYS"
+          echo "EOF"
+        } >> "$GITHUB_OUTPUT"

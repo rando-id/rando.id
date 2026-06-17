@@ -7,23 +7,24 @@
 #   brew bundle check
 #
 # `rando doctor` runs `brew bundle check` automatically when a Brewfile
-# is present. `rando init` will offer to run `brew bundle install` for
-# any missing entries on first-clone bootstrap.
+# is present, and silences entries it can detect installed via other
+# routes (npm, .dmg, 1Password desktop app, etc. — see brew.ts).
 
 # ── Core dev toolchain ────────────────────────────────────────────────
-brew "gh"               # GitHub CLI — used by `rando issues` orchestrators + PR ops
+brew "gh"               # GitHub CLI — used by `rando issues` orchestrators + `rando secrets push`
 brew "pnpm"             # workspace tooling
 brew "node@22"          # Node 22+ required by the CLI bin shebang
-brew "1password-cli"    # `op` — managing tokens in 1Password (per .env.example comment)
-
-# ── DB tooling ────────────────────────────────────────────────────────
-brew "postgresql@16"    # pg_dump / pg_restore for `rando db copy`; version matches Neon
-
-# ── Local infra ───────────────────────────────────────────────────────
-brew "cloudflared"      # Cloudflare Tunnel — used by `rando dev` for the public dev URL
+brew "1password-cli"    # `op` — secret resolution via `rando secrets` (sync, set, push)
 
 # ── Container runtime — pick whichever you prefer ─────────────────────
 # OrbStack is the lighter-weight default. Swap for `cask "docker"` if
 # you prefer Docker Desktop. Either provides the `docker` CLI that
-# `rando dev` (Postgres + tunnel) needs.
+# `rando dev` (Postgres + tunnel) needs. The tunnel + Postgres both
+# run inside Docker, so `cloudflared` and `postgresql` aren't needed
+# on the host directly.
 cask "orbstack"
+
+# ── Optional ──────────────────────────────────────────────────────────
+# Uncomment if you actually use the corresponding `rando` commands.
+# brew "postgresql@16"  # pg_dump / pg_restore for `rando db copy` (host-side DB dump/restore)
+# brew "cloudflared"    # only if you run cloudflared on the host instead of in Docker

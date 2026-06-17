@@ -134,7 +134,6 @@ describe('VercelDeployProvider', () => {
     expect(stub.calls[1]?.method).toBe('POST')
     expect(stub.calls[1]?.body).toEqual({
       name: 'rando-api',
-      target: 'preview',
       gitSource: { type: 'github', ref: 'feat/x', repoId: 999 },
     })
   })

@@ -4,6 +4,8 @@
 import { Command } from 'commander'
 import { createAdapters, type Adapters } from './config'
 import { defaultIo, type Io } from './output'
+import { apiCommand } from './commands/api'
+import { clerkCommand } from './commands/clerk'
 import { dbCommand } from './commands/db'
 import { tunnelCommand } from './commands/tunnel'
 import { deployCommand } from './commands/deploy'
@@ -14,6 +16,7 @@ import { doctorCommand } from './commands/doctor'
 import { infrastructureCommand } from './commands/infrastructure'
 import { initCommand } from './commands/init'
 import { issuesCommand } from './commands/issues'
+import { secretsCommand } from './commands/secrets'
 import { isInteractiveCandidate, pickFromMenu } from './menu'
 import { SetupConfigError } from './setup-config'
 import { MissingConfigError, NotFoundError, ProviderApiError } from './domain/errors'
@@ -42,6 +45,8 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<voi
     .showSuggestionAfterError() // commander prints "did you mean ..." on typos
     .showHelpAfterError() // and shows --help so users see options after errors
 
+  program.addCommand(apiCommand(adapters, io))
+  program.addCommand(clerkCommand(adapters, io))
   program.addCommand(dbCommand(adapters, io))
   program.addCommand(tunnelCommand(adapters, io))
   program.addCommand(deployCommand(adapters, io))
@@ -51,6 +56,7 @@ export async function run(argv: string[], options: RunOptions = {}): Promise<voi
   program.addCommand(devCommand(io))
   program.addCommand(doctorCommand(adapters, io))
   program.addCommand(initCommand(adapters, io))
+  program.addCommand(secretsCommand(adapters, io))
   program.addCommand(completionCommand(io))
 
   // Interactive discovery: bare `rando` or `rando <group>` drops the user

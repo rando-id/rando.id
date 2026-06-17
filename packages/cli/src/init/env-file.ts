@@ -21,6 +21,26 @@ export function readEnv(path: string): EnvFile {
   return { lines, index }
 }
 
+/**
+ * Read the literal value for `key` from a parsed env file. Returns
+ * undefined when the key isn't present. Strips matching surrounding
+ * quotes — values can be written `KEY=foo` or `KEY="foo"` and either
+ * form should round-trip the same string back.
+ */
+export function getEnvValue(env: EnvFile, key: string): string | undefined {
+  const i = env.index.get(key)
+  if (i === undefined) return undefined
+  const line = env.lines[i] ?? ''
+  const eq = line.indexOf('=')
+  if (eq < 0) return undefined
+  const raw = line.slice(eq + 1)
+  // Strip a single matching pair of surrounding quotes.
+  if ((raw.startsWith('"') && raw.endsWith('"')) || (raw.startsWith("'") && raw.endsWith("'"))) {
+    return raw.slice(1, -1)
+  }
+  return raw
+}
+
 /** In-place upsert: replace the line for `key` or append it. */
 export function setEnvValue(env: EnvFile, key: string, value: string): void {
   // Escape backslash, dollar, and double-quote — POSIX shell semantics

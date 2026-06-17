@@ -1,0 +1,450 @@
+// `rando api` — bridges the API surface (apps/api) to external tooling
+// without requiring a UI deploy round-trip.
+//
+// Today: `rando api postman sync` pushes the auto-generated OpenAPI
+// spec at /v1/openapi.json into a Postman workspace as a collection.
+// Future siblings (`rando api openapi dump`, `rando api postman run`,
+// etc.) hang off the same command group.
+
+import { existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
+import { dirname, join, resolve } from 'node:path'
+import { Command } from 'commander'
+import { convertV2 } from 'openapi-to-postmanv2'
+import type { Adapters } from '../config'
+import { emit, type Io } from '../output'
+import { loadSetupConfig } from '../setup-config'
+
+const DEFAULT_CONFIG_PATH = 'rando.config.json'
+const DEFAULT_COLLECTION_NAME = 'Rando API'
+const DEFAULT_SPEC_URL = 'http://localhost:4000/v1/openapi.json'
+const DEFAULT_COLLECTION_OUTPUT = 'postman/rando-api.postman_collection.json'
+const DEFAULT_ENV_DIR = 'postman/environments'
+
+export function apiCommand(adapters: Adapters, io: Io): Command {
+  const api = new Command('api').description('API surface tooling (Postman, OpenAPI dump, etc.)')
+
+  const postman = new Command('postman').description('Postman workspace integration')
+
+  postman
+    .command('sync')
+    .description(
+      'Push /v1/openapi.json into a Postman workspace as a collection. Idempotent: a previous collection with the same name is deleted first.',
+    )
+    .option(
+      '--spec <urlOrPath>',
+      `OpenAPI spec source — http(s) URL or filesystem path. Defaults to ${DEFAULT_SPEC_URL}.`,
+      DEFAULT_SPEC_URL,
+    )
+    .option(
+      '--workspace <id>',
+      'Postman workspace id (overrides postman.workspaceId in rando.config.json)',
+    )
+    .option(
+      '--name <name>',
+      `Collection name shown in Postman (defaults to "${DEFAULT_COLLECTION_NAME}")`,
+      DEFAULT_COLLECTION_NAME,
+    )
+    .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
+    .option('--json', 'Emit raw JSON', false)
+    .action(
+      async (opts: {
+        spec: string
+        workspace?: string
+        name: string
+        config: string
+        json: boolean
+      }) => {
+        const { colors } = io
+        const provider = adapters.postman()
+
+        // Resolve workspace id: --workspace > config postman.workspaceId.
+        let workspaceId = opts.workspace
+        if (!workspaceId) {
+          try {
+            const cfg = loadSetupConfig(resolve(process.cwd(), opts.config))
+            workspaceId = cfg.postman?.workspaceId
+          } catch {
+            // Config load is best-effort; the explicit-flag path still works.
+          }
+        }
+        if (!workspaceId) {
+          throw new Error(
+            'No Postman workspace — pass --workspace, or set postman.workspaceId in rando.config.json (run `rando init` to set up).',
+          )
+        }
+
+        // Resolve spec: http(s) URL → fetch; otherwise filesystem path.
+        const sp = io.spinner(`Fetching OpenAPI spec from ${colors.resource(opts.spec)}…`)
+        let spec: unknown
+        try {
+          spec = await loadSpec(opts.spec)
+          sp.succeed(`Spec loaded from ${colors.resource(opts.spec)}`)
+        } catch (e) {
+          sp.fail(`Couldn't load spec from ${opts.spec}`)
+          throw e
+        }
+
+        // Find + delete any previous collection with the same name so
+        // the sync stays a clean replace (Postman has no in-place
+        // OpenAPI-update endpoint we can rely on).
+        const existing = await provider.findCollectionByName({
+          workspaceId,
+          name: opts.name,
+        })
+        if (existing) {
+          io.stdout(
+            `${colors.hint(`removing previous collection ${existing.id} (${existing.name})`)}`,
+          )
+          await provider.deleteCollection(existing.id)
+        }
+
+        const importSp = io.spinner(`Importing into workspace ${colors.resource(workspaceId)}…`)
+        let created
+        try {
+          created = await provider.importOpenApi({ workspaceId, spec })
+          importSp.succeed(`Imported as ${colors.resource(created.name)}`)
+        } catch (e) {
+          importSp.fail('Import failed')
+          throw e
+        }
+
+        const url = collectionUrl(created.uid, workspaceId)
+        emit(
+          io,
+          opts.json,
+          { ok: true, replaced: existing != null, collection: created, url },
+          () =>
+            `${colors.success('✓')} ${existing ? 'replaced' : 'created'} ${colors.resource(created.name)}\n` +
+            `  ${colors.hint('uid:')}  ${created.uid}\n` +
+            `  ${colors.hint('open:')} ${url}`,
+        )
+      },
+    )
+
+  postman
+    .command('generate')
+    .description(
+      'Generate a Postman v2.1 collection JSON file from the OpenAPI spec. Pure conversion — no Postman API call. Use the file with `postman collection run` or commit it to the repo for collection-as-code testing.',
+    )
+    .option(
+      '--spec <urlOrPath>',
+      `OpenAPI spec source — http(s) URL or filesystem path. Defaults to ${DEFAULT_SPEC_URL}.`,
+      DEFAULT_SPEC_URL,
+    )
+    .option(
+      '--out <path>',
+      `Output file path (Postman v2.1 collection JSON). Defaults to ${DEFAULT_COLLECTION_OUTPUT}.`,
+      DEFAULT_COLLECTION_OUTPUT,
+    )
+    .option('--name <name>', `Collection name override (otherwise the spec's info.title is used)`)
+    .option(
+      '-f, --force',
+      'Overwrite the output file when it already exists. Safety guard: collection-as-code means the file likely has hand-authored pm.test() blocks that a blind regenerate would wipe.',
+      false,
+    )
+    .option('--json', 'Emit raw JSON', false)
+    .action(
+      async (opts: { spec: string; out: string; name?: string; force: boolean; json: boolean }) => {
+        const { colors } = io
+        const outPath = resolve(process.cwd(), opts.out)
+        if (existsSync(outPath) && !opts.force) {
+          throw new Error(
+            `${opts.out} already exists — re-running would overwrite any pm.test() blocks you've added. ` +
+              `Pass --force to overwrite, or --out <other-path> to write somewhere else.`,
+          )
+        }
+        const sp = io.spinner(`Loading OpenAPI spec from ${colors.resource(opts.spec)}…`)
+        let spec: unknown
+        try {
+          spec = await loadSpec(opts.spec)
+          sp.succeed(`Spec loaded from ${colors.resource(opts.spec)}`)
+        } catch (e) {
+          sp.fail(`Couldn't load spec from ${opts.spec}`)
+          throw e
+        }
+
+        const collection = await openApiToCollection(spec, opts.name)
+        mkdirSync(dirname(outPath), { recursive: true })
+        writeFileSync(outPath, JSON.stringify(collection, null, 2) + '\n', 'utf-8')
+
+        emit(
+          io,
+          opts.json,
+          { ok: true, out: opts.out, name: collection.info?.name },
+          () =>
+            `${colors.success('✓')} wrote collection ${colors.resource(collection.info?.name ?? '<unnamed>')}\n` +
+            `  ${colors.hint('file:')} ${opts.out}\n` +
+            `  ${colors.hint('next:')} review the file, hand-author pm.test() assertions, then \`pnpm test:api\``,
+        )
+      },
+    )
+
+  postman
+    .command('push')
+    .description(
+      'Push the local collection JSON (with hand-authored pm.test() blocks intact) and environment JSONs into a Postman workspace. Uses PUT when the named entity already exists so uids stay stable across pushes — different from `sync`, which converts from OpenAPI and rotates the uid.',
+    )
+    .option(
+      '--collection <path>',
+      `Local collection JSON to push. Defaults to ${DEFAULT_COLLECTION_OUTPUT}.`,
+      DEFAULT_COLLECTION_OUTPUT,
+    )
+    .option(
+      '--env-dir <path>',
+      `Directory of Postman environment JSON files to push. Defaults to ${DEFAULT_ENV_DIR}. Pass --no-envs to skip environments.`,
+      DEFAULT_ENV_DIR,
+    )
+    .option('--no-envs', 'Skip pushing environments')
+    .option(
+      '--workspace <id>',
+      'Postman workspace id (overrides postman.workspaceId in rando.config.json)',
+    )
+    .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
+    .option('--json', 'Emit raw JSON', false)
+    .action(
+      async (opts: {
+        collection: string
+        envDir: string
+        envs: boolean
+        workspace?: string
+        config: string
+        json: boolean
+      }) => {
+        const { colors } = io
+        const provider = adapters.postman()
+        const workspaceId = resolveWorkspaceId(opts.workspace, opts.config)
+
+        // 1. Collection — load file, find by name, PUT or POST.
+        const collectionPath = resolve(process.cwd(), opts.collection)
+        if (!existsSync(collectionPath)) {
+          throw new Error(
+            `Collection file not found: ${opts.collection}. Run \`rando api postman generate\` first.`,
+          )
+        }
+        const collection = JSON.parse(readFileSync(collectionPath, 'utf-8')) as {
+          info?: { name?: string }
+        }
+        const collectionName = collection.info?.name ?? DEFAULT_COLLECTION_NAME
+        const existing = await provider.findCollectionByName({
+          workspaceId,
+          name: collectionName,
+        })
+        const collSp = io.spinner(
+          `Pushing collection ${colors.resource(collectionName)} → workspace ${colors.resource(workspaceId)}…`,
+        )
+        let pushedCollection
+        try {
+          pushedCollection = existing
+            ? await provider.updateCollection({ uid: existing.uid, collection })
+            : await provider.createCollection({ workspaceId, collection })
+          collSp.succeed(
+            `${existing ? 'Updated' : 'Created'} collection ${colors.resource(pushedCollection.name)} (uid ${pushedCollection.uid})`,
+          )
+        } catch (e) {
+          collSp.fail('Collection push failed')
+          throw e
+        }
+
+        // 2. Environments — same find-by-name-then-PUT-or-POST pattern.
+        const pushedEnvs: Array<{ name: string; uid: string; updated: boolean }> = []
+        if (opts.envs) {
+          const envFiles = listEnvironmentFiles(opts.envDir)
+          for (const file of envFiles) {
+            const envJson = JSON.parse(readFileSync(file, 'utf-8')) as { name?: string }
+            const envName = envJson.name
+            if (!envName) {
+              io.stdout(`  ${colors.warn('skip:')} ${file} has no \`name\` field`)
+              continue
+            }
+            const existingEnv = await provider.findEnvironmentByName({
+              workspaceId,
+              name: envName,
+            })
+            const envSp = io.spinner(`Pushing environment ${colors.resource(envName)}…`)
+            try {
+              const pushed = existingEnv
+                ? await provider.updateEnvironment({ uid: existingEnv.uid, environment: envJson })
+                : await provider.createEnvironment({ workspaceId, environment: envJson })
+              envSp.succeed(
+                `${existingEnv ? 'Updated' : 'Created'} environment ${colors.resource(pushed.name)}`,
+              )
+              pushedEnvs.push({ name: pushed.name, uid: pushed.uid, updated: !!existingEnv })
+            } catch (e) {
+              envSp.fail(`Environment ${envName} push failed`)
+              throw e
+            }
+          }
+        }
+
+        const collectionUrlStr = collectionUrl(pushedCollection.uid, workspaceId)
+        emit(
+          io,
+          opts.json,
+          {
+            ok: true,
+            workspaceId,
+            collection: pushedCollection,
+            environments: pushedEnvs,
+            url: collectionUrlStr,
+          },
+          () =>
+            `${colors.success('✓')} pushed ${colors.resource(pushedCollection.name)} + ${pushedEnvs.length} env(s)\n` +
+            `  ${colors.hint('open:')} ${collectionUrlStr}`,
+        )
+      },
+    )
+
+  api.addCommand(postman)
+  return api
+}
+
+/**
+ * Resolve a Postman workspace id from a CLI flag, falling back to
+ * rando.config.json's `postman.workspaceId`. Throws when neither is set
+ * — every command in this group needs a workspace.
+ */
+function resolveWorkspaceId(flag: string | undefined, configPath: string): string {
+  if (flag) return flag
+  try {
+    const cfg = loadSetupConfig(resolve(process.cwd(), configPath))
+    const id = cfg.postman?.workspaceId
+    if (id) return id
+  } catch {
+    // Config load is best-effort; the explicit-flag path still works.
+  }
+  throw new Error(
+    'No Postman workspace — pass --workspace, or set postman.workspaceId in rando.config.json (run `rando init` to set up).',
+  )
+}
+
+/**
+ * List Postman environment JSON files in a directory. Returns absolute
+ * paths. Only files matching `*.postman_environment.json` are picked
+ * up so non-environment files (READMEs, secrets) in the same directory
+ * don't get accidentally pushed.
+ */
+function listEnvironmentFiles(dir: string): string[] {
+  const abs = resolve(process.cwd(), dir)
+  if (!existsSync(abs)) return []
+  return readdirSync(abs)
+    .filter((f) => f.endsWith('.postman_environment.json'))
+    .map((f) => join(abs, f))
+    .sort()
+}
+
+/**
+ * Convert an OpenAPI spec object into a Postman v2.1 collection via
+ * openapi-to-postmanv2. The library is callback-based and we want a
+ * promise — wrap it. `convertV2` is the v2.1 collection format, which
+ * is what postman-cli + the Postman UI both expect today.
+ *
+ * `name` overrides the collection name (info.name in the output JSON)
+ * when supplied; otherwise the converter inherits info.title from the
+ * spec.
+ */
+async function openApiToCollection(
+  spec: unknown,
+  name?: string,
+): Promise<{ info?: { name?: string }; item?: unknown[] }> {
+  const data = typeof spec === 'string' ? spec : JSON.stringify(spec)
+  // openapi-to-postmanv2 uses Math.random() internally to pick a value
+  // from enum sets when synthesizing request/response examples. Pin it
+  // to 0 for the duration of the convert call so the committed
+  // collection file diffs cleanly across regenerations — the same spec
+  // always produces byte-identical output. Restored in the finally.
+  const originalRandom = Math.random
+  Math.random = () => 0
+  const collection = await new Promise<{ info?: { name?: string }; item?: unknown[] }>(
+    (resolvePromise, reject) => {
+      convertV2(
+        { type: 'string', data },
+        {
+          folderStrategy: 'Tags',
+          // Off: don't synthesize random values for unconstrained
+          // fields; render `<string>`, `<number>`, etc. as placeholders.
+          schemaFaker: false,
+        },
+        (err, result) => {
+          if (err) {
+            reject(new Error(err.message))
+            return
+          }
+          if (!result?.result) {
+            reject(new Error(result?.reason ?? 'openapi-to-postmanv2 failed without a reason'))
+            return
+          }
+          const output = result.output?.[0]?.data
+          if (!output) {
+            reject(new Error('openapi-to-postmanv2 returned no output'))
+            return
+          }
+          resolvePromise(output as { info?: { name?: string }; item?: unknown[] })
+        },
+      )
+    },
+  ).finally(() => {
+    Math.random = originalRandom
+  })
+  if (name && collection.info) {
+    collection.info.name = name
+  }
+  return normalizeForDiff(collection)
+}
+
+/**
+ * Make the generated collection diff-friendly so re-running the
+ * generator against an unchanged spec produces byte-identical output.
+ *
+ * openapi-to-postmanv2 stamps two kinds of noise:
+ *   1. Random UUIDs on the collection root + every nested item /
+ *      response — Postman regenerates these on import, so we drop them.
+ *   2. Random enum-value picks inside example response bodies — these
+ *      are display-only (postman-cli never reads `response[].body`), so we
+ *      drop response examples entirely. Request bodies are kept;
+ *      their enum noise comes through on actual regeneration runs
+ *      where the spec has changed, which is when we expect a diff.
+ *
+ * Walks the object recursively. Removes any key named `_postman_id`,
+ * `id`, or `response` (when the value is an array — that's the
+ * Postman example-response array).
+ */
+function normalizeForDiff<T>(value: T): T {
+  if (Array.isArray(value)) {
+    return value.map((v) => normalizeForDiff(v)) as unknown as T
+  }
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {}
+    for (const [k, v] of Object.entries(value)) {
+      if (k === '_postman_id' || k === 'id') continue
+      if (k === 'response' && Array.isArray(v)) continue
+      out[k] = normalizeForDiff(v)
+    }
+    return out as T
+  }
+  return value
+}
+
+/**
+ * Load an OpenAPI spec from either an http(s) URL (we fetch it) or a
+ * filesystem path (we read + JSON.parse). The URL path is the
+ * dev-loop default — `rando dev` exposes /v1/openapi.json locally.
+ */
+async function loadSpec(source: string): Promise<unknown> {
+  if (/^https?:\/\//.test(source)) {
+    const res = await fetch(source)
+    if (!res.ok) {
+      throw new Error(`fetch ${source} → ${res.status} ${res.statusText}`)
+    }
+    return await res.json()
+  }
+  const raw = readFileSync(resolve(process.cwd(), source), 'utf-8')
+  return JSON.parse(raw)
+}
+
+/**
+ * Build the Postman UI URL for a collection. Includes the workspace
+ * id so the link drops the viewer into the right context.
+ */
+function collectionUrl(collectionUid: string, workspaceId: string): string {
+  return `https://web.postman.co/workspace/${workspaceId}/collection/${collectionUid}`
+}

@@ -9,11 +9,13 @@
 //      the user at the config schema if it's missing).
 //   5. Final doctor sweep so the user sees the green table.
 
-import { copyFileSync, existsSync } from 'node:fs'
+import { copyFileSync, existsSync, readFileSync, writeFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { Command } from 'commander'
 import type { Adapters } from '../config'
 import { createAdapters } from '../config'
+import { loadSetupConfig } from '../setup-config'
+import type { SecretsProvider } from '../domain/secrets'
 import type { Io } from '../output'
 import { brewChecks } from '../doctor/checks/brew'
 import { envChecks } from '../doctor/checks/env'
@@ -21,12 +23,91 @@ import { renderReport, runChecks } from '../doctor/run'
 import { configChecks } from '../doctor/checks/config'
 import { hooksChecks } from '../doctor/checks/hooks'
 import { localChecks } from '../doctor/checks/local'
+import { secretsChecks } from '../doctor/checks/secrets'
 import { trackerChecks } from '../doctor/checks/tracker'
 import { terminalChecks } from '../doctor/checks/terminal'
 import { spawnSync } from 'node:child_process'
 import { readEnv, setEnvValue, writeEnv } from '../init/env-file'
 
 const DEFAULT_CONFIG_PATH = 'rando.config.json'
+
+/**
+ * Probe whether 1Password is usable for this `init` run. Returns the
+ * vault/field convention + the live provider when everything checks
+ * out, null when 1P is not configured, not signed in, or otherwise
+ * unavailable. Errors are silent — 1P is a nice-to-have layer on top
+ * of the prompt flow, so any failure falls through to manual entry.
+ */
+async function tryOpLookup(
+  factory: () => SecretsProvider,
+  configPath: string,
+  io: Io,
+): Promise<{
+  provider: SecretsProvider
+  vault: string
+  field: string
+  account: string
+} | null> {
+  // init always reads from the LOCAL vault — dev machines don't pull
+  // staging or prod credentials. `rando secrets sync --env staging` is
+  // the escape hatch for the rare "I need to debug staging values" case.
+  let secretsConfig: { vault: string; field: string } | undefined
+  try {
+    const cfg = loadSetupConfig(resolve(process.cwd(), configPath))
+    if (cfg.secrets) {
+      secretsConfig = { vault: cfg.secrets.environments.local, field: cfg.secrets.field }
+    }
+  } catch {
+    // rando.config.json missing or invalid — no 1P lookup possible.
+    return null
+  }
+  if (!secretsConfig) return null
+  let provider: SecretsProvider
+  try {
+    provider = factory()
+  } catch {
+    return null
+  }
+  try {
+    const me = await provider.whoami()
+    return { provider, vault: secretsConfig.vault, field: secretsConfig.field, account: me.account }
+  } catch {
+    io.stdout(
+      `${io.colors.hint('1Password not signed in — falling back to manual prompts. Run `op signin` then re-run init for vault-driven setup.')}`,
+    )
+    return null
+  }
+}
+
+/**
+ * Read `postman.workspaceId` from rando.config.json. Returns undefined
+ * when the field, the postman block, or the whole file is missing —
+ * each is a "user hasn't set this up yet" signal, not an error.
+ */
+function readPostmanWorkspaceId(configPath: string): string | undefined {
+  try {
+    const raw = readFileSync(resolve(process.cwd(), configPath), 'utf-8')
+    const parsed = JSON.parse(raw) as { postman?: { workspaceId?: string } }
+    return parsed.postman?.workspaceId
+  } catch {
+    return undefined
+  }
+}
+
+/**
+ * Write `postman.workspaceId` into rando.config.json, preserving
+ * everything else. Reads → mutates → writes back with 2-space indent
+ * + a trailing newline to match the existing file style.
+ */
+function writePostmanWorkspaceId(configPath: string, workspaceId: string): void {
+  const path = resolve(process.cwd(), configPath)
+  const raw = readFileSync(path, 'utf-8')
+  const parsed = JSON.parse(raw) as Record<string, unknown> & {
+    postman?: { workspaceId?: string }
+  }
+  parsed.postman = { ...(parsed.postman ?? {}), workspaceId }
+  writeFileSync(path, JSON.stringify(parsed, null, 2) + '\n', 'utf-8')
+}
 
 /** Help text shown above each token prompt — terse one-liner per var. */
 const TOKEN_HELP: Record<string, string> = {
@@ -40,6 +121,8 @@ const TOKEN_HELP: Record<string, string> = {
   JIRA_BASE_URL: 'https://<workspace>.atlassian.net (no trailing slash)',
   JIRA_EMAIL: 'Your Atlassian account email',
   JIRA_API_TOKEN: 'Jira API token from https://id.atlassian.com/manage-profile/security/api-tokens',
+  POSTMAN_API_KEY:
+    'Postman API key from https://web.postman.co/settings/me/api-keys (used by `rando api postman sync`)',
 }
 
 export function initCommand(adapters: Adapters, io: Io): Command {
@@ -49,7 +132,11 @@ export function initCommand(adapters: Adapters, io: Io): Command {
     )
     .option('--env-file <path>', 'Path to .env (default: repo root)', '.env')
     .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
-    .action(async (opts: { envFile: string; config: string }) => {
+    .option(
+      '--no-1password',
+      'Skip fetching from 1Password — prompt for every missing var manually.',
+    )
+    .action(async (opts: { envFile: string; config: string; '1password': boolean }) => {
       const { colors } = io
       const envPath = resolve(process.cwd(), opts.envFile)
       const examplePath = resolve(process.cwd(), '.env.example')
@@ -83,8 +170,15 @@ export function initCommand(adapters: Adapters, io: Io): Command {
       if (toFix.length === 0) {
         io.stdout(`${colors.success('✓')} every env var is already set + valid`)
       } else {
+        // Detect 1Password integration up front — if the user is signed in
+        // and rando.config.json's `secrets` block is present, we'll try to
+        // resolve each missing var from the vault before prompting.
+        const opLookup = opts['1password']
+          ? await tryOpLookup(adapters.secrets, opts.config, io)
+          : null
+
         io.stdout(
-          `${colors.hint(`${toFix.length} var(s) need attention — prompting interactively`)}`,
+          `${colors.hint(`${toFix.length} var(s) need attention${opLookup ? ` — trying 1Password (${opLookup.account}) first` : ' — prompting interactively'}`)}`,
         )
         io.stdout('')
 
@@ -95,7 +189,25 @@ export function initCommand(adapters: Adapters, io: Io): Command {
             `${entry.required ? colors.warn('required') : colors.hint('optional')} ${colors.resource(entry.name)} ${colors.hint(`— ${entry.subject}`)}`,
           )
           if (help) io.stdout(`  ${colors.hint(help)}`)
-          const value = (await io.input(`${entry.name}=`, { default: '' })).trim()
+
+          // 1Password first: build the canonical reference and try to
+          // resolve. On hit, skip the prompt and validate the value the
+          // same way as a manually-entered one. On miss, fall through.
+          let value = ''
+          if (opLookup) {
+            const ref = `op://${opLookup.vault}/${entry.name}/${opLookup.field}`
+            try {
+              value = (await opLookup.provider.read(ref)).trim()
+              if (value) {
+                io.stdout(`  ${colors.success('✓')} fetched from ${colors.resource(ref)}`)
+              }
+            } catch {
+              // Reference doesn't exist or other failure — silent fallback.
+            }
+          }
+          if (!value) {
+            value = (await io.input(`${entry.name}=`, { default: '' })).trim()
+          }
           if (!value) {
             io.stdout(colors.hint(`  skipped`))
             io.stdout('')
@@ -174,7 +286,57 @@ export function initCommand(adapters: Adapters, io: Io): Command {
         }
       }
 
-      // 5. Final sweep — full doctor. Helps the user see what's still
+      // 5. Postman workspace selection — only when POSTMAN_API_KEY is set
+      //    (validated by the env loop above). If the config already
+      //    has a workspaceId, skip silently. Otherwise list the user's
+      //    workspaces, let them pick, write to rando.config.json.
+      if (process.env.POSTMAN_API_KEY) {
+        try {
+          const postman = adapters.postman()
+          const existingWsId = readPostmanWorkspaceId(opts.config)
+          if (!existingWsId) {
+            io.stdout('')
+            io.stdout(colors.bold('Postman: pick a workspace for OpenAPI sync'))
+            const me = await postman.getMyself()
+            io.stdout(`  ${colors.hint(`signed in as ${me.fullName} (@${me.username})`)}`)
+            const workspaces = await postman.listWorkspaces()
+            if (workspaces.length === 0) {
+              io.stdout(
+                `  ${colors.warn('no workspaces — create one at https://web.postman.co then re-run init')}`,
+              )
+            } else {
+              const chosen = await io.select(
+                'Which workspace should hold the Rando API collection?',
+                workspaces.map((w) => ({
+                  name: `${w.name} (${w.type})`,
+                  value: w.id,
+                  description: w.id,
+                })),
+              )
+              try {
+                writePostmanWorkspaceId(opts.config, chosen)
+                io.stdout(
+                  `  ${colors.success('✓')} postman.workspaceId = ${colors.resource(chosen)} → ${opts.config}`,
+                )
+              } catch (e) {
+                io.stdout(
+                  `  ${colors.warn("couldn't write to rando.config.json:")} ${e instanceof Error ? e.message : String(e)}`,
+                )
+                io.stdout(
+                  `  ${colors.hint(`add { "postman": { "workspaceId": "${chosen}" } } to rando.config.json manually`)}`,
+                )
+              }
+            }
+          }
+        } catch (e) {
+          io.stdout('')
+          io.stdout(
+            `${colors.warn('Postman setup skipped:')} ${e instanceof Error ? e.message : String(e)}`,
+          )
+        }
+      }
+
+      // 6. Final sweep — full doctor. Helps the user see what's still
       //    on the table (config gaps, missing local tooling, etc.).
       //    Re-load adapters from the freshly-written .env so the table
       //    reflects what's on disk, not what was in process.env at
@@ -183,18 +345,30 @@ export function initCommand(adapters: Adapters, io: Io): Command {
       io.stdout(colors.bold('Final health check…'))
       io.stdout('')
       const freshAdapters = adapters // .env on disk; bin's --env-file already loaded it for this process
-      const report = await runChecks([
+      const finalChecks = [
         ...envChecks(freshAdapters),
         ...configChecks(opts.config),
         ...hooksChecks(),
         ...localChecks(),
         ...brewChecks(),
         ...trackerChecks(freshAdapters, opts.config),
+        ...secretsChecks(freshAdapters, opts.config),
         ...terminalChecks(),
-      ])
+      ]
+      // Spinner while the checks run — keeps the terminal alive
+      // through `op` biometric prompts and the tracker round-trip.
+      const finalSp = io.spinner(`Running ${finalChecks.length} checks…`)
+      let report
+      try {
+        report = await runChecks(finalChecks)
+      } catch (e) {
+        finalSp.fail('Final health check failed')
+        throw e
+      }
+      finalSp.stop()
       renderReport(io, report)
 
-      // 6. Suggested next commands — only shown when the env is in a
+      // 7. Suggested next commands — only shown when the env is in a
       //    usable state. Skip if anything failed so the user fixes
       //    those first.
       if (!report.hasFailures) {

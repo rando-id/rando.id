@@ -27,6 +27,7 @@ import {
   getCachedJiraKey,
   getCurrentBranch,
   JIRA_SKIP_SENTINEL,
+  lintCommitMessage,
   listCommits,
   parseJiraRefs,
   setCachedJiraKey,
@@ -79,6 +80,11 @@ export function issuesCommand(adapters: Adapters, io: Io, deps: IssuesCommandDep
       'Probe mode used by the commit hook. Exits 0 if the tracker is fully configured. Does not prompt or modify state.',
       false,
     )
+    .option(
+      '--mine',
+      "Show only issues assigned to you (matches `rando issues list --mine`). Default shows every open issue — handy for solo projects + new contributors where assignment hasn't been triaged yet.",
+      false,
+    )
     .action(
       async (opts: {
         limit: number
@@ -86,6 +92,7 @@ export function issuesCommand(adapters: Adapters, io: Io, deps: IssuesCommandDep
         reset: boolean
         fromHook: boolean
         check: boolean
+        mine: boolean
       }) => {
         // --check: zero side-effects, just confirms the tracker is wired.
         if (opts.check) {
@@ -117,14 +124,33 @@ export function issuesCommand(adapters: Adapters, io: Io, deps: IssuesCommandDep
           return
         }
 
+        // Protected branches (main, master by default) always re-prompt:
+        // every commit on trunk is typically a different concern, so a
+        // stale cache from a previous unrelated commit shouldn't silently
+        // get applied. Configurable via `tracker.protectedBranches` in
+        // rando.config.json.
+        let isProtected = false
+        try {
+          const cfg = loadSetupConfig(opts.config)
+          const list = cfg.tracker?.protectedBranches ?? ['main', 'master']
+          isProtected = list.includes(branch)
+        } catch {
+          // Config not loadable — fall through with default isProtected=false.
+        }
+
         const existing = getCachedJiraKey(branch, git)
-        if (existing && !opts.fromHook) {
+        if (existing && !isProtected && !opts.fromHook) {
           io.stdout(
             `${io.colors.hint(`(branch ${branch} already cached: ${existing}; pass --reset to clear)`)}`,
           )
           return
         }
-        if (existing && opts.fromHook) return
+        if (existing && !isProtected && opts.fromHook) return
+        if (existing && isProtected && !opts.fromHook) {
+          io.stdout(
+            `${io.colors.hint(`(branch ${branch} is protected — re-prompting despite cached ${existing})`)}`,
+          )
+        }
 
         let provider: IssueTrackerProvider
         try {
@@ -142,7 +168,7 @@ export function issuesCommand(adapters: Adapters, io: Io, deps: IssuesCommandDep
         }
 
         const issues = await provider.searchIssues({
-          assignee: 'currentUser',
+          ...(opts.mine ? { assignee: 'currentUser' as const } : {}),
           openOnly: true,
           limit: opts.limit,
         })
@@ -189,6 +215,50 @@ export function issuesCommand(adapters: Adapters, io: Io, deps: IssuesCommandDep
         )
       },
     )
+
+  cmd
+    .command('lint-commit-msg <file>')
+    .description(
+      'Reject the commit if its message has no issue reference. Wired into `.husky/commit-msg` as the final gate after the auto-Fixes-append. Skips merge/revert commits and GitHub squash-merge subjects that end in `(#N)`. Set RANDO_NO_JIRA=1 in env to bypass.',
+    )
+    .action(async (file: string) => {
+      if (process.env.RANDO_NO_JIRA) {
+        process.exit(0)
+      }
+      const { readFileSync } = await import('node:fs')
+      let message: string
+      try {
+        message = readFileSync(file, 'utf-8')
+      } catch (e) {
+        io.stderr(
+          `${io.colors.error('error:')} couldn't read commit message file ${io.colors.resource(file)}: ${e instanceof Error ? e.message : String(e)}`,
+        )
+        process.exit(1)
+      }
+      const verdict = lintCommitMessage(message)
+      if (verdict.ok) {
+        process.exit(0)
+      }
+      io.stderr('')
+      io.stderr(`${io.colors.error('✗ commit rejected:')} ${verdict.reason}`)
+      io.stderr('')
+      io.stderr(io.colors.hint('  Examples of accepted messages:'))
+      io.stderr(io.colors.hint('    fix(api): close session leak\n\n    Fixes: #42'))
+      io.stderr(
+        io.colors.hint('    chore: bump deps  (#123)               ← GitHub squash-merge style'),
+      )
+      io.stderr(
+        io.colors.hint('    Merge pull request ...                 ← merge commits auto-pass'),
+      )
+      io.stderr('')
+      io.stderr(
+        io.colors.hint(
+          '  To skip just this commit: `git commit --no-verify` (try not to make this a habit).',
+        ),
+      )
+      io.stderr(io.colors.hint('  To skip globally: `export RANDO_NO_JIRA=1`.'))
+      process.exit(1)
+    })
 
   cmd
     .command('refs <range>')
