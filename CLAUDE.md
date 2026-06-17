@@ -14,12 +14,16 @@ Conventions for working on Rando. Loaded automatically by Claude Code into every
 
 - **Commit messages → pasteboard.** When the user asks for one, draft it and pipe to `pbcopy`, then announce in one sentence. Don't paste the message into the conversation.
 - **File a ticket via `pnpm rando issues create` for non-trivial work and reference it in commits/PRs** (`Closes #N` / `Refs #N`). Skip for typo fixes and one-line copy changes.
-- **Prefer automation.** If something must stay manual, document it in `INFRASTRUCTURE.md` / `DEVELOPER_SETUP.md` AND consider building a `rando` subcommand for it next time. The CLI is where setup steps go to die.
+- **Prefer automation.** If something must stay manual, document it in `.github/MAINTAINING.md` / `.github/CONTRIBUTING.md` AND consider building a `rando` subcommand for it next time. The CLI is where setup steps go to die.
 - **API changes → `pnpm rando api postman sync` after editing the OpenAPI spec.** The Postman collection mirrors the spec.
 
 ## Quality
 
-- **Run typecheck + tests after refactors before declaring done.** `pnpm --filter <pkg> typecheck && pnpm --filter <pkg> test`. Failing local checks = not done.
+- **Run lint + typecheck + tests before declaring work done OR drafting a commit message.** This is non-negotiable — CI runs the same checks and finding out from a failed CI run after pushing wastes a round trip. The canonical form is:
+  ```
+  pnpm typecheck && pnpm lint && pnpm test
+  ```
+  These each go through Turbo at the workspace root, which only re-runs affected packages (cache hits for everything else). Lint + typecheck + tests are NOT all wired as per-package scripts — only some packages have a `lint` script — so `pnpm --filter <pkg> lint` may error with "no script". Root-level is the safe default. For test files with `vi.fn(async () => ...)`, explicitly type the mock signature (`vi.fn(async (_a: X, _b?: Y) => ...)`) — implicit 0-arg inference breaks `.mock.calls[i][n]` access and tsc only catches it at typecheck time, not at `vitest run`. **Failing local checks = not done. Do not announce success, do not draft a commit message, until everything is green.**
 - **File follow-ups instead of widening scope.** Half-finished implementations are worse than a fresh ticket.
 - **Edit existing files over creating new ones.** New file = explicit reason. New doc file = explicit user request.
-- **Commit messages follow `feat(scope):` / `fix(scope):` / `chore(scope):` style** with a one-line subject and optional body. Include `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>` for assisted work.
+- **Commit messages follow `feat(scope):` / `fix(scope):` / `chore(scope):` / `test(scope):` / `docs(scope):` / `ci(scope):` style** with a one-line subject and optional body. Include `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>` for assisted work.

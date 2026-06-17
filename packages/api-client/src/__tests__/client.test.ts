@@ -43,7 +43,7 @@ describe('createApiClient — response parsing', () => {
 
   it('attaches the Authorization header when getToken returns a token', async () => {
     const fetchMock = vi.fn(
-      async () =>
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
         new Response(
           JSON.stringify({
             ok: true,
@@ -88,7 +88,10 @@ describe('createApiClient — request() escape hatch', () => {
   })
 
   it('merges caller-supplied headers with defaults', async () => {
-    const fetchMock = vi.fn(async () => new Response(JSON.stringify({}), { status: 200 }))
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify({}), { status: 200 }),
+    )
     vi.stubGlobal('fetch', fetchMock)
     const client = createApiClient({
       baseUrl: 'https://api.test',
