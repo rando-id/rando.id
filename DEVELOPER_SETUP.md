@@ -7,7 +7,7 @@ The recommended path is `./scripts/bootstrap` (see the [root README](./README.md
 `rando init` in one command, all idempotent.
 
 The sections below cover what's still manual after `bootstrap` finishes
-(per-app `.env.local` files for Clerk keys), and they also document the
+(per-app `.env` files for Clerk keys), and they also document the
 underlying steps for the rare case you want to reproduce bootstrap
 piece-by-piece.
 
@@ -15,7 +15,7 @@ piece-by-piece.
 
 - Node 22, pnpm 10 — installed by `brew bundle install` (Brewfile lives at `scripts/Brewfile`)
 - Docker Desktop / OrbStack — also from the Brewfile
-- Clerk dev account (free at clerk.com) for the per-app `.env.local` keys
+- Clerk dev account (free at clerk.com) for the per-app `.env` keys
 
 ## What `./scripts/bootstrap` already handles
 
@@ -35,8 +35,8 @@ already done.
 ## 1Password integration (required path)
 
 Rando treats **1Password as the source of truth for every secret**;
-the `.env` files (root + each app's `.env.local`) are just local
-caches. The CLI uses three 1Password **Environments** — one per
+the `.env` files (one at the repo root, one in each app) are just
+local caches scoped by each context's `.env.example`. The CLI uses three 1Password **Environments** — one per
 deploy environment — so local/staging/prod credentials can't
 cross-contaminate.
 
@@ -328,27 +328,28 @@ pnpm --filter @rando/db db:seed
 1 user, 5 SoCal locations, 10 contacts, 2 lists. Skip if you want
 empty databases.
 
-### 2. Per-app `.env.local` files for Clerk
+### 2. Per-app `.env` files for Clerk
 
-`rando init` populates the **root** `.env` (used by docker-compose +
-the CLI). The Next.js / Expo apps each need their own `.env.local`
-with Clerk keys:
+`rando secrets sync` populates every cache in one shot — the **root**
+`.env` (used by docker-compose + the CLI) and one `.env` per app
+under `apps/*`, each scoped by its own `.env.example`. If you'd
+rather seed them by hand to start:
 
 ```bash
-cp apps/api/.env.example   apps/api/.env.local
-cp apps/web/.env.example   apps/web/.env.local
-cp apps/admin/.env.example apps/admin/.env.local
-cp apps/native/.env.example apps/native/.env.local
+cp apps/api/.env.example   apps/api/.env
+cp apps/web/.env.example   apps/web/.env
+cp apps/admin/.env.example apps/admin/.env
+cp apps/native/.env.example apps/native/.env
 ```
 
 Then fill in:
 
-- `DATABASE_URL=postgres://rando:rando@localhost:5432/rando` → `apps/api/.env.local`
-- Clerk publishable key → every `.env.local`
-- Clerk secret key + webhook secret → `apps/api/.env.local`
+- `DATABASE_URL=postgres://rando:rando@localhost:5432/rando` → `apps/api/.env`
+- Clerk publishable key → every `.env`
+- Clerk secret key + webhook secret → `apps/api/.env`
 
-(Tracked as a backlog item: have `rando init` prompt for Clerk keys
-and write the per-app `.env.local` files automatically.)
+Once the values exist in your 1Password `local` environment,
+`rando secrets sync` is the canonical way to refresh every `.env`.
 
 ### 3. Optional: expose API for Clerk webhooks
 
@@ -552,7 +553,7 @@ curl -i https://dev-admin.rando-id.dev            # expect 200 (admin homepage H
    - Description: `Syncs Clerk user lifecycle events (created/updated/deleted) into the Rando API's local Postgres via the dev Cloudflare Tunnel (dev-api.rando-id.dev → host.docker.internal:4000). Separate webhook endpoints exist for staging and production — see INFRASTRUCTURE.md.`
    - Subscribe to: `user.created`, `user.updated`, `user.deleted`
 2. Open the endpoint → copy the **Signing Secret** (starts with `whsec_`)
-3. In `apps/api/.env.local`:
+3. In `apps/api/.env`:
 
    ```
    CLERK_WEBHOOK_SECRET=whsec_...

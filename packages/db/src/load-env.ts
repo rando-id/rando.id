@@ -7,9 +7,9 @@ const packageRoot = resolve(here, '..')
 const workspaceRoot = resolve(packageRoot, '..', '..')
 
 const candidates = [
-  resolve(packageRoot, '.env.local'),
-  resolve(workspaceRoot, 'apps', 'api', '.env.local'),
-  resolve(workspaceRoot, '.env.local'),
+  resolve(packageRoot, '.env'),
+  resolve(workspaceRoot, 'apps', 'api', '.env'),
+  resolve(workspaceRoot, '.env'),
 ]
 
 for (const path of candidates) {

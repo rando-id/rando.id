@@ -1,26 +1,32 @@
 // `rando secrets` — bridge between 1Password (source of truth) and the
-// local .env file (working cache). One vault per environment so
-// dev/staging/prod credentials can't cross-contaminate.
+// local .env caches. One environment per stage so
+// local/staging/prod credentials can't cross-contaminate.
 //
 // Subcommands:
-//   - sync           Pull every configured var from the local vault
-//                    into .env. --env staging|prod reads from a
-//                    different vault when you need to debug elsewhere.
+//   - sync           Pull declared env vars from the chosen 1P
+//                    environment into local caches: one .env per app
+//                    (scoped by that app's .env.example) plus the
+//                    repo-root .env.
 //   - set <VAR>      Store a value in one or more environments at once.
-//                    Prompts for the value (masked) and env(s) when
-//                    flags are missing. Replaces the old `save`.
+//   - push <VAR>     Mirror a 1P secret into GitHub Actions repo
+//                    secrets (bootstraps CI access to 1P).
 //
 // Convention (declared in rando.config.json's `secrets` block):
 //   - account UUID passed as --account on every op call
-//   - item title === env var name
-//   - field name from `secrets.field` (default "credential")
+//   - secrets live in 1P SecretMgr Environments (key=value)
+//   - the keys each app declares come from that app's .env.example
 
-import { resolve } from 'node:path'
+import { dirname, relative, resolve } from 'node:path'
 import { Command } from 'commander'
 import type { Adapters } from '../config'
 import { type Io } from '../output'
-import { ALL_SECRETS_ENVS, loadSetupConfig, type SecretsEnv } from '../setup-config'
-import { TOKENS } from '../doctor/checks/env'
+import {
+  ALL_SECRETS_ENVS,
+  loadSetupConfig,
+  type SecretsEnv,
+  type SetupConfig,
+} from '../setup-config'
+import { readEnvExample } from '../init/env-example'
 import { getEnvValue, readEnv, setEnvValue, writeEnv } from '../init/env-file'
 
 const DEFAULT_CONFIG_PATH = 'rando.config.json'
@@ -38,13 +44,12 @@ export function secretsCommand(adapters: Adapters, io: Io): Command {
   secrets
     .command('sync')
     .description(
-      'Pull every configured env var from the chosen environment vault into the local .env. Skips vars already set unless --force.',
+      "Pull declared env vars from 1Password into local .env caches — one per app (scoped by that app's .env.example) plus the repo-root .env.",
     )
-    .option('--env-file <path>', 'Path to .env (default: repo root)', '.env')
     .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
     .option(
       '--env <env>',
-      'Which vault to read from: local|staging|prod. Defaults to local.',
+      'Which 1P environment to read from: local|staging|prod. Defaults to local.',
       'local',
     )
     .option(
@@ -52,57 +57,72 @@ export function secretsCommand(adapters: Adapters, io: Io): Command {
       'Re-fetch every var from 1P, overwriting any existing .env values.',
       false,
     )
-    .action(async (opts: { envFile: string; config: string; env: string; force: boolean }) => {
+    .action(async (opts: { config: string; env: string; force: boolean }) => {
       const { colors } = io
+      const configFullPath = resolve(process.cwd(), opts.config)
+      const setupConfig = loadSetupConfig(configFullPath)
       const cfg = loadSecretsConfig(opts.config)
       const env = parseEnv(opts.env)
-      const vault = requireVault(cfg, env)
+      const envId = requireEnvironment(cfg, env)
       const provider = adapters.secrets()
       const identity = await provider.whoami()
       io.stdout(
         `${colors.hint('1Password:')} ${colors.resource(identity.account)} ${colors.hint(`(${identity.url})`)}`,
       )
-      io.stdout(
-        `${colors.hint('vault:')}     ${colors.resource(`${env} → ${vault}`)} ${colors.hint(`field=${cfg.field}`)}`,
-      )
+      io.stdout(`${colors.hint('env:')}       ${colors.resource(`${env} → ${envId}`)}`)
       io.stdout('')
 
-      const envPath = resolve(process.cwd(), opts.envFile)
-      const envFile = readEnv(envPath)
-      let hits = 0
-      let misses = 0
-      let skipped = 0
-      for (const spec of TOKENS) {
-        const ref = `op://${vault}/${spec.name}/${cfg.field}`
-        const hasExisting = (getEnvValue(envFile, spec.name) ?? '').trim().length > 0
-        if (hasExisting && !opts.force) {
-          skipped += 1
-          io.stdout(
-            `  ${colors.hint('skip:')}    ${spec.name} ${colors.hint('(already set in .env)')}`,
-          )
+      // Bulk dump every value from the chosen 1P environment in one
+      // shot — far cheaper than the old per-key op:// reads, and lets
+      // each context filter to just the keys its .env.example declares.
+      const values = await provider.readEnvironment(envId)
+
+      const cwd = process.cwd()
+      const contexts = discoverSyncContexts(configFullPath, setupConfig)
+      let totalHits = 0
+      let totalMisses = 0
+      let totalSkipped = 0
+      for (const ctx of contexts) {
+        const declared = readEnvExample(ctx.exampleFile)
+        if (declared.length === 0) {
+          io.stdout(`${colors.hint(ctx.label + ':')} no .env.example, skipping`)
           continue
         }
-        try {
-          const value = (await provider.read(ref)).trim()
-          if (!value) {
-            misses += 1
-            io.stdout(`  ${colors.warn('empty:')}   ${spec.name} ${colors.hint(ref)}`)
+        const writeRel = relative(cwd, ctx.writeFile) || ctx.writeFile
+        io.stdout(
+          `${colors.hint(ctx.label + ':')} ${declared.length} declared → ${colors.resource(writeRel)}`,
+        )
+        const envFile = readEnv(ctx.writeFile)
+        let hits = 0
+        let misses = 0
+        let skipped = 0
+        for (const key of declared) {
+          const hasExisting = (getEnvValue(envFile, key) ?? '').trim().length > 0
+          if (hasExisting && !opts.force) {
+            skipped += 1
             continue
           }
-          setEnvValue(envFile, spec.name, value)
+          const value = (values[key] ?? '').trim()
+          if (!value) {
+            misses += 1
+            continue
+          }
+          setEnvValue(envFile, key, value)
           hits += 1
-          io.stdout(`  ${colors.success('fetch:')}   ${spec.name} ${colors.hint(ref)}`)
-        } catch {
-          misses += 1
-          io.stdout(
-            `  ${colors.hint('missing:')} ${spec.name} ${colors.hint(`(no item in ${env} vault)`)}`,
-          )
         }
+        writeEnv(ctx.writeFile, envFile)
+        totalHits += hits
+        totalMisses += misses
+        totalSkipped += skipped
+        const parts: string[] = []
+        if (hits) parts.push(`${colors.success(hits + ' fetched')}`)
+        if (skipped) parts.push(`${colors.hint(skipped + ' already set')}`)
+        if (misses) parts.push(`${colors.warn(misses + ' missing in 1P')}`)
+        io.stdout(`  ${parts.join(', ') || colors.hint('nothing to do')}`)
       }
-      writeEnv(envPath, envFile)
       io.stdout('')
       io.stdout(
-        `${colors.success('✓')} ${hits} fetched, ${skipped} skipped (already set), ${misses} missing in vault — wrote ${colors.resource(opts.envFile)}`,
+        `${colors.success('✓')} ${totalHits} fetched, ${totalSkipped} skipped (already set), ${totalMisses} missing in 1P.`,
       )
     })
 
@@ -298,12 +318,46 @@ function parseEnvList(value: string): SecretsEnv[] {
 }
 
 /** Look up an environment id for an env name, throwing if not configured. */
-function requireVault(cfg: SecretsConfig, env: SecretsEnv): string {
-  const vault = cfg.environments[env]
-  if (!vault) {
+function requireEnvironment(cfg: SecretsConfig, env: SecretsEnv): string {
+  const envId = cfg.environments[env]
+  if (!envId) {
     throw new Error(
       `No environment configured for "${env}". Add secrets.environments.${env} to rando.config.json.`,
     )
   }
-  return vault
+  return envId
+}
+
+/** Back-compat alias — `secrets push` and `secrets set` still call this. */
+const requireVault = requireEnvironment
+
+interface SyncContext {
+  /** Label printed in the output header. */
+  label: string
+  /** Absolute path to the .env.example that scopes this context. */
+  exampleFile: string
+  /** Absolute path to the .env we write into. */
+  writeFile: string
+}
+
+/**
+ * Build the list of (.env.example → .env) pairs that `secrets sync`
+ * iterates: the repo root, plus every app declared in
+ * rando.config.json. Paths are anchored on the config file's directory
+ * so the command works regardless of cwd.
+ */
+function discoverSyncContexts(configFullPath: string, setupConfig: SetupConfig): SyncContext[] {
+  const configDir = dirname(configFullPath)
+  return [
+    {
+      label: 'root',
+      exampleFile: resolve(configDir, '.env.example'),
+      writeFile: resolve(configDir, '.env'),
+    },
+    ...setupConfig.apps.map((app) => ({
+      label: app.name,
+      exampleFile: resolve(configDir, app.rootDirectory, '.env.example'),
+      writeFile: resolve(configDir, app.rootDirectory, '.env'),
+    })),
+  ]
 }

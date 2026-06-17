@@ -1,4 +1,4 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -851,76 +851,129 @@ describe('secrets sync', () => {
           kind: '1password',
           account: 'AAAA',
           field: 'credential',
-          environments: { local: 'vault-local', staging: 'vault-staging', prod: 'vault-prod' },
+          environments: { local: 'env-local', staging: 'env-staging', prod: 'env-prod' },
         },
       }),
     )
     return configPath
   }
 
-  it('fetches each token from 1Password and writes to .env', async () => {
+  it('fetches declared root vars from 1Password and writes to .env', async () => {
     const configPath = writeConfig()
-    const envFile = join(tmpDir, '.env')
-    writeFileSync(envFile, '')
+    writeFileSync(join(tmpDir, '.env.example'), 'GITHUB_TOKEN=\nNEON_API_KEY=\n')
 
     const secrets: Partial<SecretsProvider> = {
       whoami: vi.fn(async () => ({ account: 'dev@rando.id', url: 'https://x' })),
-      read: vi.fn(async (ref: string) => {
-        // Match: op://vault-local/<VAR>/credential — defaults to local
-        const m = ref.match(/^op:\/\/vault-local\/([A-Z_]+)\/credential$/)
-        if (!m) throw new Error('bad ref')
-        if (m[1] === 'GITHUB_TOKEN') return 'gh-secret-value'
-        if (m[1] === 'NEON_API_KEY') return 'neon-secret-value'
-        throw new Error('missing')
+      readEnvironment: vi.fn(async (envId: string) => {
+        if (envId !== 'env-local') throw new Error(`unexpected envId ${envId}`)
+        return { GITHUB_TOKEN: 'gh-secret-value', NEON_API_KEY: 'neon-secret-value' }
       }),
     }
     const io = captureIo()
-    await run(['secrets', 'sync', '--env-file', envFile, '--config', configPath], {
+    await run(['secrets', 'sync', '--config', configPath], {
       adapters: mockAdapters({ secrets: secrets as SecretsProvider }),
       io: io.io,
       exit: noExit,
     })
-    const written = readFileSync(envFile, 'utf-8')
+    const written = readFileSync(join(tmpDir, '.env'), 'utf-8')
     expect(written).toMatch(/^GITHUB_TOKEN=gh-secret-value$/m)
     expect(written).toMatch(/^NEON_API_KEY=neon-secret-value$/m)
     expect(io.stdout.join('\n')).toMatch(/2 fetched/)
   })
 
-  it('skips vars already set in .env unless --force', async () => {
+  it("writes per-app .env files scoped by each app's .env.example", async () => {
     const configPath = writeConfig()
-    const envFile = join(tmpDir, '.env')
-    writeFileSync(envFile, 'NEON_API_KEY=already-here\n')
+    writeFileSync(join(tmpDir, '.env.example'), 'NEON_API_KEY=\n')
+    const apiDir = join(tmpDir, 'apps', 'api')
+    mkdirSync(apiDir, { recursive: true })
+    writeFileSync(
+      join(apiDir, '.env.example'),
+      'NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=\nCLERK_SECRET_KEY=\n',
+    )
 
     const secrets: Partial<SecretsProvider> = {
       whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
-      read: vi.fn(async () => 'from-vault'),
+      readEnvironment: vi.fn(async () => ({
+        NEON_API_KEY: 'neon',
+        NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY: 'pk_test_abc',
+        CLERK_SECRET_KEY: 'sk_test_xyz',
+        // Extra value that no .env.example declares — should NOT be
+        // written anywhere (cross-pollination guard).
+        SOME_OTHER_VAR: 'leak',
+      })),
     }
     const io = captureIo()
-    await run(['secrets', 'sync', '--env-file', envFile, '--config', configPath], {
+    await run(['secrets', 'sync', '--config', configPath], {
       adapters: mockAdapters({ secrets: secrets as SecretsProvider }),
       io: io.io,
       exit: noExit,
     })
-    expect(readFileSync(envFile, 'utf-8')).toMatch(/^NEON_API_KEY=already-here$/m)
+    const root = readFileSync(join(tmpDir, '.env'), 'utf-8')
+    const app = readFileSync(join(apiDir, '.env'), 'utf-8')
+    expect(root).toMatch(/^NEON_API_KEY=neon$/m)
+    expect(root).not.toMatch(/CLERK/)
+    expect(root).not.toMatch(/SOME_OTHER_VAR/)
+    expect(app).toMatch(/^NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=pk_test_abc$/m)
+    expect(app).toMatch(/^CLERK_SECRET_KEY=sk_test_xyz$/m)
+    expect(app).not.toMatch(/NEON_API_KEY/)
+    expect(app).not.toMatch(/SOME_OTHER_VAR/)
+  })
+
+  it('skips an app when it has no .env.example', async () => {
+    const configPath = writeConfig()
+    writeFileSync(join(tmpDir, '.env.example'), 'NEON_API_KEY=\n')
+    // apps/api dir exists but no .env.example — should be skipped silently
+    mkdirSync(join(tmpDir, 'apps', 'api'), { recursive: true })
+
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
+      readEnvironment: vi.fn(async () => ({ NEON_API_KEY: 'neon' })),
+    }
+    const io = captureIo()
+    await run(['secrets', 'sync', '--config', configPath], {
+      adapters: mockAdapters({ secrets: secrets as SecretsProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(io.stdout.join('\n')).toMatch(/api:.*no \.env\.example/)
+    expect(existsSync(join(tmpDir, 'apps', 'api', '.env'))).toBe(false)
+  })
+
+  it('skips vars already set in .env unless --force', async () => {
+    const configPath = writeConfig()
+    writeFileSync(join(tmpDir, '.env.example'), 'NEON_API_KEY=\n')
+    writeFileSync(join(tmpDir, '.env'), 'NEON_API_KEY=already-here\n')
+
+    const secrets: Partial<SecretsProvider> = {
+      whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
+      readEnvironment: vi.fn(async () => ({ NEON_API_KEY: 'from-vault' })),
+    }
+    const io = captureIo()
+    await run(['secrets', 'sync', '--config', configPath], {
+      adapters: mockAdapters({ secrets: secrets as SecretsProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(readFileSync(join(tmpDir, '.env'), 'utf-8')).toMatch(/^NEON_API_KEY=already-here$/m)
     expect(io.stdout.join('\n')).toMatch(/already set/)
   })
 
   it('--force overwrites existing values', async () => {
     const configPath = writeConfig()
-    const envFile = join(tmpDir, '.env')
-    writeFileSync(envFile, 'NEON_API_KEY=stale\n')
+    writeFileSync(join(tmpDir, '.env.example'), 'NEON_API_KEY=\n')
+    writeFileSync(join(tmpDir, '.env'), 'NEON_API_KEY=stale\n')
 
     const secrets: Partial<SecretsProvider> = {
       whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
-      read: vi.fn(async () => 'fresh'),
+      readEnvironment: vi.fn(async () => ({ NEON_API_KEY: 'fresh' })),
     }
     const io = captureIo()
-    await run(['secrets', 'sync', '--env-file', envFile, '--config', configPath, '--force'], {
+    await run(['secrets', 'sync', '--config', configPath, '--force'], {
       adapters: mockAdapters({ secrets: secrets as SecretsProvider }),
       io: io.io,
       exit: noExit,
     })
-    expect(readFileSync(envFile, 'utf-8')).toMatch(/^NEON_API_KEY=fresh$/m)
+    expect(readFileSync(join(tmpDir, '.env'), 'utf-8')).toMatch(/^NEON_API_KEY=fresh$/m)
   })
 
   it('errors clearly when no secrets block exists in rando.config.json', async () => {
@@ -934,12 +987,10 @@ describe('secrets sync', () => {
         apps: [{ name: 'api', rootDirectory: 'apps/api', port: 4000 }],
       }),
     )
-    const envFile = join(tmpDir, '.env')
-    writeFileSync(envFile, '')
 
     const io = captureIo()
     const exitCalls: number[] = []
-    await run(['secrets', 'sync', '--env-file', envFile, '--config', configPath], {
+    await run(['secrets', 'sync', '--config', configPath], {
       adapters: mockAdapters({ secrets: { whoami: vi.fn() } as unknown as SecretsProvider }),
       io: io.io,
       exit: ((c: number) => exitCalls.push(c)) as never,
@@ -959,7 +1010,7 @@ describe('secrets sync --env', () => {
     rmSync(tmpDir, { recursive: true, force: true })
   })
 
-  it('reads from the staging vault when --env staging is passed', async () => {
+  it('reads from the staging 1P environment when --env staging is passed', async () => {
     const configPath = join(tmpDir, 'rando.config.json')
     writeFileSync(
       configPath,
@@ -971,29 +1022,28 @@ describe('secrets sync --env', () => {
         secrets: {
           kind: '1password',
           field: 'credential',
-          environments: { local: 'vault-local', staging: 'vault-staging' },
+          environments: { local: 'env-local', staging: 'env-staging' },
         },
       }),
     )
-    const envFile = join(tmpDir, '.env')
-    writeFileSync(envFile, '')
+    writeFileSync(join(tmpDir, '.env.example'), 'NEON_API_KEY=\n')
 
     const reads: string[] = []
     const secrets: Partial<SecretsProvider> = {
       whoami: vi.fn(async () => ({ account: 'd', url: 'u' })),
-      read: vi.fn(async (ref: string) => {
-        reads.push(ref)
-        throw new Error('not configured for this test')
+      readEnvironment: vi.fn(async (envId: string) => {
+        reads.push(envId)
+        return { NEON_API_KEY: 'staging-val' }
       }),
     }
     const io = captureIo()
-    await run(
-      ['secrets', 'sync', '--env-file', envFile, '--config', configPath, '--env', 'staging'],
-      { adapters: mockAdapters({ secrets: secrets as SecretsProvider }), io: io.io, exit: noExit },
-    )
-    // Every read should target the staging vault.
-    expect(reads.every((r) => r.startsWith('op://vault-staging/'))).toBe(true)
-    expect(reads.some((r) => r.startsWith('op://vault-local/'))).toBe(false)
+    await run(['secrets', 'sync', '--config', configPath, '--env', 'staging'], {
+      adapters: mockAdapters({ secrets: secrets as SecretsProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(reads).toEqual(['env-staging'])
+    expect(readFileSync(join(tmpDir, '.env'), 'utf-8')).toMatch(/^NEON_API_KEY=staging-val$/m)
   })
 
   it('errors when --env points at an env without a configured vault', async () => {
@@ -1017,7 +1067,7 @@ describe('secrets sync --env', () => {
 
     const io = captureIo()
     const exitCalls: number[] = []
-    await run(['secrets', 'sync', '--env-file', envFile, '--config', configPath, '--env', 'prod'], {
+    await run(['secrets', 'sync', '--config', configPath, '--env', 'prod'], {
       adapters: mockAdapters({
         secrets: {
           whoami: vi.fn(async () => ({ account: '', url: '' })),
