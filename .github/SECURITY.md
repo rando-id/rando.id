@@ -1,5 +1,18 @@
 # Security Policy
 
+## Supported Versions
+
+Rando is pre-1.0. Only the latest `main` is supported — security fixes
+land there, deploy to `rando.id`, and propagate to staging on the next
+merge.
+
+| Version | Supported          |
+| ------- | ------------------ |
+| `main`  | :white_check_mark: |
+| < 1.0   | :x:                |
+
+Once 1.0 ships, this table will track active minor lines.
+
 ## Reporting a vulnerability
 
 **Do not open a public GitHub issue for security-sensitive reports.**
@@ -39,9 +52,3 @@ Out of scope (please don't report):
 We follow coordinated disclosure. Once a fix is shipped and deployed to
 production, we'll credit reporters in the release notes (unless you'd
 rather stay anonymous). We don't currently run a paid bounty program.
-
-## Supported versions
-
-Rando is pre-1.0 — only the `main` branch is supported. Security fixes
-land on `main`, get deployed to `rando.id`, and propagate down to
-staging on the next merge.
