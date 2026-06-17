@@ -37,9 +37,12 @@ jobs:
       contents: read
       pull-requests: read
     steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
       - uses: ./.github/actions/setup
         with:
-          fetch-depth: '0'
           install-cli: 'true'
 
       # Only stream the staging 1Password Environment when the tracker
