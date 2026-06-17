@@ -11,7 +11,7 @@ export default defineConfig({
     exclude: ['node_modules', '.next', 'dist'],
     coverage: {
       provider: 'v8',
-      reporter: ['text', 'html', 'json-summary'],
+      reporter: ['text', 'html', 'json-summary', 'cobertura'],
       // App Router routes live in `app/`, helpers in `src/`. Include both.
       include: ['app/**/*.ts', 'src/**/*.ts'],
       exclude: [

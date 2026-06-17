@@ -98,7 +98,7 @@ After the first CI run passes:
 
 - **Settings → Branches → Add rule** for `main` and `staging`:
   - Require a pull request before merging
-  - Require status checks to pass — pick `typecheck + lint`
+  - Require status checks to pass — pick `Lint`, `Typecheck`, and `Unit tests`
   - Require branches to be up to date before merging
 
 ### Repo secrets
@@ -114,17 +114,31 @@ Bootstrap of this token is described in
 
 ## Continuous integration
 
-[`workflows/ci.yml`](./workflows/ci.yml) runs on every
-push to `main` and every pull request:
+Workflows are split by function. Each runs on every `push` to `main`
+and every `pull_request`, with its own concurrency group so a new
+push to a branch cancels the previous run.
 
-- `pnpm install --frozen-lockfile`
-- `pnpm typecheck` across all workspaces (Turbo-parallelized)
-- `pnpm lint` across all workspaces
+| Workflow                                                               | What it does                                                                                                                                                               |
+| ---------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| [`workflows/lint.yml`](./workflows/lint.yml)                           | `pnpm lint` across all workspaces.                                                                                                                                         |
+| [`workflows/typecheck.yml`](./workflows/typecheck.yml)                 | `pnpm typecheck` across all workspaces (Turbo-parallelized).                                                                                                               |
+| [`workflows/unit-tests.yml`](./workflows/unit-tests.yml)               | `pnpm test:coverage` — vitest + Cobertura/LCOV. Uploads coverage as a run artifact and to GitHub Code Quality (public preview; GA July 2026) for per-PR coverage comments. |
+| [`workflows/integration-tests.yml`](./workflows/integration-tests.yml) | Postman collection + spec lint against the PR's preview URL on every PR, and nightly against staging.                                                                      |
+| [`workflows/deploy.yml`](./workflows/deploy.yml)                       | Spins up the per-PR branch-deploy (`<slug>-<app>.rando-id.dev`) and tears it down on close.                                                                                |
+| [`workflows/issues.yml`](./workflows/issues.yml)                       | Transitions tickets referenced in commits as the PR moves through its lifecycle.                                                                                           |
 
-Concurrency is set so a new push to a branch cancels the previous run.
+Repeated patterns live in composite actions under `.github/actions/`,
+so each workflow's YAML only describes what's unique to it:
 
-[`workflows/api-tests.yml`](./workflows/api-tests.yml)
-runs the Postman collection against PR preview URLs + nightly staging.
+- **`setup`** — checkout + pnpm + Node 22 + frozen-lockfile install. Optional `install-cli: 'true'` runs `pnpm setup:cli` so `rando` resolves from PATH. Used by every workflow.
+- **`changes`** — returns per-workspace booleans (`cli`, `db`, `api`, `web`, ...) plus aggregates (`code`, `docs`, `shared`). Per-workspace booleans come from Turbo's `--filter='...[base]'` so the dep graph is sourced from each package's `package.json` (single source of truth — adding a `@rando/*` runtime dep is automatically reflected, no YAML edit). Aggregates come from `dorny/paths-filter` for file-pattern questions Turbo can't easily express. Workflows gate their real work on these so unrelated PRs don't re-run everything.
+- **`op-env`** — install the `op` CLI + dump a 1Password Environment's KEY=VALUE pairs into `$GITHUB_ENV`. Takes the service-account token + an environment ID (defaults to staging). Used by `integration-tests`, `deploy`, `issues` (Jira-only).
+- **`issue-refs`** — scan the PR's commit range for `Refs: <KEY>` footers via `rando issues refs`. Outputs `keys` (multiline). Used by `deploy` (for the In Review transition + comment) and `issues` (for the In Progress / Done transitions).
+
+When a pattern starts repeating across two or more workflows, the next
+step is a new composite action — keeps the dep graph + secrets handling
+
+- ticket discovery in one place each.
 
 **Not currently in CI:**
 
@@ -136,7 +150,7 @@ runs the Postman collection against PR preview URLs + nightly staging.
 
 Right now **Vercel handles all deploys natively** via its GitHub
 integration: push to `main`/`staging`, Vercel builds, Vercel deploys.
-GitHub Actions only runs typecheck + lint. App-level env vars
+GitHub Actions only runs lint + typecheck + unit tests + integration tests. App-level env vars
 (`DATABASE_URL`, Clerk keys, etc.) live in Vercel's project settings
 and are pushed there by `rando infrastructure setup` from 1Password.
 

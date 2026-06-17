@@ -1,0 +1,33 @@
+name: Setup
+description: Checkout, pnpm, Node 22, and a frozen-lockfile install. Used by every CI workflow so the per-workflow YAML only has to describe what's unique to it.
+
+inputs:
+  fetch-depth:
+    description: 'Passed to actions/checkout. Default 1 (shallow); set to 0 when the workflow needs commit history (e.g. issue refs across a PR range).'
+    required: false
+    default: '1'
+  install-cli:
+    description: "When 'true', also runs `pnpm setup:cli` so the `rando` binary resolves from PATH. Set for workflows that shell out to `rando`."
+    required: false
+    default: 'false'
+
+runs:
+  using: composite
+  steps:
+    - uses: actions/checkout@v4
+      with:
+        fetch-depth: ${{ inputs.fetch-depth }}
+
+    - uses: pnpm/action-setup@v4
+
+    - uses: actions/setup-node@v4
+      with:
+        node-version: 22
+        cache: pnpm
+
+    - shell: bash
+      run: pnpm install --frozen-lockfile
+
+    - if: inputs.install-cli == 'true'
+      shell: bash
+      run: pnpm setup:cli

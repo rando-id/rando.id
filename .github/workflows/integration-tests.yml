@@ -1,4 +1,4 @@
-name: API tests
+name: Integration tests
 
 # Runs the Postman collection (postman/rando-api.postman_collection.json)
 # via the official Postman CLI against the PR's stable preview URL on
@@ -9,7 +9,7 @@ name: API tests
 #
 # On PR events:
 #   - Computes <branch-slug>-api.<nonProd-zone> (matches the URL
-#     `rando deploy branch --stable-url` builds in preview.yml).
+#     `rando deploy branch --stable-url` builds in deploy.yml).
 #   - Polls /v1/health on that URL for up to 5 minutes. If it never
 #     comes up (no preview was deployed, or the deploy failed), the
 #     job emits a notice and exits successfully — we don't fail PRs
@@ -22,11 +22,11 @@ name: API tests
 #   - Same flow against staging-api.rando-id.dev.
 #
 # Required: `POSTMAN_API_KEY` env var (auto-loaded from the staging
-# vault via 1password/load-secrets-action) — both `collection run`
-# and `api lint` need it to authenticate.
+# 1Password Environment via `op environment read`) — both
+# `collection run` and `api lint` need it to authenticate.
 #
 # vars.POSTMAN_ENABLED=false disables the workflow without removing
-# it (matches the issues-sync.yml + preview.yml pattern).
+# it (matches the issues.yml + deploy.yml pattern).
 
 on:
   pull_request:
@@ -42,7 +42,7 @@ on:
         type: string
 
 concurrency:
-  group: api-tests-${{ github.event.pull_request.number || github.ref }}
+  group: integration-tests-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -55,18 +55,26 @@ jobs:
       contents: read
       pull-requests: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
 
-      - uses: pnpm/action-setup@v4
+      - id: changes
+        uses: ./.github/actions/changes
 
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'pnpm'
-
-      - run: pnpm install --frozen-lockfile
+      # Skip on PR events when nothing API-relevant changed. Scheduled
+      # nightly runs and workflow_dispatch always proceed — they're
+      # against staging or a user-specified URL, not the PR's preview.
+      - name: Skip when no API code touched
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ steps.changes.outputs.api }}" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Integration tests skipped::No API code (or its deps) changed in this PR."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
 
       - name: Compute target URL
+        if: steps.gate.outputs.skip != 'true'
         id: target
         run: |
           if [ -n "${{ inputs.baseUrl }}" ]; then
@@ -85,9 +93,10 @@ jobs:
           echo "Target: ${URL}"
 
       - name: Wait for target URL to be reachable
+        if: steps.gate.outputs.skip != 'true'
         id: wait
         run: |
-          # Poll /v1/health for up to 5 minutes (30 × 10s). The preview
+          # Poll /v1/health for up to 5 minutes (30 × 10s). The deploy
           # workflow runs in parallel and typically takes 2-4 minutes;
           # nightly runs against staging which is always up.
           URL="${{ steps.target.outputs.url }}"
@@ -104,39 +113,32 @@ jobs:
           echo "ready=false" >> "$GITHUB_OUTPUT"
 
       - name: Skip if target not ready
-        if: steps.wait.outputs.ready != 'true'
+        if: steps.gate.outputs.skip != 'true' && steps.wait.outputs.ready != 'true'
         run: |
-          echo "::notice title=API tests skipped::Target URL ${{ steps.target.outputs.url }} did not respond 200 on /v1/health within 5 minutes — likely no preview was deployed, or the deploy failed. Not failing the PR."
+          echo "::notice title=Integration tests skipped::Target URL ${{ steps.target.outputs.url }} did not respond 200 on /v1/health within 5 minutes — likely no preview was deployed, or the deploy failed. Not failing the PR."
 
-      # TODO(#73): drop the `version:` pin once `op environment` lands in stable.
-      - name: Install 1Password CLI (>= 2.35 for `op environment`)
-        if: steps.wait.outputs.ready == 'true'
-        uses: 1password/install-cli-action@v1
+      - name: Load 1Password Environment
+        if: steps.gate.outputs.skip != 'true' && steps.wait.outputs.ready == 'true'
+        uses: ./.github/actions/op-env
         with:
-          version: 2.35.0-beta.01
-
-      - name: Load secrets from 1Password Environment
-        if: steps.wait.outputs.ready == 'true'
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-        run: op environment read ftd3n4l5egcfjai7f7tm2f7ytq >> "$GITHUB_ENV"
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       - name: Run Postman collection against target
-        if: steps.wait.outputs.ready == 'true'
+        if: steps.gate.outputs.skip != 'true' && steps.wait.outputs.ready == 'true'
         env:
           BASE_URL: ${{ steps.target.outputs.url }}
           FORCE_COLOR: '1'
         run: pnpm test:api
 
       - name: Lint OpenAPI spec
-        if: steps.wait.outputs.ready == 'true'
+        if: steps.gate.outputs.skip != 'true' && steps.wait.outputs.ready == 'true'
         env:
           SPEC_URL: ${{ steps.target.outputs.url }}/v1/openapi.json
           FORCE_COLOR: '1'
         run: pnpm spec:lint
 
       - name: Upload JUnit report
-        if: always() && steps.wait.outputs.ready == 'true'
+        if: always() && steps.gate.outputs.skip != 'true' && steps.wait.outputs.ready == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: postman-results
@@ -145,7 +147,7 @@ jobs:
           if-no-files-found: ignore
 
       - name: Comment on PR with failures
-        if: failure() && github.event_name == 'pull_request' && steps.wait.outputs.ready == 'true'
+        if: failure() && steps.gate.outputs.skip != 'true' && github.event_name == 'pull_request' && steps.wait.outputs.ready == 'true'
         uses: actions/github-script@v7
         with:
           script: |
@@ -160,7 +162,7 @@ jobs:
             const target = '${{ steps.target.outputs.url }}'
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
             const body = [
-              `## API tests failed`,
+              `## Integration tests failed`,
               ``,
               `**${failures} of ${total} assertion(s) failed** running the Postman collection against \`${target}\`.`,
               ``,

@@ -489,7 +489,7 @@ themselves are left alone — Vercel auto-GCs them on its own retention
 schedule.
 
 ```yaml
-# .github/workflows/preview.yml
+# .github/workflows/deploy.yml
 name: PR preview
 on:
   pull_request:
@@ -539,7 +539,7 @@ Result: each PR gets its own preview URLs at predictable
 `<branch-slug>-<app>.rando-id.dev` and (optionally) a fresh Neon branch.
 Both vanish on PR close.
 
-The repo ships this workflow at [`.github/workflows/preview.yml`](../../.github/workflows/preview.yml) —
+The repo ships this workflow at [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml) —
 the Neon-branch steps are commented out by default; uncomment + set
 `RANDO_NEON_PROJECT_ID` as a repo variable to enable per-PR Neon
 branches.
@@ -589,7 +589,7 @@ Two complementary flows:
   `openapi-to-postmanv2` against the spec and writes a Postman v2.1
   collection JSON file to disk (default: `postman/rando-api.postman_collection.json`).
   No Postman API call. The file is checked into the repo and used by
-  `pnpm test:api` (postman-cli) and the `api-tests.yml` workflow. Hand-author
+  `pnpm test:api` (postman-cli) and the `integration-tests.yml` workflow. Hand-author
   `pm.test()` assertions on top of the generated requests; regenerate
   only when the contract changes (and merge any test edits back in by
   hand — there's no auto-merge today). The command **refuses to
@@ -779,12 +779,12 @@ and the commit is rejected.
 
 Two workflows handle the lifecycle on PR events:
 
-- **`.github/workflows/issues-sync.yml`** — on every `pull_request`
+- **`.github/workflows/issues.yml`** — on every `pull_request`
   event, runs `rando issues refs base..head` to discover issues, then
   `rando issues lifecycle <KEY> in-progress` on opened / synchronize /
   reopened, or `... done --message "Merged in #N (<url>)"` on
   close-with-merged.
-- **`.github/workflows/preview.yml`** — after the Vercel branch deploy
+- **`.github/workflows/deploy.yml`** — after the Vercel branch deploy
   succeeds, runs `rando issues lifecycle <KEY> in-review --message
 "<deploy urls>"` for each referenced issue.
 

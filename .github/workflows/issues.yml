@@ -1,4 +1,4 @@
-name: Issues sync
+name: Issues
 
 # Transitions GitHub Issues (or Jira tickets when tracker.kind="jira"
 # in rando.config.json) through their lifecycle based on PR events.
@@ -10,11 +10,11 @@ name: Issues sync
 #   pull_request: opened, reopened, synchronize → In Progress
 #   pull_request: closed (merged=true)          → Done
 #
-# The branch-deploy → In Review + URL-comment step lives in preview.yml,
+# The branch-deploy → In Review + URL-comment step lives in deploy.yml,
 # right next to the deploy itself.
 #
 # Auth: GITHUB_TOKEN is auto-provided by Actions. For tracker.kind="jira",
-# Jira credentials are pulled from 1Password (see preview.yml header).
+# Jira credentials are pulled from 1Password (see deploy.yml header).
 # Only OP_SERVICE_ACCOUNT_TOKEN needs to be a GitHub repo secret.
 
 on:
@@ -22,7 +22,7 @@ on:
     types: [opened, reopened, synchronize, closed]
 
 concurrency:
-  group: issues-sync-${{ github.event.pull_request.number }}
+  group: issues-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
@@ -37,47 +37,22 @@ jobs:
       contents: read
       pull-requests: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: ./.github/actions/setup
         with:
-          fetch-depth: 0
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
-        with:
-          node-version: 22
-          cache: 'pnpm'
-
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm setup:cli
+          fetch-depth: '0'
+          install-cli: 'true'
 
       # Only stream the staging 1Password Environment when the tracker
       # config actually needs it. For GitHub Issues (the default) the
       # auto-provided GITHUB_TOKEN is enough — we don't burn a service
       # account read per PR for nothing.
-      # TODO(#73): drop the `version:` pin once `op environment` lands in stable.
-      - name: Install 1Password CLI (>= 2.35 for `op environment`)
-        if: vars.TRACKER_KIND == 'jira'
-        uses: 1password/install-cli-action@v1
+      - if: vars.TRACKER_KIND == 'jira'
+        uses: ./.github/actions/op-env
         with:
-          version: 2.35.0-beta.01
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
-      - name: Load Jira secrets from 1Password Environment
-        if: vars.TRACKER_KIND == 'jira'
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-        run: op environment read ftd3n4l5egcfjai7f7tm2f7ytq >> "$GITHUB_ENV"
-
-      - name: Collect issue keys from the PR's commit range
-        id: refs
-        run: |
-          KEYS=$(rando issues refs '${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}')
-          {
-            echo "keys<<EOF"
-            echo "$KEYS"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
+      - id: refs
+        uses: ./.github/actions/issue-refs
 
       - name: Transition to In Progress (PR opened / synchronize / reopened)
         if: github.event.action != 'closed' && steps.refs.outputs.keys != ''

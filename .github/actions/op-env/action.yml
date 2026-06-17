@@ -1,0 +1,27 @@
+name: Load 1Password Environment
+description: Install the `op` CLI (pinned to a version that supports `op environment read`) and dump every KEY=VALUE in the named 1Password Environment into $GITHUB_ENV, so subsequent steps see the secrets as plain env vars. Use this instead of `1password/load-secrets-action` — the latter only handles vault references, not environment references.
+
+inputs:
+  service-account-token:
+    description: 1Password service account token. Pass `${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}` from the calling workflow — composite actions can't read `secrets.*` directly.
+    required: true
+  environment-id:
+    description: 1Password Environment to read. Defaults to the staging environment.
+    required: false
+    default: ftd3n4l5egcfjai7f7tm2f7ytq
+  version:
+    description: op CLI version. Pinned to the >= 2.35 beta that ships `op environment read` (TODO(#73) drop the pin once stable).
+    required: false
+    default: 2.35.0-beta.01
+
+runs:
+  using: composite
+  steps:
+    - uses: 1password/install-cli-action@v1
+      with:
+        version: ${{ inputs.version }}
+
+    - shell: bash
+      env:
+        OP_SERVICE_ACCOUNT_TOKEN: ${{ inputs.service-account-token }}
+      run: op environment read "${{ inputs.environment-id }}" >> "$GITHUB_ENV"

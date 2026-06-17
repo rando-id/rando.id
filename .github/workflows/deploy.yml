@@ -1,21 +1,16 @@
-name: PR preview
+name: Deploy
 
 # Spins up a Vercel preview deploy for every PR with a stable
 # `<branch-slug>-<app>.rando-id.dev` URL, and tears it down on close.
+# Production + staging deploys run via Vercel's native GitHub
+# integration (push to main/staging) — this workflow only covers the
+# branch-deploy flow today. See MAINTAINING.md → "Deploy strategy"
+# for when/why to move prod deploys here too.
 #
 # Secrets are resolved from a **1Password Environment** (not a Vault)
 # at job start. The only GitHub repo secret you need is
-# `OP_SERVICE_ACCOUNT_TOKEN` (Settings → Secrets and variables →
-# Actions → New repository secret); everything else is read from the
-# staging environment (`ftd3n4l5egcfjai7f7tm2f7ytq`) via
-# `op environment read`, which streams `KEY=VALUE` lines that we
-# append straight to `$GITHUB_ENV`.
-#
-# Why Environments and not Vaults: secrets are organized by deploy
-# environment (local/staging/prod) on the 1Password side. The
-# service account is scoped to those Environments specifically; it
-# cannot read from arbitrary vaults. `op environment read` is the
-# correct tool — `op read op://...` only resolves against Vaults.
+# `OP_SERVICE_ACCOUNT_TOKEN`; everything else is read from the staging
+# environment (`ftd3n4l5egcfjai7f7tm2f7ytq`) via `op environment read`.
 #
 # Items expected in the staging Environment:
 #   - NEON_API_KEY            (only if RANDO_NEON_PROJECT_ID is set)
@@ -28,7 +23,7 @@ name: PR preview
 #   RANDO_NEON_PROJECT_ID   — needed only by the optional per-PR Neon branch steps
 #   TRACKER_ENABLED=false   — disables the issue-tracker sync step
 #   PREVIEW_ENABLED=false   — disables this whole workflow (use until the
-#                             Vercel projects exist; see #75). Both preview
+#                             Vercel projects exist; see #75). Both branch-deploy
 #                             AND teardown skip when set.
 
 on:
@@ -36,44 +31,27 @@ on:
     types: [opened, synchronize, reopened, closed]
 
 concurrency:
-  # Serialize per-PR so a quick close-after-open doesn't race the preview job.
-  group: preview-${{ github.event.pull_request.number }}
+  # Serialize per-PR so a quick close-after-open doesn't race the deploy job.
+  group: deploy-${{ github.event.pull_request.number }}
   cancel-in-progress: false
 
 jobs:
-  preview:
+  branch-deploy:
     if: ${{ vars.PREVIEW_ENABLED != 'false' && github.event.action != 'closed' }}
     name: Deploy preview
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup
         with:
-          node-version: 22
-          cache: 'pnpm'
+          install-cli: 'true'
 
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm setup:cli
-
-      # TODO(#73): drop the `version:` pin once `op environment` lands in stable.
-      - name: Install 1Password CLI (>= 2.35 for `op environment`)
-        uses: 1password/install-cli-action@v1
+      # Stream the staging 1Password Environment into $GITHUB_ENV. Adding
+      # a new secret means adding it to the Environment in the 1Password
+      # UI — no workflow change required.
+      - uses: ./.github/actions/op-env
         with:
-          version: 2.35.0-beta.01
-
-      # Stream the staging 1Password Environment into $GITHUB_ENV. Every
-      # KEY=VALUE line lands as an environment variable for subsequent
-      # steps. Adding a new secret means adding it to the Environment in
-      # the 1Password UI — no workflow change required.
-      - name: Load secrets from 1Password Environment
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-        run: op environment read ftd3n4l5egcfjai7f7tm2f7ytq >> "$GITHUB_ENV"
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       # Optional: spin up a per-PR Neon branch off main so migrations and
       # seed data are isolated. Requires RANDO_NEON_PROJECT_ID variable.
@@ -88,19 +66,18 @@ jobs:
 
       # Issue tracker: each ticket referenced by this PR → In Review,
       # plus a comment with the per-app stable deploy URLs. Soft-fails
-      # so a tracker hiccup doesn't fail the preview job.
-      - name: Sync issues → In Review with deploy URLs
+      # so a tracker hiccup doesn't fail the deploy job.
+      - id: refs
         if: vars.TRACKER_ENABLED != 'false'
+        uses: ./.github/actions/issue-refs
+
+      - name: Sync issues → In Review with deploy URLs
+        if: vars.TRACKER_ENABLED != 'false' && steps.refs.outputs.keys != ''
         run: |
-          KEYS=$(rando issues refs '${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}')
-          if [ -z "$KEYS" ]; then
-            echo "(no issue refs found in PR commits)"
-            exit 0
-          fi
           BRANCH='${{ github.head_ref }}'
           MSG=$(printf 'Branch deploy live:\n\n- https://%s-api.rando-id.dev\n- https://%s-web.rando-id.dev\n- https://%s-admin.rando-id.dev\n\nPR: %s' \
             "$BRANCH" "$BRANCH" "$BRANCH" "${{ github.event.pull_request.html_url }}")
-          echo "$KEYS" | while IFS= read -r key; do
+          echo '${{ steps.refs.outputs.keys }}' | while IFS= read -r key; do
             [ -z "$key" ] && continue
             echo "→ $key in-review + comment"
             rando issues lifecycle "$key" in-review --message "$MSG" || echo "(non-fatal: $key)"
@@ -115,29 +92,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: pnpm/action-setup@v4
-
-      - uses: actions/setup-node@v4
+      - uses: ./.github/actions/setup
         with:
-          node-version: 22
-          cache: 'pnpm'
+          install-cli: 'true'
 
-      - run: pnpm install --frozen-lockfile
-
-      - run: pnpm setup:cli
-
-      # TODO(#73): drop the `version:` pin once `op environment` lands in stable.
-      - name: Install 1Password CLI (>= 2.35 for `op environment`)
-        uses: 1password/install-cli-action@v1
+      - uses: ./.github/actions/op-env
         with:
-          version: 2.35.0-beta.01
-
-      - name: Load secrets from 1Password Environment
-        env:
-          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
-        run: op environment read ftd3n4l5egcfjai7f7tm2f7ytq >> "$GITHUB_ENV"
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       - name: Remove stable URLs
         run: rando deploy teardown '${{ github.head_ref }}' --yes
