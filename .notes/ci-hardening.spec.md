@@ -1,3 +1,8 @@
+---
+status: approved # draft → proposed (issue filed) → approved (milestone attached)
+issue: TBD
+---
+
 # CI base hardening
 
 What to wire on top of the existing CI split (lint / typecheck /

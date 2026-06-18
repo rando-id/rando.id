@@ -1,3 +1,8 @@
+---
+status: approved # draft → proposed (issue filed) → approved (milestone attached)
+issue: TBD
+---
+
 # Next.js (App Router) — web, admin, api
 
 ## Decision

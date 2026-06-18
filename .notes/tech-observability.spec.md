@@ -1,3 +1,8 @@
+---
+status: approved # draft → proposed (issue filed) → approved (milestone attached)
+issue: 41
+---
+
 # Observability — Sentry + Vercel logs + PostHog
 
 ## Decision

@@ -1,3 +1,7 @@
+---
+status: draft # draft → proposed (issue filed) → approved (milestone attached)
+---
+
 # AI PR review bot
 
 ## Landscape

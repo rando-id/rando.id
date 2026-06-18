@@ -1,3 +1,8 @@
+---
+status: approved # draft → proposed (issue filed) → approved (milestone attached)
+issue: TBD
+---
+
 # Postgres on Neon + PostGIS — database
 
 ## Decision

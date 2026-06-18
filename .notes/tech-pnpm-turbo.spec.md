@@ -1,3 +1,8 @@
+---
+status: approved # draft → proposed (issue filed) → approved (milestone attached)
+issue: TBD
+---
+
 # pnpm + Turborepo — monorepo tooling
 
 ## Decision

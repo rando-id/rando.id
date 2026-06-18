@@ -13,7 +13,24 @@ Conventions for working on Rando. Loaded automatically by Claude Code into every
 ## Workflow
 
 - **Commit messages → pasteboard.** When the user asks for one, draft it and pipe to `pbcopy`, then announce in one sentence. Don't paste the message into the conversation.
-- **Discuss → `.notes/<topic>.md` → GitHub issue.** Whenever we work through a non-trivial decision (which library to use, which approach to take, which infra option to wire), capture it in `.notes/<topic-kebab-case>.md` BEFORE acting. **One topic per file** — if a thread covers multiple decisions, split them. The file holds: background, options considered, tradeoffs, decision. `.notes/` is gitignored — it's personal scratch, not a committed surface. When we decide to act, file a GitHub issue via `pnpm rando issues create` with a link to the `.notes` file in the body, so the issue captures the "what" + the notes file captures the "why" the user can refer back to later. Skip this entire flow only for trivial decisions (variable rename, doc typo) — anything that involved comparing options gets a notes file.
+- **Discuss → `.notes/<topic>.spec.md` → GitHub issue.** Non-trivial decisions (library choice, approach, infra option) get captured in `.notes/<topic-kebab-case>.spec.md` BEFORE acting. **One topic per file** — if a thread covers multiple decisions, split them. Files in `.notes/` use a category prefix:
+  - `tech-` — vendor / library / framework choice (e.g. `tech-clerk.spec.md`)
+  - `tool-` — developer / AI / automation tooling (e.g. `tool-mcp-servers.spec.md`)
+  - `process-` — workflow / release / governance (e.g. `process-releases-strategy.spec.md`)
+  - `ci-` — CI/CD pipeline work (e.g. `ci-hardening.spec.md`, `ci-dependabot-triage.md`)
+  - `security-` — security architecture / hardening (e.g. `security-api-hardening.md`)
+
+  Add a new prefix only if no existing category fits — document it in this list. Specs (`.spec.md`) describe forward-looking decisions and live in the `draft → proposed → approved` lifecycle; operational notes / triage / post-hoc docs use plain `.md` without the lifecycle (no frontmatter required). Each spec opens with YAML frontmatter:
+
+  ```yaml
+  ---
+  status: draft # draft → proposed (issue filed) → approved (milestone attached)
+  issue: TBD # filled in once the tracking issue is created
+  ---
+  ```
+
+  Lifecycle: spec starts `draft`; flips to `proposed` when you file the tracking issue via `pnpm rando issues create` and link it as `issue: NNN` in frontmatter; flips to `approved` when a milestone is attached to the issue. `.notes/` is committed — these are shared decision records, public-facing for contributors. The file body holds background, options considered, tradeoffs, decision. Skip the entire flow only for trivial decisions (variable rename, doc typo) — anything that involved comparing options gets a spec file.
+
 - **File a ticket via `pnpm rando issues create` for non-trivial work and reference it in commits/PRs** (`Closes #N` / `Refs #N`). Skip for typo fixes and one-line copy changes.
 - **Prefer automation.** If something must stay manual, document it in `.github/MAINTAINING.md` / `.github/CONTRIBUTING.md` AND consider building a `rando` subcommand for it next time. The CLI is where setup steps go to die.
 - **API changes → `pnpm rando api postman sync` after editing the OpenAPI spec.** The Postman collection mirrors the spec.
