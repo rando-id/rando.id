@@ -1,6 +1,16 @@
 import type { NextConfig } from 'next'
 import { withTamagui } from '@tamagui/next-plugin'
 
+// Baseline security headers. `geolocation=(self)` because the contacts
+// feature reads the user's position; camera + microphone stay disabled
+// since nothing uses them.
+const securityHeaders = [
+  { key: 'X-Content-Type-Options', value: 'nosniff' },
+  { key: 'X-Frame-Options', value: 'DENY' },
+  { key: 'Referrer-Policy', value: 'strict-origin-when-cross-origin' },
+  { key: 'Permissions-Policy', value: 'camera=(), microphone=(), geolocation=(self)' },
+]
+
 const config: NextConfig = {
   reactStrictMode: true,
   // Allow the dev Cloudflare Tunnel hostnames to reach `next dev` — without
@@ -17,6 +27,9 @@ const config: NextConfig = {
     '@tamagui/config',
     '@tamagui/next-theme',
   ],
+  async headers() {
+    return [{ source: '/(.*)', headers: securityHeaders }]
+  },
 }
 
 export default withTamagui({

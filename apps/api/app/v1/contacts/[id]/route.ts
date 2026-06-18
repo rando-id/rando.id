@@ -7,6 +7,7 @@ import { contract } from '@rando/api-client'
 import { getContactById, updateContact } from '@rando/db'
 import { getDb } from '@/lib/db'
 import { requireCurrentUser } from '@/lib/current-user'
+import { isUuid } from '@/lib/validate-uuid'
 
 function parseNear(value: string | undefined): { lat: number; lng: number } | null {
   if (!value) return null
@@ -45,6 +46,7 @@ const handler = createNextHandler(
   {
     getContact: async ({ params, query }) => {
       try {
+        if (!isUuid(params.id)) return { status: 404 as const, body: { error: 'not found' } }
         const user = await requireCurrentUser()
         const near = parseNear(query.near)
         const row = await getContactById(getDb(), user.id, params.id, near)
@@ -60,6 +62,7 @@ const handler = createNextHandler(
 
     updateContact: async ({ params, query, body }) => {
       try {
+        if (!isUuid(params.id)) return { status: 404 as const, body: { error: 'not found' } }
         const user = await requireCurrentUser()
         const db = getDb()
         const affected = await updateContact(db, user.id, params.id, body)

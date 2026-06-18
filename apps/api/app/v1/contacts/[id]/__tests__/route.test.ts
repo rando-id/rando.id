@@ -20,16 +20,24 @@ const reqUser = vi.mocked(requireCurrentUser)
 const byId = vi.mocked(getContactById)
 const update = vi.mocked(updateContact)
 
-const FAKE_USER = { id: 'u_1' } as Awaited<ReturnType<typeof requireCurrentUser>>
+// Route handlers now reject non-UUID path params with 404 (see
+// `isUuid` guard added with the security-hardening pass). Fixture IDs
+// have to be real UUIDs to clear that guard and reach the mocks.
+const U1 = '00000000-0000-4000-8000-000000000001'
+const C1 = '00000000-0000-4000-8000-00000000000c'
+const L1 = '00000000-0000-4000-8000-00000000001a'
+const CX = '00000000-0000-4000-8000-ffffffffffff'
+
+const FAKE_USER = { id: U1 } as Awaited<ReturnType<typeof requireCurrentUser>>
 const ROW = {
-  id: 'c_1',
+  id: C1,
   first_name: 'Jane',
   last_name: 'Smith',
   avatar_kind: 'monogram' as const,
   avatar_value: null,
   favorite: false,
   promoted: false,
-  location_id: 'l_1',
+  location_id: L1,
   location_name: 'Wilson Park',
   lat: 33.94,
   lng: -118.41,
@@ -58,12 +66,12 @@ beforeEach(() => {
 describe('GET /v1/contacts/[id]', () => {
   it('returns the mapped ContactListItem when found', async () => {
     byId.mockResolvedValue(ROW)
-    const res = await GET(getReq('http://localhost/v1/contacts/c_1?near=33.94,-118.41'))
+    const res = await GET(getReq(`http://localhost/v1/contacts/${C1}?near=33.94,-118.41`))
     expect(res.status).toBe(200)
     const body = (await res.json()) as { id: string; location: { name: string } | null }
-    expect(body.id).toBe('c_1')
+    expect(body.id).toBe(C1)
     expect(body.location?.name).toBe('Wilson Park')
-    expect(byId).toHaveBeenCalledWith(expect.anything(), 'u_1', 'c_1', {
+    expect(byId).toHaveBeenCalledWith(expect.anything(), U1, C1, {
       lat: 33.94,
       lng: -118.41,
     })
@@ -71,58 +79,64 @@ describe('GET /v1/contacts/[id]', () => {
 
   it('returns 404 when the lookup misses', async () => {
     byId.mockResolvedValue(null)
-    const res = await GET(getReq('http://localhost/v1/contacts/c_x'))
+    const res = await GET(getReq(`http://localhost/v1/contacts/${CX}`))
     expect(res.status).toBe(404)
+  })
+
+  it('returns 404 when the path param is not a UUID (no DB hit)', async () => {
+    const res = await GET(getReq('http://localhost/v1/contacts/not-a-uuid'))
+    expect(res.status).toBe(404)
+    expect(byId).not.toHaveBeenCalled()
   })
 
   it('passes null `near` when the query param is missing/malformed', async () => {
     byId.mockResolvedValue(ROW)
-    await GET(getReq('http://localhost/v1/contacts/c_1'))
-    expect(byId).toHaveBeenCalledWith(expect.anything(), 'u_1', 'c_1', null)
+    await GET(getReq(`http://localhost/v1/contacts/${C1}`))
+    expect(byId).toHaveBeenCalledWith(expect.anything(), U1, C1, null)
   })
 })
 
 describe('PATCH /v1/contacts/[id]', () => {
   it('400s on unknown fields (strict zod)', async () => {
-    const res = await PATCH(patchReq('c_1', { unknown_field: 'x' }))
+    const res = await PATCH(patchReq(C1, { unknown_field: 'x' }))
     expect(res.status).toBe(400)
     expect(update).not.toHaveBeenCalled()
   })
 
   it('400s on out-of-range string lengths', async () => {
-    const res = await PATCH(patchReq('c_1', { firstName: '' }))
+    const res = await PATCH(patchReq(C1, { firstName: '' }))
     expect(res.status).toBe(400)
   })
 
   it('updates favorite + returns the freshly-read row', async () => {
     update.mockResolvedValue(1)
     byId.mockResolvedValue({ ...ROW, favorite: true })
-    const res = await PATCH(patchReq('c_1', { favorite: true }))
+    const res = await PATCH(patchReq(C1, { favorite: true }))
     expect(res.status).toBe(200)
     const body = (await res.json()) as { favorite: boolean }
     expect(body.favorite).toBe(true)
-    expect(update).toHaveBeenCalledWith(expect.anything(), 'u_1', 'c_1', { favorite: true })
+    expect(update).toHaveBeenCalledWith(expect.anything(), U1, C1, { favorite: true })
   })
 
   it('404s when the contact does not exist (update returned 0 + lookup misses)', async () => {
     update.mockResolvedValue(0)
     byId.mockResolvedValue(null)
-    const res = await PATCH(patchReq('c_ghost', { favorite: true }))
+    const res = await PATCH(patchReq(CX, { favorite: true }))
     expect(res.status).toBe(404)
   })
 
   it('accepts an empty patch as a noop (200 with current row)', async () => {
     update.mockResolvedValue(0)
     byId.mockResolvedValue(ROW)
-    const res = await PATCH(patchReq('c_1', {}))
+    const res = await PATCH(patchReq(C1, {}))
     expect(res.status).toBe(200)
   })
 
   it('passes lat/lng through to the post-patch read', async () => {
     update.mockResolvedValue(1)
     byId.mockResolvedValue(ROW)
-    await PATCH(patchReq('c_1', { notes: 'updated' }, '?near=33.94,-118.41'))
-    expect(byId).toHaveBeenCalledWith(expect.anything(), 'u_1', 'c_1', {
+    await PATCH(patchReq(C1, { notes: 'updated' }, '?near=33.94,-118.41'))
+    expect(byId).toHaveBeenCalledWith(expect.anything(), U1, C1, {
       lat: 33.94,
       lng: -118.41,
     })
@@ -135,12 +149,12 @@ describe('unauthorized branches', () => {
   })
 
   it('GET /v1/contacts/[id] returns 404 (auth → not found)', async () => {
-    const res = await GET(getReq('http://localhost/v1/contacts/c_1'))
+    const res = await GET(getReq(`http://localhost/v1/contacts/${C1}`))
     expect(res.status).toBe(404)
   })
 
   it('PATCH /v1/contacts/[id] returns 404 (auth → not found)', async () => {
-    const res = await PATCH(patchReq('c_1', { favorite: true }))
+    const res = await PATCH(patchReq(C1, { favorite: true }))
     expect(res.status).toBe(404)
   })
 })
