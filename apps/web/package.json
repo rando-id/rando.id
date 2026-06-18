@@ -17,6 +17,7 @@
     "@clerk/nextjs": "^6.10.0",
     "@rando/api-client": "workspace:*",
     "@rando/auth": "workspace:*",
+    "@rando/brand": "workspace:*",
     "@rando/config": "workspace:*",
     "@rando/maps": "workspace:*",
     "@rando/observability": "workspace:*",

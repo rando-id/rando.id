@@ -19,6 +19,7 @@ const config: NextConfig = {
   transpilePackages: [
     '@rando/api-client',
     '@rando/auth',
+    '@rando/brand',
     '@rando/config',
     '@rando/maps',
     '@rando/observability',

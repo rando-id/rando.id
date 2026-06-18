@@ -12,7 +12,13 @@ const securityHeaders = [
 const config: NextConfig = {
   reactStrictMode: true,
   allowedDevOrigins: ['dev-admin.rando-id.dev'],
-  transpilePackages: ['@rando/api-client', '@rando/auth', '@rando/config', '@rando/observability'],
+  transpilePackages: [
+    '@rando/api-client',
+    '@rando/auth',
+    '@rando/brand',
+    '@rando/config',
+    '@rando/observability',
+  ],
   async headers() {
     return [{ source: '/(.*)', headers: securityHeaders }]
   },
