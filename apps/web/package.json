@@ -21,7 +21,7 @@
     "@rando/maps": "workspace:*",
     "@rando/observability": "workspace:*",
     "@rando/ui": "workspace:*",
-    "@tamagui/config": "^1.121.6",
+    "@tamagui/config": "^2.3.0",
     "@tamagui/next-theme": "^1.121.6",
     "@tanstack/react-query": "^5.101.0",
     "maplibre-gl": "^5.24.0",
