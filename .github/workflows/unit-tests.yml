@@ -28,7 +28,7 @@ jobs:
       # must be enabled before uploads start landing.
       code-quality: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
 
       - uses: ./.github/actions/setup
 
@@ -58,7 +58,7 @@ jobs:
       # whether the upload steps below succeed.
       - name: Upload coverage artifact
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: coverage
           path: |
@@ -73,7 +73,7 @@ jobs:
       # access that fork token scopes don't grant.
       - name: Upload coverage — packages/cli
         if: ${{ steps.changes.outputs.cli == 'true' && steps.pr.outputs.trusted == 'true' }}
-        uses: actions/upload-code-coverage@v1
+        uses: actions/upload-code-coverage@abb5995db9e0199b0e2bb9dbd136fce4cb1ec4d3 # v1.3.0
         with:
           file: packages/cli/coverage/cobertura-coverage.xml
           language: TypeScript
@@ -81,7 +81,7 @@ jobs:
 
       - name: Upload coverage — packages/db
         if: ${{ steps.changes.outputs.db == 'true' && steps.pr.outputs.trusted == 'true' }}
-        uses: actions/upload-code-coverage@v1
+        uses: actions/upload-code-coverage@abb5995db9e0199b0e2bb9dbd136fce4cb1ec4d3 # v1.3.0
         with:
           file: packages/db/coverage/cobertura-coverage.xml
           language: TypeScript
@@ -89,7 +89,7 @@ jobs:
 
       - name: Upload coverage — packages/maps
         if: ${{ steps.changes.outputs.maps == 'true' && steps.pr.outputs.trusted == 'true' }}
-        uses: actions/upload-code-coverage@v1
+        uses: actions/upload-code-coverage@abb5995db9e0199b0e2bb9dbd136fce4cb1ec4d3 # v1.3.0
         with:
           file: packages/maps/coverage/cobertura-coverage.xml
           language: TypeScript
@@ -97,7 +97,7 @@ jobs:
 
       - name: Upload coverage — packages/config
         if: ${{ steps.changes.outputs.config == 'true' && steps.pr.outputs.trusted == 'true' }}
-        uses: actions/upload-code-coverage@v1
+        uses: actions/upload-code-coverage@abb5995db9e0199b0e2bb9dbd136fce4cb1ec4d3 # v1.3.0
         with:
           file: packages/config/coverage/cobertura-coverage.xml
           language: TypeScript
@@ -105,7 +105,7 @@ jobs:
 
       - name: Upload coverage — packages/auth
         if: ${{ steps.changes.outputs.auth == 'true' && steps.pr.outputs.trusted == 'true' }}
-        uses: actions/upload-code-coverage@v1
+        uses: actions/upload-code-coverage@abb5995db9e0199b0e2bb9dbd136fce4cb1ec4d3 # v1.3.0
         with:
           file: packages/auth/coverage/cobertura-coverage.xml
           language: TypeScript
@@ -113,7 +113,7 @@ jobs:
 
       - name: Upload coverage — packages/api-client
         if: ${{ steps.changes.outputs.apiClient == 'true' && steps.pr.outputs.trusted == 'true' }}
-        uses: actions/upload-code-coverage@v1
+        uses: actions/upload-code-coverage@abb5995db9e0199b0e2bb9dbd136fce4cb1ec4d3 # v1.3.0
         with:
           file: packages/api-client/coverage/cobertura-coverage.xml
           language: TypeScript
@@ -121,7 +121,7 @@ jobs:
 
       - name: Upload coverage — apps/api
         if: ${{ steps.changes.outputs.api == 'true' && steps.pr.outputs.trusted == 'true' }}
-        uses: actions/upload-code-coverage@v1
+        uses: actions/upload-code-coverage@abb5995db9e0199b0e2bb9dbd136fce4cb1ec4d3 # v1.3.0
         with:
           file: apps/api/coverage/cobertura-coverage.xml
           language: TypeScript
@@ -129,7 +129,7 @@ jobs:
 
       - name: Upload coverage — apps/web
         if: ${{ steps.changes.outputs.web == 'true' && steps.pr.outputs.trusted == 'true' }}
-        uses: actions/upload-code-coverage@v1
+        uses: actions/upload-code-coverage@abb5995db9e0199b0e2bb9dbd136fce4cb1ec4d3 # v1.3.0
         with:
           file: apps/web/coverage/cobertura-coverage.xml
           language: TypeScript

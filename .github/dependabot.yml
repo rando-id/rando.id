@@ -1,0 +1,129 @@
+# Dependabot config. Monitors npm (root + every workspace), GitHub
+# Actions (workflows + composite actions), and Docker. Updates are
+# grouped where it makes sense so a quiet week doesn't generate 30
+# separate PRs.
+#
+# Cadence is weekly because (a) we're solo-dev so PR review is the
+# bottleneck and (b) daily generates more noise than signal at this
+# size. Bump to daily once we have outside contributors merging
+# more often.
+
+version: 2
+
+updates:
+  # ---- npm: root + every workspace ---------------------------------
+  # Dependabot needs an explicit entry per directory; it doesn't
+  # auto-discover pnpm workspaces. Listing them here is the price of
+  # the granularity (the PR body labels which workspace updated).
+  - package-ecosystem: npm
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 10
+    groups:
+      types:
+        # All @types/* in one PR — they almost always need to bump
+        # together with the runtime peer.
+        patterns:
+          - '@types/*'
+      eslint:
+        patterns:
+          - 'eslint'
+          - 'eslint-*'
+          - '@typescript-eslint/*'
+          - '@eslint/*'
+      vitest:
+        patterns:
+          - 'vitest'
+          - '@vitest/*'
+      next:
+        patterns:
+          - 'next'
+          - 'eslint-config-next'
+          - '@next/*'
+      tamagui:
+        patterns:
+          - 'tamagui'
+          - '@tamagui/*'
+      drizzle:
+        patterns:
+          - 'drizzle-*'
+      clerk:
+        patterns:
+          - '@clerk/*'
+      expo:
+        patterns:
+          - 'expo'
+          - 'expo-*'
+          - '@expo/*'
+      react-native:
+        patterns:
+          - 'react-native'
+          - 'react-native-*'
+          - '@react-native/*'
+
+  - package-ecosystem: npm
+    directory: '/apps/api'
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: '/apps/web'
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: '/apps/admin'
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: '/apps/native'
+    schedule: { interval: weekly, day: monday }
+    open-pull-requests-limit: 5
+  - package-ecosystem: npm
+    directory: '/packages/api-client'
+    schedule: { interval: weekly, day: monday }
+  - package-ecosystem: npm
+    directory: '/packages/auth'
+    schedule: { interval: weekly, day: monday }
+  - package-ecosystem: npm
+    directory: '/packages/cli'
+    schedule: { interval: weekly, day: monday }
+  - package-ecosystem: npm
+    directory: '/packages/config'
+    schedule: { interval: weekly, day: monday }
+  - package-ecosystem: npm
+    directory: '/packages/db'
+    schedule: { interval: weekly, day: monday }
+  - package-ecosystem: npm
+    directory: '/packages/maps'
+    schedule: { interval: weekly, day: monday }
+  - package-ecosystem: npm
+    directory: '/packages/observability'
+    schedule: { interval: weekly, day: monday }
+  - package-ecosystem: npm
+    directory: '/packages/sync'
+    schedule: { interval: weekly, day: monday }
+  - package-ecosystem: npm
+    directory: '/packages/ui'
+    schedule: { interval: weekly, day: monday }
+
+  # ---- GitHub Actions (workflows + composite actions) --------------
+  # Picks up every `uses:` across .github/. Since we SHA-pin, dependabot
+  # proposes a new SHA + updated version comment when a release ships.
+  - package-ecosystem: github-actions
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday
+    open-pull-requests-limit: 5
+    groups:
+      actions-org:
+        patterns:
+          - 'actions/*'
+
+  # ---- Docker (docker-compose Postgres image etc) ------------------
+  - package-ecosystem: docker
+    directory: '/'
+    schedule:
+      interval: weekly
+      day: monday

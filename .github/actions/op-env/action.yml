@@ -17,7 +17,7 @@ inputs:
 runs:
   using: composite
   steps:
-    - uses: 1password/install-cli-action@v1
+    - uses: 1password/install-cli-action@143a85f84a90555d121cde2ff5872e393a47ab9f # v1.0.0
       with:
         version: ${{ inputs.version }}
 

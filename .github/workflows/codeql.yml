@@ -1,0 +1,74 @@
+name: CodeQL
+
+# GitHub's native static-analysis scan. Detects TS/JS-class
+# vulnerabilities (injection, XSS, hardcoded secrets, insecure
+# deserialization, etc.). Free for public repos.
+#
+# Schedule: weekly cron + on every push to main + on every PR
+# touching code. PR runs are gated on the `code` aggregate from
+# the changes composite so docs-only PRs don't burn minutes.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    # 09:00 UTC Mondays. Aligns with Dependabot's weekly cadence —
+    # the upgrade PRs that land Monday get scanned the same morning.
+    - cron: '0 9 * * 1'
+
+concurrency:
+  group: codeql-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  analyze:
+    name: Analyze (${{ matrix.language }})
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      actions: read
+      contents: read
+      # Required to upload findings to the Security tab.
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Single language for now — every workspace is TS/JS. If we add
+        # a Go service later, append it here.
+        language: [javascript-typescript]
+
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1
+
+      - id: changes
+        uses: ./.github/actions/changes
+
+      # Skip on PR events when no code changed. Push to main and
+      # scheduled runs always proceed.
+      - name: Skip on docs-only PRs
+        id: gate
+        run: |
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ steps.changes.outputs.code }}" != "true" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "::notice title=CodeQL skipped::No code files changed in this PR."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Initialize CodeQL
+        if: steps.gate.outputs.skip != 'true'
+        uses: github/codeql-action/init@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3.36.2
+        with:
+          languages: ${{ matrix.language }}
+          # Use the `security-and-quality` query suite — covers more
+          # than the default `security-extended`. Adds maintainability
+          # findings too; we want them.
+          queries: security-and-quality
+
+      - name: Perform CodeQL Analysis
+        if: steps.gate.outputs.skip != 'true'
+        uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357 # v3.36.2
+        with:
+          category: '/language:${{ matrix.language }}'
