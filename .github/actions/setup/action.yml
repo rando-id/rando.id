@@ -1,5 +1,5 @@
 name: Setup
-description: pnpm + Node 22 + frozen-lockfile install. Must be preceded by actions/checkout@v4 in the calling workflow — local composite actions can't be resolved before the repo is on disk.
+description: pnpm + Node 22 + frozen-lockfile install. Must be preceded by actions/checkout@v6 in the calling workflow — local composite actions can't be resolved before the repo is on disk.
 
 inputs:
   install-cli:
