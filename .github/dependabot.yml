@@ -7,105 +7,128 @@
 # bottleneck and (b) daily generates more noise than signal at this
 # size. Bump to daily once we have outside contributors merging
 # more often.
+#
+# The same `groups:` block applies to every per-workspace entry so
+# a `vitest` bump in /apps/api and /packages/cli arrive as one PR
+# per group, not one per dep × per workspace. Dependabot parses
+# standard YAML, so the anchor/alias below is fine — keep this
+# block in one place and let every entry merge it in.
 
 version: 2
+
+# YAML anchor: the canonical npm group spec. Aliased into every npm
+# entry below so adding a group means editing this block, not every
+# directory.
+_npm_groups: &npm_groups
+  types:
+    patterns:
+      - '@types/*'
+  eslint:
+    patterns:
+      - 'eslint'
+      - 'eslint-*'
+      - '@typescript-eslint/*'
+      - '@eslint/*'
+  vitest:
+    patterns:
+      - 'vitest'
+      - '@vitest/*'
+  next:
+    patterns:
+      - 'next'
+      - 'eslint-config-next'
+      - '@next/*'
+  tamagui:
+    patterns:
+      - 'tamagui'
+      - '@tamagui/*'
+  drizzle:
+    patterns:
+      - 'drizzle-*'
+  clerk:
+    patterns:
+      - '@clerk/*'
+  expo:
+    patterns:
+      - 'expo'
+      - 'expo-*'
+      - '@expo/*'
+  react-native:
+    patterns:
+      - 'react-native'
+      - 'react-native-*'
+      - '@react-native/*'
 
 updates:
   # ---- npm: root + every workspace ---------------------------------
   # Dependabot needs an explicit entry per directory; it doesn't
-  # auto-discover pnpm workspaces. Listing them here is the price of
-  # the granularity (the PR body labels which workspace updated).
+  # auto-discover pnpm workspaces. Listing them is the price of the
+  # granularity (the PR body labels which workspace updated).
   - package-ecosystem: npm
     directory: '/'
     schedule:
       interval: weekly
       day: monday
     open-pull-requests-limit: 10
-    groups:
-      types:
-        # All @types/* in one PR — they almost always need to bump
-        # together with the runtime peer.
-        patterns:
-          - '@types/*'
-      eslint:
-        patterns:
-          - 'eslint'
-          - 'eslint-*'
-          - '@typescript-eslint/*'
-          - '@eslint/*'
-      vitest:
-        patterns:
-          - 'vitest'
-          - '@vitest/*'
-      next:
-        patterns:
-          - 'next'
-          - 'eslint-config-next'
-          - '@next/*'
-      tamagui:
-        patterns:
-          - 'tamagui'
-          - '@tamagui/*'
-      drizzle:
-        patterns:
-          - 'drizzle-*'
-      clerk:
-        patterns:
-          - '@clerk/*'
-      expo:
-        patterns:
-          - 'expo'
-          - 'expo-*'
-          - '@expo/*'
-      react-native:
-        patterns:
-          - 'react-native'
-          - 'react-native-*'
-          - '@react-native/*'
+    groups: *npm_groups
 
   - package-ecosystem: npm
     directory: '/apps/api'
     schedule: { interval: weekly, day: monday }
     open-pull-requests-limit: 5
+    groups: *npm_groups
   - package-ecosystem: npm
     directory: '/apps/web'
     schedule: { interval: weekly, day: monday }
     open-pull-requests-limit: 5
+    groups: *npm_groups
   - package-ecosystem: npm
     directory: '/apps/admin'
     schedule: { interval: weekly, day: monday }
     open-pull-requests-limit: 5
+    groups: *npm_groups
   - package-ecosystem: npm
     directory: '/apps/native'
     schedule: { interval: weekly, day: monday }
     open-pull-requests-limit: 5
+    groups: *npm_groups
+
   - package-ecosystem: npm
     directory: '/packages/api-client'
     schedule: { interval: weekly, day: monday }
+    groups: *npm_groups
   - package-ecosystem: npm
     directory: '/packages/auth'
     schedule: { interval: weekly, day: monday }
+    groups: *npm_groups
   - package-ecosystem: npm
     directory: '/packages/cli'
     schedule: { interval: weekly, day: monday }
+    groups: *npm_groups
   - package-ecosystem: npm
     directory: '/packages/config'
     schedule: { interval: weekly, day: monday }
+    groups: *npm_groups
   - package-ecosystem: npm
     directory: '/packages/db'
     schedule: { interval: weekly, day: monday }
+    groups: *npm_groups
   - package-ecosystem: npm
     directory: '/packages/maps'
     schedule: { interval: weekly, day: monday }
+    groups: *npm_groups
   - package-ecosystem: npm
     directory: '/packages/observability'
     schedule: { interval: weekly, day: monday }
+    groups: *npm_groups
   - package-ecosystem: npm
     directory: '/packages/sync'
     schedule: { interval: weekly, day: monday }
+    groups: *npm_groups
   - package-ecosystem: npm
     directory: '/packages/ui'
     schedule: { interval: weekly, day: monday }
+    groups: *npm_groups
 
   # ---- GitHub Actions (workflows + composite actions) --------------
   # Picks up every `uses:` across .github/. Since we SHA-pin, dependabot
