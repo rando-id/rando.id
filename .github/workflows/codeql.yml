@@ -35,9 +35,11 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # Single language for now — every workspace is TS/JS. If we add
-        # a Go service later, append it here.
-        language: [javascript-typescript]
+        # `javascript-typescript` covers every workspace's source. `actions`
+        # scans the workflow YAML itself for script-injection, untrusted-
+        # input, and permission issues — worth the extra job given how much
+        # we lean on Actions. Append `go` etc. here if we add other runtimes.
+        language: [javascript-typescript, actions]
 
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4.3.1

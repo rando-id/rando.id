@@ -2,12 +2,13 @@
 # Bootstrap a fresh clone in one command.
 #
 # Order matters:
-#   1. brew bundle install        — system deps (gh, pnpm, node@22, postgres, etc.)
-#   2. pnpm install               — JS deps + husky regenerates the hook shims
-#   3. setup-cli.mjs              — symlinks `rando` into ~/.local/bin
-#   4. docker compose up -d       — Postgres + PostGIS container
-#   5. pnpm @rando/db db:migrate  — apply schema (PostGIS enable + migrations)
-#   6. exec rando init            — interactive env-var sweep + final doctor
+#   1.  brew bundle install        — system deps (gh, pnpm, node@22, direnv, etc.)
+#   2.  pnpm install               — JS deps + husky regenerates the hook shims
+#   3.  setup-cli.mjs              — symlinks `rando` into ~/.local/bin
+#   3a. direnv allow               — authorize .envrc so .env auto-exports on cd
+#   4.  docker compose up -d       — Postgres + PostGIS container
+#   5.  pnpm @rando/db db:migrate  — apply schema (PostGIS enable + migrations)
+#   6.  exec rando init            — interactive env-var sweep + final doctor
 #
 # Idempotent — re-running on an already-bootstrapped machine is safe.
 
@@ -59,6 +60,29 @@ echo ""
 echo "▶ symlinking rando into ~/.local/bin"
 node scripts/setup-cli.mjs
 echo ""
+
+# ── 3a. direnv allow (so `.env` auto-loads into the shell) ───────────
+# The repo ships an `.envrc` that `dotenv_if_exists .env`s into the
+# environment. direnv requires explicit per-machine authorization
+# before sourcing it; running `direnv allow` here saves the dev a
+# step. No-op if direnv isn't installed (Brewfile installs it on
+# macOS; Linux/Windows devs should `apt/brew/scoop install direnv`
+# themselves).
+if command -v direnv >/dev/null 2>&1; then
+  echo "▶ direnv allow (so .env auto-exports when you cd into this repo)"
+  direnv allow .
+  if ! grep -qsE 'direnv hook' "${HOME}/.zshrc" "${HOME}/.bashrc" "${HOME}/.config/fish/config.fish"; then
+    cat <<'EOF'
+
+  Note: direnv's shell hook isn't in your rc files yet. Add one of:
+    zsh:  echo 'eval "$(direnv hook zsh)"'  >> ~/.zshrc
+    bash: echo 'eval "$(direnv hook bash)"' >> ~/.bashrc
+    fish: echo 'direnv hook fish | source'  >> ~/.config/fish/config.fish
+  Restart your shell after, then .env will auto-load on cd.
+EOF
+  fi
+  echo ""
+fi
 
 # ── 4. Postgres + PostGIS via docker-compose ─────────────────────────
 if command -v docker >/dev/null 2>&1; then

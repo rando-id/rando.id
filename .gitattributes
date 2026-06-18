@@ -1,0 +1,7 @@
+# Linguist overrides — keep language stats and code-scanner language
+# detection honest. https://github.com/github-linguist/linguist
+#
+# `Brewfile` is a Ruby DSL, so linguist tags this repo as containing
+# Ruby and CodeQL's default setup then tries (and fails) to enable a
+# Ruby analyzer. We have no Ruby source. Hide it from detection.
+scripts/Brewfile linguist-detectable=false

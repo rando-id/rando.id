@@ -21,11 +21,12 @@ git clone https://github.com/rando-id/rando.id.git && cd rando.id
 ./scripts/bootstrap
 ```
 
-`./scripts/bootstrap` chains six idempotent steps:
+`./scripts/bootstrap` chains seven idempotent steps:
 
-1. `brew bundle install` — system deps
+1. `brew bundle install` — system deps (includes `direnv` for step 3a)
 2. `pnpm install` — JS deps + husky hook regeneration
 3. Symlink `rando` into `~/.local/bin`
+   3a. `direnv allow` — authorize `.envrc` so `.env` auto-exports when you `cd` into the repo
 4. `docker compose up -d` — Postgres + PostGIS
 5. `pnpm --filter @rando/db db:migrate` — schema + PostGIS enable
 6. `rando init` — env var setup, ends with a doctor sweep
@@ -38,11 +39,30 @@ manage packages, then run the inner steps manually:
 ```bash
 pnpm install
 node scripts/setup-cli.mjs
+direnv allow .                       # if you installed direnv — see below
 docker compose up -d
 DATABASE_URL=postgres://rando:rando@localhost:5432/rando \
   pnpm --filter @rando/db db:migrate
 rando init
 ```
+
+### Shell hook for direnv
+
+`direnv allow` only takes effect once your shell has the `direnv hook`
+loaded — that's a one-time edit to your rc file. Pick the matching
+line for your shell and add it:
+
+```bash
+echo 'eval "$(direnv hook zsh)"'  >> ~/.zshrc
+echo 'eval "$(direnv hook bash)"' >> ~/.bashrc
+echo 'direnv hook fish | source'  >> ~/.config/fish/config.fish
+```
+
+Restart your shell after. From then on, `cd rando.id` auto-exports
+every variable in your `.env` — required for the Neon MCP server (and
+any direct `pnpm exec …` calls that need `NEON_API_KEY` /
+`VERCEL_TOKEN` / etc. outside the `rando` bin wrapper). The bootstrap
+script prints the same hint when it detects the hook isn't installed.
 
 ## 1Password integration (required path)
 

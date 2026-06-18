@@ -15,6 +15,7 @@ brew "gh"               # GitHub CLI — used by `rando issues` orchestrators + 
 brew "pnpm"             # workspace tooling
 brew "node@22"          # Node 22+ required by the CLI bin shebang
 brew "1password-cli"    # `op` — secret resolution via `rando secrets` (sync, set, push)
+brew "direnv"           # auto-export `.env` on cd into the repo — required for the Neon MCP server + any `rando` call outside the bin wrapper
 
 # ── Container runtime — pick whichever you prefer ─────────────────────
 # OrbStack is the lighter-weight default. Swap for `cask "docker"` if
