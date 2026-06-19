@@ -14,7 +14,7 @@ export default defineConfig({
         'src/**/*.test.ts',
         'src/**/*.d.ts',
         'src/index.ts',
-        'src/themes.ts',
+        'src/themes/example.theme.ts',
       ],
       thresholds: { lines: 100, functions: 100, branches: 100, statements: 100 },
     },

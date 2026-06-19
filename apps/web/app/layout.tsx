@@ -2,6 +2,7 @@ import type { ReactNode } from 'react'
 import Image from 'next/image'
 import Link from 'next/link'
 import { ClerkProvider, SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/nextjs'
+import { lightColors } from '@rando/brand'
 import logo from '@rando/brand/assets/v0/logo/logo-transparent.png'
 import banner from '@rando/brand/assets/v0/banner/banner-light.png'
 import { TamaguiProviderClient } from '../src/providers/Tamagui'
@@ -24,7 +25,13 @@ export default function RootLayout({ children }: { children: ReactNode }) {
   return (
     <ClerkProvider>
       <html lang="en" suppressHydrationWarning>
-        <body>
+        <body
+          style={{
+            backgroundColor: lightColors.surface.base,
+            color: lightColors.ink.primary,
+            margin: 0,
+          }}
+        >
           <TamaguiProviderClient>
             <QueryProvider>
               <header
@@ -33,7 +40,7 @@ export default function RootLayout({ children }: { children: ReactNode }) {
                   justifyContent: 'space-between',
                   alignItems: 'center',
                   padding: '12px 24px',
-                  borderBottom: '1px solid #eee',
+                  borderBottom: `1px solid ${lightColors.ink.primary}1A`,
                   gap: 12,
                 }}
               >
