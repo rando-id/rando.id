@@ -64,6 +64,12 @@ any direct `pnpm exec …` calls that need `NEON_API_KEY` /
 `VERCEL_TOKEN` / etc. outside the `rando` bin wrapper). The bootstrap
 script prints the same hint when it detects the hook isn't installed.
 
+Once the hook is loaded, you'll see a `direnv: loading …/.envrc` line
+every time you start a shell inside the repo (or `cd` into it). That's
+direnv announcing which variables it exported — normal, not an error.
+To silence those status lines without disabling direnv, add
+`export DIRENV_LOG_FORMAT=""` to your rc file.
+
 ## 1Password integration (required path)
 
 Rando treats **1Password as the source of truth for every secret**;
