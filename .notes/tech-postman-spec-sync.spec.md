@@ -59,8 +59,10 @@ in `packages/api-client/src/contract.ts`.
 5. **CI** — `integration-tests.yml` (or a new `spec-sync.yml`) runs `rando api postman push-spec` on push to `main` when `packages/api-client/**` changes. Gate behind the `code` aggregate from the `changes` composite action.
 6. **Docs** — extend `.github/CONTRIBUTING.md`'s "API testing — Postman CLI" section to mention the spec push alongside the collection sync.
 
-## Open questions
+## Resolved questions
 
-- Does Postman's free-tier `POSTMAN_API_KEY` cover API-Builder writes, or do we need to be on a paid plan? Verify before committing the work.
-- Should the API entity name be `rando-api` (matches the collection) or `rando-api-spec` (so the sidebar disambiguates)? Lean toward `rando-api` with the collection nested under it if linking works.
-- Versioning: ship as `v1` to match the URL prefix in [[tech-api-rest-openapi]], or omit the version dimension entirely until we have a v2? Probably `v1` from day one — cheap, future-proof.
+- **Postman plan blocks API entities entirely on the Free tier.** First live run of `rando api postman push-spec` against the user's workspace returned `400 limitReachedError: "You can create up to 0 APIs on your current plan."` This is a _plan_ limit, not a _scope_ limit on the PAT — no PAT change will unblock it. Two paths forward:
+  1. Upgrade to a Postman plan that includes APIs (Basic ~$15/user/mo as of mid-2026, includes 3 APIs). Not warranted while Rando is solo + pre-launch.
+  2. Stay on Free, lean on the collection-only flow, and let `sync`'s soft-skip absorb the failure with a note. Standalone `rando api postman push-spec` will hard-fail until upgrade — that's correct behavior, no fix needed in code.
+- **API entity name = `Rando API`** — matches the collection name (`DEFAULT_COLLECTION_NAME`), so when the plan limit is lifted the sidebar shows one logical "API" with collection nested under it.
+- **Versioning = `v1` from day one** — cheap, future-proofs for `v2` later.

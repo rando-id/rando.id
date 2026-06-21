@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { PostmanRestProvider } from '../adapters/postman'
-import { ProviderApiError } from '../domain/errors'
+import { PostmanPlanLimitError, ProviderApiError } from '../domain/errors'
 import { stubFetch } from './helpers'
 
 function adapter(stub: ReturnType<typeof stubFetch>) {
@@ -286,6 +286,37 @@ describe('PostmanRestProvider', () => {
       method: 'PUT',
       url: 'https://api.postman.test/apis/api-1/versions/ver-1/schemas/sch-1',
     })
+  })
+
+  it('translates Postman limitReachedError bodies into PostmanPlanLimitError', async () => {
+    // Real-world body from Postman Free tier trying to POST /apis.
+    const body = JSON.stringify({
+      error: {
+        name: 'limitReachedError',
+        message: 'You can create up to 0 APIs on your current plan.',
+      },
+    })
+    const stub = stubFetch([{ status: 400, text: body }])
+    const err = await adapter(stub)
+      .createApi({ workspaceId: 'ws-1', name: 'Rando API' })
+      .catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(PostmanPlanLimitError)
+    if (err instanceof PostmanPlanLimitError) {
+      expect(err.limit).toBe('You can create up to 0 APIs on your current plan.')
+      expect(err.body).toBe(body)
+    }
+  })
+
+  it('non-limit 4xx bodies still surface as plain ProviderApiError', async () => {
+    // Different error shape (e.g. malformed JSON, auth) shouldn't get tagged.
+    const stub = stubFetch([
+      { status: 400, body: { error: { name: 'badRequestError', message: 'bad' } } },
+    ])
+    const err = await adapter(stub)
+      .createApi({ workspaceId: 'ws-1', name: 'Rando API' })
+      .catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ProviderApiError)
+    expect(err).not.toBeInstanceOf(PostmanPlanLimitError)
   })
 
   it('upsertApiSchema accepts a pre-stringified spec without double-encoding', async () => {

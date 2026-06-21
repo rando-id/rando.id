@@ -28,7 +28,7 @@
 // and any future Postman-anchored tooling, so the adapter only creates
 // the entity on first push and upserts the schema on subsequent ones.
 
-import { ProviderApiError } from '../domain/errors'
+import { PostmanPlanLimitError, ProviderApiError } from '../domain/errors'
 import type {
   PostmanApi,
   PostmanCollection,
@@ -259,6 +259,13 @@ export class PostmanRestProvider implements PostmanProvider {
     })
     if (!response.ok) {
       const text = await response.text()
+      // Plan-limit responses come back as 4xx with a specific JSON
+      // shape — tag them so commands can render "upgrade required"
+      // instead of dumping the raw body. Free-tier "0 APIs" is the
+      // first instance; any future paid-feature gate should land here
+      // too as long as Postman keeps the `limitReachedError` name.
+      const limit = detectPlanLimit(text)
+      if (limit) throw new PostmanPlanLimitError(limit, text)
       throw new ProviderApiError('postman', response.status, text)
     }
     if (response.status === 204) return undefined as T
@@ -326,4 +333,23 @@ function mapEnvironment(raw: RawEnvironment): PostmanEnvironment {
 
 function mapApi(raw: RawApi): PostmanApi {
   return { id: raw.id, name: raw.name }
+}
+
+/**
+ * Inspect a Postman error body for the plan-limit shape. Returns the
+ * human-readable limit message (e.g. "You can create up to 0 APIs on
+ * your current plan.") when matched, otherwise null. JSON-parse
+ * failures fall through to null — only well-formed plan-limit bodies
+ * get the special-case treatment.
+ */
+function detectPlanLimit(body: string): string | null {
+  try {
+    const parsed = JSON.parse(body) as { error?: { name?: string; message?: string } }
+    if (parsed.error?.name === 'limitReachedError' && parsed.error.message) {
+      return parsed.error.message
+    }
+  } catch {
+    // not JSON or unexpected shape — fall through
+  }
+  return null
 }

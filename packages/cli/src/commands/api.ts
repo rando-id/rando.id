@@ -11,6 +11,7 @@ import { dirname, join, resolve } from 'node:path'
 import { Command } from 'commander'
 import { convertV2 } from 'openapi-to-postmanv2'
 import type { Adapters } from '../config'
+import { PostmanPlanLimitError } from '../domain/errors'
 import { emit, type Io } from '../output'
 import { loadSetupConfig } from '../setup-config'
 
@@ -126,7 +127,15 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
           api = result.api
           apiCreated = result.apiCreated
         } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e)
+          // Plan-limit failures are expected on Postman Free (0 APIs
+          // allowed) — surface a focused "upgrade required" line
+          // instead of dumping the raw 400 JSON.
+          const msg =
+            e instanceof PostmanPlanLimitError
+              ? `Postman plan blocks API entities (${e.limit}) — upgrade to enable spec push`
+              : e instanceof Error
+                ? e.message
+                : String(e)
           io.stdout(`  ${colors.warn('note:')} spec push to Postman API surface skipped — ${msg}`)
         }
 
@@ -201,12 +210,22 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
           throw e
         }
 
-        const { api, apiCreated } = await pushSpec(provider, io, {
-          workspaceId,
-          name: opts.name,
-          version: opts.version,
-          spec,
-        })
+        let api, apiCreated
+        try {
+          ;({ api, apiCreated } = await pushSpec(provider, io, {
+            workspaceId,
+            name: opts.name,
+            version: opts.version,
+            spec,
+          }))
+        } catch (e) {
+          if (e instanceof PostmanPlanLimitError) {
+            throw new Error(
+              `Postman plan blocks API entities (${e.limit}). Upgrade to a Postman plan that includes APIs, or stay on Free and rely on \`rando api postman sync\` (the spec-push half soft-skips on plan limits).`,
+            )
+          }
+          throw e
+        }
 
         emit(
           io,

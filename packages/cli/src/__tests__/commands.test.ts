@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { run } from '../cli'
 import type { ClerkProvider } from '../domain/clerk'
 import type { Adapters } from '../config'
+import { PostmanPlanLimitError } from '../domain/errors'
 import type { DbProvider } from '../domain/db'
 import type { DeployProvider } from '../domain/deploy'
 import type { DnsProvider } from '../domain/dns'
@@ -552,6 +553,34 @@ describe('api postman sync', () => {
     expect(out).toContain('403 Forbidden')
   })
 
+  it('soft-skips with an upgrade-required note when the plan blocks API entities', async () => {
+    // Real-world failure: Postman Free tier rejects POST /apis with limitReachedError.
+    const postman: Partial<PostmanProvider> = {
+      findApiByName: vi.fn(async () => null),
+      createApi: vi.fn(async () => {
+        throw new PostmanPlanLimitError(
+          'You can create up to 0 APIs on your current plan.',
+          '{"error":{"name":"limitReachedError"}}',
+        )
+      }),
+      upsertApiSchema: vi.fn(),
+      findCollectionByName: vi.fn(async () => null),
+      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
+    }
+    const io = captureIo()
+    await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1'], {
+      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(postman.importOpenApi).toHaveBeenCalled()
+    const out = io.stdout.join('\n')
+    expect(out).toContain('Postman plan blocks API entities')
+    expect(out).toContain('upgrade to enable spec push')
+    // The raw 400 JSON should NOT leak into the note.
+    expect(out).not.toContain('limitReachedError')
+  })
+
   it('fails clearly when no workspace can be resolved', async () => {
     const postman: Partial<PostmanProvider> = {
       findCollectionByName: vi.fn(),
@@ -852,6 +881,34 @@ describe('api postman sync', () => {
       api: { id: 'api-9', name: 'Rando API' },
       version: 'v1',
     })
+  })
+
+  it('push-spec surfaces a plan-upgrade message when API entities are blocked', async () => {
+    const postman: Partial<PostmanProvider> = {
+      findApiByName: vi.fn(async () => null),
+      createApi: vi.fn(async () => {
+        throw new PostmanPlanLimitError(
+          'You can create up to 0 APIs on your current plan.',
+          '{"error":{"name":"limitReachedError"}}',
+        )
+      }),
+      upsertApiSchema: vi.fn(),
+    }
+    const io = captureIo()
+    const exitCalls: number[] = []
+    await run(['api', 'postman', 'push-spec', '--spec', writeSpec(), '--workspace', 'ws-1'], {
+      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      io: io.io,
+      exit: ((c: number) => {
+        exitCalls.push(c)
+      }) as never,
+    })
+    expect(exitCalls[0]).toBe(1)
+    const err = io.stderr.join('\n')
+    expect(err).toContain('Postman plan blocks API entities')
+    expect(err).toContain('Upgrade to a Postman plan')
+    // The raw 400 JSON should NOT leak into the error.
+    expect(err).not.toContain('limitReachedError')
   })
 
   it('push-spec fails clearly when no workspace can be resolved', async () => {
