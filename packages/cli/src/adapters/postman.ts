@@ -5,19 +5,32 @@
 // per-user, generated at https://web.postman.co/settings/me/api-keys.
 //
 // Endpoints we touch:
-//   GET    /me                      → user identity (for doctor)
-//   GET    /workspaces              → list workspaces (for init)
-//   GET    /collections?workspace=… → list a workspace's collections
-//   DELETE /collections/{uid}       → remove an old collection on re-sync
-//   POST   /import/openapi          → create a fresh collection from a spec
+//   GET    /me                                                → user identity (for doctor)
+//   GET    /workspaces                                        → list workspaces (for init)
+//   GET    /collections?workspace=…                           → list a workspace's collections
+//   DELETE /collections/{uid}                                 → remove an old collection on re-sync
+//   POST   /import/openapi                                    → create a fresh collection from a spec
+//   GET    /apis?workspaceId=…                                → list a workspace's APIs (spec entities)
+//   POST   /apis                                              → create a new API entity
+//   GET    /apis/{id}/versions                                → list versions on an API
+//   POST   /apis/{id}/versions                                → create a version (e.g. "v1")
+//   GET    /apis/{id}/versions/{v}/schemas                    → list schemas on a version
+//   POST   /apis/{id}/versions/{v}/schemas                    → create a schema (OpenAPI JSON)
+//   PUT    /apis/{id}/versions/{v}/schemas/{s}                → replace an existing schema
 //
 // We chose delete-and-recreate over hunting for a stable update path
 // because Postman's "API Builder" stable-id workflow is much more
 // complex and changing under our feet. Trade-off is the collection ID
 // changes per sync; documented in the domain interface.
+//
+// For API entities (spec-shaped view, separate from collections) we
+// DO keep the id stable: API ids are referenced from governance rules
+// and any future Postman-anchored tooling, so the adapter only creates
+// the entity on first push and upserts the schema on subsequent ones.
 
 import { ProviderApiError } from '../domain/errors'
 import type {
+  PostmanApi,
   PostmanCollection,
   PostmanEnvironment,
   PostmanProvider,
@@ -135,6 +148,82 @@ export class PostmanRestProvider implements PostmanProvider {
     return mapEnvironment(raw.environment)
   }
 
+  async findApiByName(input: { workspaceId: string; name: string }): Promise<PostmanApi | null> {
+    // Note: this endpoint takes `workspaceId` (camelCase), not `workspace`
+    // like /collections does. Postman's naming is inconsistent across
+    // surfaces — verified against their public docs.
+    const raw = await this.request<{ apis: RawApi[] }>(
+      'GET',
+      `/apis?workspaceId=${encodeURIComponent(input.workspaceId)}`,
+    )
+    const match = raw.apis.find((a) => a.name === input.name)
+    return match ? mapApi(match) : null
+  }
+
+  async createApi(input: {
+    workspaceId: string
+    name: string
+    summary?: string
+  }): Promise<PostmanApi> {
+    const raw = await this.request<{ api: RawApi }>('POST', '/apis', {
+      api: {
+        name: input.name,
+        summary: input.summary,
+        workspaceId: input.workspaceId,
+      },
+    })
+    return mapApi(raw.api)
+  }
+
+  async upsertApiSchema(input: { apiId: string; version: string; spec: unknown }): Promise<void> {
+    // Two lookups + at most two writes:
+    //   1. find-or-create the version (matched by name, e.g. "v1")
+    //   2. find-or-create the schema on that version (one schema per version)
+    // Postman returns the new IDs on creation, so the second call doesn't
+    // need to re-list on the create path.
+    const versionId = await this.findOrCreateVersion(input.apiId, input.version)
+    const schemas = await this.request<{ schemas: RawSchema[] }>(
+      'GET',
+      `/apis/${encodeURIComponent(input.apiId)}/versions/${encodeURIComponent(versionId)}/schemas`,
+    )
+    const body = {
+      schema: {
+        type: 'openapi3',
+        language: 'json',
+        schema: typeof input.spec === 'string' ? input.spec : JSON.stringify(input.spec),
+      },
+    }
+    const existing = schemas.schemas[0]
+    if (existing) {
+      await this.request(
+        'PUT',
+        `/apis/${encodeURIComponent(input.apiId)}/versions/${encodeURIComponent(versionId)}/schemas/${encodeURIComponent(existing.id)}`,
+        body,
+      )
+      return
+    }
+    await this.request(
+      'POST',
+      `/apis/${encodeURIComponent(input.apiId)}/versions/${encodeURIComponent(versionId)}/schemas`,
+      body,
+    )
+  }
+
+  private async findOrCreateVersion(apiId: string, name: string): Promise<string> {
+    const list = await this.request<{ versions: RawVersion[] }>(
+      'GET',
+      `/apis/${encodeURIComponent(apiId)}/versions`,
+    )
+    const match = list.versions.find((v) => v.name === name)
+    if (match) return match.id
+    const created = await this.request<{ version: RawVersion }>(
+      'POST',
+      `/apis/${encodeURIComponent(apiId)}/versions`,
+      { version: { name } },
+    )
+    return created.version.id
+  }
+
   async importOpenApi(input: { workspaceId: string; spec: unknown }): Promise<PostmanCollection> {
     // Postman's import endpoint accepts the spec as a JSON-stringified
     // body under the `input` field. The workspace is selected via the
@@ -205,6 +294,20 @@ interface RawEnvironment {
   name: string
 }
 
+interface RawApi {
+  id: string
+  name: string
+}
+
+interface RawVersion {
+  id: string
+  name: string
+}
+
+interface RawSchema {
+  id: string
+}
+
 function mapUser(raw: RawUser): PostmanUser {
   return { id: raw.id, username: raw.username, fullName: raw.fullName }
 }
@@ -219,4 +322,8 @@ function mapCollection(raw: RawCollection): PostmanCollection {
 
 function mapEnvironment(raw: RawEnvironment): PostmanEnvironment {
   return { id: raw.id, uid: raw.uid, name: raw.name }
+}
+
+function mapApi(raw: RawApi): PostmanApi {
+  return { id: raw.id, name: raw.name }
 }

@@ -16,6 +16,7 @@ import { loadSetupConfig } from '../setup-config'
 
 const DEFAULT_CONFIG_PATH = 'rando.config.json'
 const DEFAULT_COLLECTION_NAME = 'Rando API'
+const DEFAULT_API_VERSION = 'v1'
 const DEFAULT_SPEC_URL = 'http://localhost:4000/v1/openapi.json'
 const DEFAULT_COLLECTION_OUTPUT = 'postman/rando-api.postman_collection.json'
 const DEFAULT_ENV_DIR = 'postman/environments'
@@ -108,15 +109,113 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
           throw e
         }
 
+        // Mirror the spec into Postman's API entity surface alongside
+        // the collection — soft-skip per the orchestrator rule if the
+        // PAT lacks API-Builder permissions or the endpoint is
+        // unavailable, since the collection push (the load-bearing
+        // half) has already succeeded.
+        let api: { id: string; name: string } | null = null
+        let apiCreated = false
+        try {
+          const result = await pushSpec(provider, io, {
+            workspaceId,
+            name: opts.name,
+            version: DEFAULT_API_VERSION,
+            spec,
+          })
+          api = result.api
+          apiCreated = result.apiCreated
+        } catch (e) {
+          const msg = e instanceof Error ? e.message : String(e)
+          io.stdout(`  ${colors.warn('note:')} spec push to Postman API surface skipped — ${msg}`)
+        }
+
         const url = collectionUrl(created.uid, workspaceId)
         emit(
           io,
           opts.json,
-          { ok: true, replaced: existing != null, collection: created, url },
+          { ok: true, replaced: existing != null, collection: created, api, url },
+          () => {
+            const lines = [
+              `${colors.success('✓')} ${existing ? 'replaced' : 'created'} ${colors.resource(created.name)}`,
+              `  ${colors.hint('uid:')}  ${created.uid}`,
+              `  ${colors.hint('open:')} ${url}`,
+            ]
+            if (api) {
+              lines.push(
+                `${colors.success('✓')} ${apiCreated ? 'created' : 'updated'} API entity ${colors.resource(api.name)} (id ${api.id})`,
+              )
+            }
+            return lines.join('\n')
+          },
+        )
+      },
+    )
+
+  postman
+    .command('push-spec')
+    .description(
+      'Push the OpenAPI spec into a Postman workspace as an API entity (separate from the collection). Idempotent: a matching named API is updated in place; otherwise a new one is created. Use this when collection-as-code mode is desired but governance / spec views still need to mirror the contract.',
+    )
+    .option(
+      '--spec <urlOrPath>',
+      `OpenAPI spec source — http(s) URL or filesystem path. Defaults to ${DEFAULT_SPEC_URL}.`,
+      DEFAULT_SPEC_URL,
+    )
+    .option(
+      '--workspace <id>',
+      'Postman workspace id (overrides postman.workspaceId in rando.config.json)',
+    )
+    .option(
+      '--name <name>',
+      `API entity name shown in Postman (defaults to "${DEFAULT_COLLECTION_NAME}")`,
+      DEFAULT_COLLECTION_NAME,
+    )
+    .option(
+      '--version <name>',
+      `API version label (defaults to "${DEFAULT_API_VERSION}")`,
+      DEFAULT_API_VERSION,
+    )
+    .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
+    .option('--json', 'Emit raw JSON', false)
+    .action(
+      async (opts: {
+        spec: string
+        workspace?: string
+        name: string
+        version: string
+        config: string
+        json: boolean
+      }) => {
+        const { colors } = io
+        const provider = adapters.postman()
+        const workspaceId = resolveWorkspaceId(opts.workspace, opts.config)
+
+        const sp = io.spinner(`Fetching OpenAPI spec from ${colors.resource(opts.spec)}…`)
+        let spec: unknown
+        try {
+          spec = await loadSpec(opts.spec)
+          sp.succeed(`Spec loaded from ${colors.resource(opts.spec)}`)
+        } catch (e) {
+          sp.fail(`Couldn't load spec from ${opts.spec}`)
+          throw e
+        }
+
+        const { api, apiCreated } = await pushSpec(provider, io, {
+          workspaceId,
+          name: opts.name,
+          version: opts.version,
+          spec,
+        })
+
+        emit(
+          io,
+          opts.json,
+          { ok: true, created: apiCreated, api, version: opts.version },
           () =>
-            `${colors.success('✓')} ${existing ? 'replaced' : 'created'} ${colors.resource(created.name)}\n` +
-            `  ${colors.hint('uid:')}  ${created.uid}\n` +
-            `  ${colors.hint('open:')} ${url}`,
+            `${colors.success('✓')} ${apiCreated ? 'created' : 'updated'} API entity ${colors.resource(api.name)}\n` +
+            `  ${colors.hint('id:')}      ${api.id}\n` +
+            `  ${colors.hint('version:')} ${opts.version}`,
         )
       },
     )
@@ -296,6 +395,43 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
 
   api.addCommand(postman)
   return api
+}
+
+/**
+ * Push an OpenAPI spec into a Postman workspace as an API entity. Find
+ * the API by name (idempotent across re-runs) → create it if missing →
+ * upsert the schema on the named version. Used by both `sync` (as the
+ * second half after collection import) and the standalone `push-spec`
+ * command.
+ */
+async function pushSpec(
+  provider: ReturnType<Adapters['postman']>,
+  io: Io,
+  input: { workspaceId: string; name: string; version: string; spec: unknown },
+): Promise<{ api: { id: string; name: string }; apiCreated: boolean }> {
+  const { colors } = io
+  const apiSp = io.spinner(`Pushing spec ${colors.resource(input.name)} → API entity…`)
+  try {
+    const existing = await provider.findApiByName({
+      workspaceId: input.workspaceId,
+      name: input.name,
+    })
+    const api = existing
+      ? existing
+      : await provider.createApi({ workspaceId: input.workspaceId, name: input.name })
+    await provider.upsertApiSchema({
+      apiId: api.id,
+      version: input.version,
+      spec: input.spec,
+    })
+    apiSp.succeed(
+      `${existing ? 'Updated' : 'Created'} API entity ${colors.resource(api.name)} (${input.version})`,
+    )
+    return { api: { id: api.id, name: api.name }, apiCreated: !existing }
+  } catch (e) {
+    apiSp.fail('Spec push failed')
+    throw e
+  }
 }
 
 /**

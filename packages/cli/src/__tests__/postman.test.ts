@@ -189,4 +189,115 @@ describe('PostmanRestProvider', () => {
     expect(stub.calls[0]?.method).toBe('PUT')
     expect(stub.calls[0]?.url).toBe('https://api.postman.test/environments/u-9')
   })
+
+  // ─── API entity (spec-shaped sidebar) ───────────────────────────────
+
+  it('findApiByName uses `workspaceId=` query (Postman naming inconsistency)', async () => {
+    const stub = stubFetch([
+      {
+        body: {
+          apis: [
+            { id: 'api-1', name: 'Other' },
+            { id: 'api-2', name: 'Rando API' },
+          ],
+        },
+      },
+    ])
+    const hit = await adapter(stub).findApiByName({ workspaceId: 'ws-1', name: 'Rando API' })
+    expect(hit).toEqual({ id: 'api-2', name: 'Rando API' })
+    // Regression guard: this endpoint differs from /collections (which uses `workspace=`).
+    expect(stub.calls[0]?.url).toBe('https://api.postman.test/apis?workspaceId=ws-1')
+  })
+
+  it('findApiByName returns null when no name matches', async () => {
+    const stub = stubFetch([{ body: { apis: [{ id: 'api-1', name: 'Other' }] } }])
+    const miss = await adapter(stub).findApiByName({ workspaceId: 'ws-1', name: 'Missing' })
+    expect(miss).toBeNull()
+  })
+
+  it('createApi POSTs the api wrapped under `api` with workspaceId', async () => {
+    const stub = stubFetch([{ body: { api: { id: 'api-9', name: 'Rando API' } } }])
+    const result = await adapter(stub).createApi({
+      workspaceId: 'ws-1',
+      name: 'Rando API',
+      summary: 'Generated from /v1/openapi.json',
+    })
+    expect(result).toEqual({ id: 'api-9', name: 'Rando API' })
+    expect(stub.calls[0]?.method).toBe('POST')
+    expect(stub.calls[0]?.url).toBe('https://api.postman.test/apis')
+    expect(stub.calls[0]?.body).toEqual({
+      api: {
+        name: 'Rando API',
+        summary: 'Generated from /v1/openapi.json',
+        workspaceId: 'ws-1',
+      },
+    })
+  })
+
+  it('upsertApiSchema creates version + schema on a fresh API', async () => {
+    const spec = { openapi: '3.0.0', info: { title: 'Rando', version: '1.0' }, paths: {} }
+    const stub = stubFetch([
+      { body: { versions: [] } }, // GET versions → empty
+      { body: { version: { id: 'ver-1', name: 'v1' } } }, // POST versions → created
+      { body: { schemas: [] } }, // GET schemas → empty
+      { body: { schema: { id: 'sch-1' } } }, // POST schemas → created
+    ])
+    await adapter(stub).upsertApiSchema({ apiId: 'api-1', version: 'v1', spec })
+    expect(stub.calls[0]).toMatchObject({
+      method: 'GET',
+      url: 'https://api.postman.test/apis/api-1/versions',
+    })
+    expect(stub.calls[1]).toMatchObject({
+      method: 'POST',
+      url: 'https://api.postman.test/apis/api-1/versions',
+      body: { version: { name: 'v1' } },
+    })
+    expect(stub.calls[2]).toMatchObject({
+      method: 'GET',
+      url: 'https://api.postman.test/apis/api-1/versions/ver-1/schemas',
+    })
+    expect(stub.calls[3]).toMatchObject({
+      method: 'POST',
+      url: 'https://api.postman.test/apis/api-1/versions/ver-1/schemas',
+    })
+    expect(stub.calls[3]?.body).toEqual({
+      schema: {
+        type: 'openapi3',
+        language: 'json',
+        schema: JSON.stringify(spec),
+      },
+    })
+  })
+
+  it('upsertApiSchema reuses existing version + PUTs to existing schema', async () => {
+    const spec = { openapi: '3.0.0', paths: {} }
+    const stub = stubFetch([
+      { body: { versions: [{ id: 'ver-1', name: 'v1' }] } }, // GET versions → match
+      { body: { schemas: [{ id: 'sch-1' }] } }, // GET schemas → match
+      { body: { schema: { id: 'sch-1' } } }, // PUT schemas/sch-1 → updated
+    ])
+    await adapter(stub).upsertApiSchema({ apiId: 'api-1', version: 'v1', spec })
+    expect(stub.calls).toHaveLength(3)
+    expect(stub.calls[1]).toMatchObject({
+      method: 'GET',
+      url: 'https://api.postman.test/apis/api-1/versions/ver-1/schemas',
+    })
+    expect(stub.calls[2]).toMatchObject({
+      method: 'PUT',
+      url: 'https://api.postman.test/apis/api-1/versions/ver-1/schemas/sch-1',
+    })
+  })
+
+  it('upsertApiSchema accepts a pre-stringified spec without double-encoding', async () => {
+    const specString = '{"openapi":"3.0.0"}'
+    const stub = stubFetch([
+      { body: { versions: [{ id: 'ver-1', name: 'v1' }] } },
+      { body: { schemas: [] } },
+      { body: { schema: { id: 'sch-1' } } },
+    ])
+    await adapter(stub).upsertApiSchema({ apiId: 'api-1', version: 'v1', spec: specString })
+    expect(stub.calls[2]?.body).toMatchObject({
+      schema: { type: 'openapi3', language: 'json', schema: specString },
+    })
+  })
 })

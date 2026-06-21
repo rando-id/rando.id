@@ -34,6 +34,19 @@ export interface PostmanEnvironment {
   name: string
 }
 
+/**
+ * Postman "API" entity — the spec-shaped view in the Postman sidebar.
+ * Separate from PostmanCollection: a collection is a list of requests
+ * (what the Postman runner executes); an API is the OpenAPI spec the
+ * collection was derived from (what governance / docs / mocks anchor
+ * to). Both can co-exist in the same workspace pointing at the same
+ * source.
+ */
+export interface PostmanApi {
+  id: string
+  name: string
+}
+
 export interface SyncResult {
   collection: PostmanCollection
   /** True when a previous collection was deleted before this import. */
@@ -107,4 +120,24 @@ export interface PostmanProvider {
 
   /** Replace an existing environment, keeping uid stable. */
   updateEnvironment(input: { uid: string; environment: unknown }): Promise<PostmanEnvironment>
+
+  /**
+   * Find an API entity by name within a workspace. Returns null when
+   * no match exists — used to decide create-vs-update on spec push.
+   */
+  findApiByName(input: { workspaceId: string; name: string }): Promise<PostmanApi | null>
+
+  /**
+   * Create a new API entity in the workspace. The schema is uploaded
+   * separately via upsertApiSchema once the entity exists.
+   */
+  createApi(input: { workspaceId: string; name: string; summary?: string }): Promise<PostmanApi>
+
+  /**
+   * Add or replace the OpenAPI schema for a given API + version. Idempotent
+   * on re-run: the adapter creates the version on first call and overwrites
+   * the schema file on subsequent calls. Spec is JSON-stringified by the
+   * adapter — pass the parsed object.
+   */
+  upsertApiSchema(input: { apiId: string; version: string; spec: unknown }): Promise<void>
 }
