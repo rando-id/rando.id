@@ -139,15 +139,23 @@ export const SetupConfigSchema = z.object({
     .optional(),
 
   /**
-   * Postman workspace integration. Optional — `rando api postman sync`
-   * + `rando init`'s Postman step both read this. workspaceId can also
-   * be passed via --workspace on the CLI.
+   * Test-tooling integrations. `testing.api` configures the tool that
+   * mirrors / exercises the API surface — currently only Postman is
+   * wired up, but the `kind` discriminator leaves room for swaps
+   * (Insomnia, Bruno, Newman-only CI) without a schema break. Optional;
+   * `rando api postman sync` + `rando init`'s Postman step both read
+   * this. `workspaceId` can also be passed via `--workspace` on the CLI.
    */
-  postman: z
+  testing: z
     .object({
-      workspaceId: z.string().min(1).optional(),
-      /** Collection name shown in Postman. Defaults to "Rando API". */
-      collectionName: z.string().min(1).optional(),
+      api: z
+        .object({
+          kind: z.enum(['postman']).default('postman'),
+          workspaceId: z.string().min(1).optional(),
+          /** Collection name shown in Postman. Defaults to "Rando API". */
+          collectionName: z.string().min(1).optional(),
+        })
+        .optional(),
     })
     .optional(),
 

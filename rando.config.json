@@ -24,8 +24,11 @@
       "port": 3100
     }
   ],
-  "postman": {
-    "workspaceId": "92182519-b2a9-4ca4-8997-2b250fd1cd47"
+  "testing": {
+    "api": {
+      "kind": "postman",
+      "workspaceId": "92182519-b2a9-4ca4-8997-2b250fd1cd47"
+    }
   },
   "db": {
     "kind": "neon",

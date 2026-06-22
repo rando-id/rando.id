@@ -810,7 +810,7 @@ describe('api postman sync', () => {
         repo: 'rando-id/rando',
         domains: { nonProd: 'rando-id.dev', production: 'rando.id' },
         apps: [{ name: 'api', rootDirectory: 'apps/api', port: 4000 }],
-        postman: { workspaceId: 'ws-from-config' },
+        testing: { api: { kind: 'postman', workspaceId: 'ws-from-config' } },
       }),
     )
     const postman: Partial<PostmanProvider> = {

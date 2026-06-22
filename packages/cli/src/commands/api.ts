@@ -43,7 +43,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
     )
     .option(
       '--workspace <id>',
-      'Postman workspace id (overrides postman.workspaceId in rando.config.json)',
+      'Postman workspace id (overrides testing.api.workspaceId in rando.config.json)',
     )
     .option(
       '--name <name>',
@@ -63,19 +63,19 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
         const { colors } = io
         const provider = adapters.postman()
 
-        // Resolve workspace id: --workspace > config postman.workspaceId.
+        // Resolve workspace id: --workspace > config testing.api.workspaceId.
         let workspaceId = opts.workspace
         if (!workspaceId) {
           try {
             const cfg = loadSetupConfig(resolve(process.cwd(), opts.config))
-            workspaceId = cfg.postman?.workspaceId
+            workspaceId = cfg.testing?.api?.workspaceId
           } catch {
             // Config load is best-effort; the explicit-flag path still works.
           }
         }
         if (!workspaceId) {
           throw new Error(
-            'No Postman workspace — pass --workspace, or set postman.workspaceId in rando.config.json (run `rando init` to set up).',
+            'No Postman workspace — pass --workspace, or set testing.api.workspaceId in rando.config.json (run `rando init` to set up).',
           )
         }
 
@@ -187,7 +187,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
     )
     .option(
       '--workspace <id>',
-      'Postman workspace id (overrides postman.workspaceId in rando.config.json)',
+      'Postman workspace id (overrides testing.api.workspaceId in rando.config.json)',
     )
     .option(
       '--name <name>',
@@ -359,7 +359,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
     .option('--no-envs', 'Skip pushing environments')
     .option(
       '--workspace <id>',
-      'Postman workspace id (overrides postman.workspaceId in rando.config.json)',
+      'Postman workspace id (overrides testing.api.workspaceId in rando.config.json)',
     )
     .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
     .option('--json', 'Emit raw JSON', false)
@@ -547,20 +547,20 @@ async function pushApiEntity(
 
 /**
  * Resolve a Postman workspace id from a CLI flag, falling back to
- * rando.config.json's `postman.workspaceId`. Throws when neither is set
- * — every command in this group needs a workspace.
+ * rando.config.json's `testing.api.workspaceId`. Throws when neither
+ * is set — every command in this group needs a workspace.
  */
 function resolveWorkspaceId(flag: string | undefined, configPath: string): string {
   if (flag) return flag
   try {
     const cfg = loadSetupConfig(resolve(process.cwd(), configPath))
-    const id = cfg.postman?.workspaceId
+    const id = cfg.testing?.api?.workspaceId
     if (id) return id
   } catch {
     // Config load is best-effort; the explicit-flag path still works.
   }
   throw new Error(
-    'No Postman workspace — pass --workspace, or set postman.workspaceId in rando.config.json (run `rando init` to set up).',
+    'No Postman workspace — pass --workspace, or set testing.api.workspaceId in rando.config.json (run `rando init` to set up).',
   )
 }
 
