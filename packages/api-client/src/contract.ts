@@ -219,6 +219,8 @@ export const contract = c.router({
     method: 'POST',
     path: '/v1/lists',
     summary: 'Create a new custom list',
+    description:
+      'Owner-scoped. Returns the created ListItem with memberCount: 0. No nested members in the response — call GET /v1/lists/:id to fetch members after creation.',
     body: CreateListBody,
     responses: {
       201: ListItem,
@@ -244,6 +246,8 @@ export const contract = c.router({
     method: 'PATCH',
     path: '/v1/lists/:id',
     summary: 'Rename a list',
+    description:
+      'Owner-scoped. Only the `name` field is mutable — list kind, cover image, and timestamps are managed by the system.',
     pathParams: z.object({ id: z.string() }),
     body: PatchListBody,
     responses: {
@@ -257,6 +261,8 @@ export const contract = c.router({
     method: 'DELETE',
     path: '/v1/lists/:id',
     summary: 'Delete a list (cascades to list_members)',
+    description:
+      'Owner-scoped. The list row + every list_members join row are deleted in one transaction; contacts themselves are unaffected. Returns 404 (not 200) when the list is missing or owned by a different user.',
     pathParams: z.object({ id: z.string() }),
     body: z.unknown().optional(),
     responses: {
@@ -283,6 +289,8 @@ export const contract = c.router({
     method: 'DELETE',
     path: '/v1/lists/:id/members/:contactId',
     summary: 'Remove a contact from a list',
+    description:
+      'Owner-scoped on both the list and the contact. Idempotent — returns 200 even if the contact was never in the list, as long as both ids belong to the user. 404 only if the list itself is missing or cross-tenant.',
     pathParams: z.object({ id: z.string(), contactId: z.string() }),
     body: z.unknown().optional(),
     responses: {

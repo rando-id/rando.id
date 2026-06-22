@@ -53,6 +53,20 @@ jobs:
         env:
           FORCE_COLOR: '1'
 
+      # Static OpenAPI spec lint via Spectral — runs offline against a
+      # freshly-rendered spec dump (no preview deploy needed). This
+      # catches contract/spec drift on every PR that touches the
+      # contract or spec-builder; the deeper `pnpm spec:lint` in
+      # integration-tests.yml runs Postman Cloud's ruleset against the
+      # live preview URL once that's up. Gated on `api` aggregate
+      # because the contract (api-client), the spec route (apps/api),
+      # and the ruleset file are all in that bucket.
+      - name: Lint OpenAPI spec (static)
+        if: ${{ steps.changes.outputs.api == 'true' }}
+        run: pnpm spec:lint:static
+        env:
+          FORCE_COLOR: '1'
+
       # Stash every coverage dir as a single artifact so the LCOV +
       # HTML reports are reachable from the run page regardless of
       # whether the upload steps below succeed.

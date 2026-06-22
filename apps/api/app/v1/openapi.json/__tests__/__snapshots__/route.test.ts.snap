@@ -698,6 +698,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
         ],
       },
       "post": {
+        "description": "Owner-scoped. Returns the created ListItem with memberCount: 0. No nested members in the response — call GET /v1/lists/:id to fetch members after creation.",
         "operationId": "createList",
         "parameters": [],
         "requestBody": {
@@ -733,6 +734,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
     },
     "/v1/lists/{id}": {
       "delete": {
+        "description": "Owner-scoped. The list row + every list_members join row are deleted in one transaction; contacts themselves are unaffected. Returns 404 (not 200) when the list is missing or owned by a different user.",
         "operationId": "deleteList",
         "parameters": [
           {
@@ -826,6 +828,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
         ],
       },
       "patch": {
+        "description": "Owner-scoped. Only the \`name\` field is mutable — list kind, cover image, and timestamps are managed by the system.",
         "operationId": "updateList",
         "parameters": [
           {
@@ -933,6 +936,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
     },
     "/v1/lists/{id}/members/{contactId}": {
       "delete": {
+        "description": "Owner-scoped on both the list and the contact. Idempotent — returns 200 even if the contact was never in the list, as long as both ids belong to the user. 404 only if the list itself is missing or cross-tenant.",
         "operationId": "removeListMember",
         "parameters": [
           {

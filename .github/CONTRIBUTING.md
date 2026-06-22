@@ -321,6 +321,30 @@ rando api postman generate --out /tmp/new-collection.json
 diff postman/rando-api.postman_collection.json /tmp/new-collection.json
 ```
 
+### Spec linting
+
+Two lints, by design:
+
+```bash
+# Static (offline) — renders the spec from the contract, runs Spectral
+# with the rules in `.spectral.yaml`. No dev server, no network.
+# Enforces Rando-specific rules: every operation tagged + has a
+# summary, every 4xx/5xx response uses $ref to components.responses,
+# bearerAuth declared. Gated on the `api` aggregate in unit-tests.yml.
+pnpm spec:lint:static
+
+# Live (against a running API) — runs `postman api lint` against the
+# served /v1/openapi.json. Uses Postman Cloud's OWASP / OAS ruleset.
+# Catches things Spectral's defaults don't (security best-practices,
+# governance rules from Postman). Gated on preview-deploy readiness in
+# integration-tests.yml; locally requires the dev server.
+pnpm spec:lint
+```
+
+The static lint is the fast gate (~5s, runs on every PR with an API
+change). The live lint is the depth gate (runs once the preview URL
+comes up). Both must pass before merge.
+
 ## End-to-end demo flow
 
 Once Docker is up, DB seeded, and Clerk keys in place:

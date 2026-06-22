@@ -16,12 +16,14 @@
     "test:coverage": "turbo run test:coverage",
     "test:api": "postman collection run postman/rando-api.postman_collection.json --env-var \"baseUrl=${BASE_URL:-http://localhost:4000}\" --env-var \"authToken=${AUTH_TOKEN:-}\" --reporters cli,junit --reporter-junit-export test-results/postman.xml",
     "spec:lint": "node scripts/spec-lint.mjs",
+    "spec:lint:static": "tsx scripts/render-spec.ts && spectral lint --ruleset .spectral.yaml --fail-severity error apps/api/.openapi-rendered.json",
     "clean": "turbo run clean && rm -rf node_modules",
     "rando": "packages/cli/bin/rando.mjs",
     "setup:cli": "node scripts/setup-cli.mjs",
     "prepare": "husky"
   },
   "devDependencies": {
+    "@stoplight/spectral-cli": "^6.16.0",
     "@types/node": "^22.10.2",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.7",
