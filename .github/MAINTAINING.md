@@ -176,6 +176,56 @@ Switching later is mostly an env-var move (from Vercel Project Settings
 into GitHub Environments) plus adding workflow YAML — the app code
 itself doesn't change.
 
+### Skipping deploys when no code changed
+
+Two seams filter out PRs / pushes that don't change deployable code:
+
+- **PR preview deploys** — `.github/workflows/deploy.yml`'s
+  `branch-deploy` job runs `.github/actions/changes` first and gates
+  the substantive deploy steps on
+  `outputs.code == 'true' || outputs.shared == 'true'`. `code` covers
+  TS/JS source + tsconfig + lockfile; `shared` covers
+  `turbo.json` + root `package.json`. Together they catch every
+  deploy-worthy change pattern this repo has today. A PR with
+  **only** docs / `.notes/**` / `LICENSE` skips with a notice.
+  **The teardown job stays unconditional** so closing a PR always
+  tears down its Vercel custom domains + Cloudflare CNAMEs — even if
+  the final diff ended up docs-only.
+- **Prod / staging push deploys** — each app's `vercel.json` sets
+  `ignoreCommand: "npx -y turbo-ignore@<version> @rando/<app>"`. Turbo
+  walks the workspace dep graph and exits **0** when nothing the app
+  transitively depends on changed; Vercel's `ignoreCommand` contract
+  is **exit 0 = skip**, exit 1 = proceed. A change inside
+  `packages/ui` still triggers `web` + `admin` (both depend on it);
+  a change inside `.notes/**` triggers none of them.
+
+  The `turbo-ignore` version is **pinned to match the installed
+  `turbo` version** in `pnpm-lock.yaml` so the dep-graph schema
+  stays in sync. When you bump `turbo`, bump all three
+  `apps/*/vercel.json` files in the same PR. Pinning also limits
+  the supply-chain surface — `npx` runs before Vercel installs
+  `node_modules` (that's the whole point), so we can't use
+  `pnpm exec`. See `.notes/ci-deploy-skip.spec.md` → "Bump policy
+  for `turbo-ignore`".
+
+**Don't gate on `outputs.docs`.** `dorny/paths-filter` outputs that
+true when **any** changed file matches the docs pattern, not when
+**every** file is docs. A PR with a `.ts` change AND a `README.md`
+update has both `docs=true` and `code=true` — a `docs != 'true'` gate
+would incorrectly skip it. Always use the positive `code || shared`
+signal.
+
+**Don't use `paths-ignore` at the workflow `on:` level for deploy.yml.**
+It applies to every `pull_request` event type, so a PR amended to
+remove all deploy-worthy changes before close would skip the workflow
+entirely and orphan infra. The job-level gate above keeps teardown
+safe.
+
+To widen the deploy-worthy signal, edit the `code:` or `shared:`
+patterns in `.github/actions/changes/action.yml` (shared with
+`lint.yml`, `typecheck.yml`, `codeql.yml`). Adjust `turbo.json`'s
+`inputs` if you need to exclude per-workspace docs from the cache key.
+
 ## Cloudflare
 
 ### DNS zones
