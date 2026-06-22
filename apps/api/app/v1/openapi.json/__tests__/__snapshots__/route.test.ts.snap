@@ -46,6 +46,230 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
       },
     },
     "schemas": {
+      "AddMemberBody": {
+        "additionalProperties": false,
+        "properties": {
+          "contactId": {
+            "format": "uuid",
+            "type": "string",
+          },
+        },
+        "required": [
+          "contactId",
+        ],
+        "type": "object",
+      },
+      "AvatarKind": {
+        "enum": [
+          "photo",
+          "gravatar",
+          "monogram",
+          "emoji",
+          "random",
+        ],
+        "type": "string",
+      },
+      "ContactListItem": {
+        "properties": {
+          "avatarKind": {
+            "enum": [
+              "photo",
+              "gravatar",
+              "monogram",
+              "emoji",
+              "random",
+            ],
+            "type": "string",
+          },
+          "avatarValue": {
+            "nullable": true,
+            "type": "string",
+          },
+          "favorite": {
+            "type": "boolean",
+          },
+          "firstName": {
+            "nullable": true,
+            "type": "string",
+          },
+          "id": {
+            "type": "string",
+          },
+          "lastName": {
+            "nullable": true,
+            "type": "string",
+          },
+          "location": {
+            "nullable": true,
+            "properties": {
+              "id": {
+                "type": "string",
+              },
+              "lat": {
+                "type": "number",
+              },
+              "lng": {
+                "type": "number",
+              },
+              "meters": {
+                "type": "number",
+              },
+              "name": {
+                "type": "string",
+              },
+            },
+            "required": [
+              "id",
+              "name",
+              "lat",
+              "lng",
+              "meters",
+            ],
+            "type": "object",
+          },
+          "promoted": {
+            "type": "boolean",
+          },
+        },
+        "required": [
+          "id",
+          "firstName",
+          "lastName",
+          "avatarKind",
+          "avatarValue",
+          "favorite",
+          "promoted",
+          "location",
+        ],
+        "type": "object",
+      },
+      "ContactLocation": {
+        "properties": {
+          "id": {
+            "type": "string",
+          },
+          "lat": {
+            "type": "number",
+          },
+          "lng": {
+            "type": "number",
+          },
+          "meters": {
+            "type": "number",
+          },
+          "name": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+          "name",
+          "lat",
+          "lng",
+          "meters",
+        ],
+        "type": "object",
+      },
+      "ContactSort": {
+        "enum": [
+          "distance",
+          "last_name",
+          "date_added",
+          "date_updated",
+        ],
+        "type": "string",
+      },
+      "CreateContactBody": {
+        "properties": {
+          "company": {
+            "maxLength": 160,
+            "nullable": true,
+            "type": "string",
+          },
+          "favorite": {
+            "type": "boolean",
+          },
+          "firstName": {
+            "maxLength": 120,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string",
+          },
+          "interaction": {
+            "properties": {
+              "metAt": {
+                "format": "date-time",
+                "type": "string",
+              },
+              "notes": {
+                "maxLength": 2000,
+                "nullable": true,
+                "type": "string",
+              },
+            },
+            "type": "object",
+          },
+          "lastName": {
+            "maxLength": 120,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string",
+          },
+          "location": {
+            "properties": {
+              "address": {
+                "maxLength": 400,
+                "nullable": true,
+                "type": "string",
+              },
+              "lat": {
+                "maximum": 90,
+                "minimum": -90,
+                "type": "number",
+              },
+              "lng": {
+                "maximum": 180,
+                "minimum": -180,
+                "type": "number",
+              },
+              "name": {
+                "maxLength": 160,
+                "minLength": 1,
+                "type": "string",
+              },
+            },
+            "required": [
+              "lat",
+              "lng",
+              "name",
+            ],
+            "type": "object",
+          },
+          "notes": {
+            "maxLength": 2000,
+            "nullable": true,
+            "type": "string",
+          },
+        },
+        "required": [
+          "location",
+        ],
+        "type": "object",
+      },
+      "CreateListBody": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "name",
+        ],
+        "type": "object",
+      },
       "ErrorBody": {
         "properties": {
           "error": {
@@ -60,6 +284,225 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
         },
         "required": [
           "error",
+        ],
+        "type": "object",
+      },
+      "ListItem": {
+        "properties": {
+          "coverImage": {
+            "nullable": true,
+            "type": "string",
+          },
+          "createdAt": {
+            "type": "string",
+          },
+          "id": {
+            "type": "string",
+          },
+          "kind": {
+            "enum": [
+              "custom",
+              "location",
+              "group",
+              "favorites",
+              "promoted",
+            ],
+            "type": "string",
+          },
+          "memberCount": {
+            "type": "number",
+          },
+          "name": {
+            "type": "string",
+          },
+          "updatedAt": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "coverImage",
+          "createdAt",
+          "updatedAt",
+          "memberCount",
+        ],
+        "type": "object",
+      },
+      "ListKind": {
+        "enum": [
+          "custom",
+          "location",
+          "group",
+          "favorites",
+          "promoted",
+        ],
+        "type": "string",
+      },
+      "ListWithMembers": {
+        "properties": {
+          "coverImage": {
+            "nullable": true,
+            "type": "string",
+          },
+          "createdAt": {
+            "type": "string",
+          },
+          "id": {
+            "type": "string",
+          },
+          "kind": {
+            "enum": [
+              "custom",
+              "location",
+              "group",
+              "favorites",
+              "promoted",
+            ],
+            "type": "string",
+          },
+          "memberCount": {
+            "type": "number",
+          },
+          "members": {
+            "items": {
+              "properties": {
+                "avatarKind": {
+                  "enum": [
+                    "photo",
+                    "gravatar",
+                    "monogram",
+                    "emoji",
+                    "random",
+                  ],
+                  "type": "string",
+                },
+                "avatarValue": {
+                  "nullable": true,
+                  "type": "string",
+                },
+                "favorite": {
+                  "type": "boolean",
+                },
+                "firstName": {
+                  "nullable": true,
+                  "type": "string",
+                },
+                "id": {
+                  "type": "string",
+                },
+                "lastName": {
+                  "nullable": true,
+                  "type": "string",
+                },
+                "location": {
+                  "nullable": true,
+                  "properties": {
+                    "id": {
+                      "type": "string",
+                    },
+                    "lat": {
+                      "type": "number",
+                    },
+                    "lng": {
+                      "type": "number",
+                    },
+                    "meters": {
+                      "type": "number",
+                    },
+                    "name": {
+                      "type": "string",
+                    },
+                  },
+                  "required": [
+                    "id",
+                    "name",
+                    "lat",
+                    "lng",
+                    "meters",
+                  ],
+                  "type": "object",
+                },
+                "promoted": {
+                  "type": "boolean",
+                },
+              },
+              "required": [
+                "id",
+                "firstName",
+                "lastName",
+                "avatarKind",
+                "avatarValue",
+                "favorite",
+                "promoted",
+                "location",
+              ],
+              "type": "object",
+            },
+            "type": "array",
+          },
+          "name": {
+            "type": "string",
+          },
+          "updatedAt": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "coverImage",
+          "createdAt",
+          "updatedAt",
+          "memberCount",
+          "members",
+        ],
+        "type": "object",
+      },
+      "PatchContactBody": {
+        "additionalProperties": false,
+        "properties": {
+          "company": {
+            "maxLength": 160,
+            "nullable": true,
+            "type": "string",
+          },
+          "favorite": {
+            "type": "boolean",
+          },
+          "firstName": {
+            "maxLength": 120,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string",
+          },
+          "lastName": {
+            "maxLength": 120,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string",
+          },
+          "notes": {
+            "maxLength": 2000,
+            "nullable": true,
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "PatchListBody": {
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "name",
         ],
         "type": "object",
       },
@@ -117,13 +560,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "in": "query",
             "name": "sort",
             "schema": {
-              "enum": [
-                "distance",
-                "last_name",
-                "date_added",
-                "date_updated",
-              ],
-              "type": "string",
+              "$ref": "#/components/schemas/ContactSort",
             },
           },
         ],
@@ -133,78 +570,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
               "application/json": {
                 "schema": {
                   "items": {
-                    "properties": {
-                      "avatarKind": {
-                        "enum": [
-                          "photo",
-                          "gravatar",
-                          "monogram",
-                          "emoji",
-                          "random",
-                        ],
-                        "type": "string",
-                      },
-                      "avatarValue": {
-                        "nullable": true,
-                        "type": "string",
-                      },
-                      "favorite": {
-                        "type": "boolean",
-                      },
-                      "firstName": {
-                        "nullable": true,
-                        "type": "string",
-                      },
-                      "id": {
-                        "type": "string",
-                      },
-                      "lastName": {
-                        "nullable": true,
-                        "type": "string",
-                      },
-                      "location": {
-                        "nullable": true,
-                        "properties": {
-                          "id": {
-                            "type": "string",
-                          },
-                          "lat": {
-                            "type": "number",
-                          },
-                          "lng": {
-                            "type": "number",
-                          },
-                          "meters": {
-                            "type": "number",
-                          },
-                          "name": {
-                            "type": "string",
-                          },
-                        },
-                        "required": [
-                          "id",
-                          "name",
-                          "lat",
-                          "lng",
-                          "meters",
-                        ],
-                        "type": "object",
-                      },
-                      "promoted": {
-                        "type": "boolean",
-                      },
-                    },
-                    "required": [
-                      "id",
-                      "firstName",
-                      "lastName",
-                      "avatarKind",
-                      "avatarValue",
-                      "favorite",
-                      "promoted",
-                      "location",
-                    ],
-                    "type": "object",
+                    "$ref": "#/components/schemas/ContactListItem",
                   },
                   "type": "array",
                 },
@@ -213,28 +579,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "description": "200",
           },
           "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "401",
+            "$ref": "#/components/responses/Unauthorized",
           },
         },
         "summary": "List contacts for the authenticated user",
@@ -250,81 +595,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           "content": {
             "application/json": {
               "schema": {
-                "properties": {
-                  "company": {
-                    "maxLength": 160,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                  "favorite": {
-                    "type": "boolean",
-                  },
-                  "firstName": {
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                  "interaction": {
-                    "properties": {
-                      "metAt": {
-                        "format": "date-time",
-                        "type": "string",
-                      },
-                      "notes": {
-                        "maxLength": 2000,
-                        "nullable": true,
-                        "type": "string",
-                      },
-                    },
-                    "type": "object",
-                  },
-                  "lastName": {
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                  "location": {
-                    "properties": {
-                      "address": {
-                        "maxLength": 400,
-                        "nullable": true,
-                        "type": "string",
-                      },
-                      "lat": {
-                        "maximum": 90,
-                        "minimum": -90,
-                        "type": "number",
-                      },
-                      "lng": {
-                        "maximum": 180,
-                        "minimum": -180,
-                        "type": "number",
-                      },
-                      "name": {
-                        "maxLength": 160,
-                        "minLength": 1,
-                        "type": "string",
-                      },
-                    },
-                    "required": [
-                      "lat",
-                      "lng",
-                      "name",
-                    ],
-                    "type": "object",
-                  },
-                  "notes": {
-                    "maxLength": 2000,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "location",
-                ],
-                "type": "object",
+                "$ref": "#/components/schemas/CreateContactBody",
               },
             },
           },
@@ -337,78 +608,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
                 "schema": {
                   "properties": {
                     "contact": {
-                      "properties": {
-                        "avatarKind": {
-                          "enum": [
-                            "photo",
-                            "gravatar",
-                            "monogram",
-                            "emoji",
-                            "random",
-                          ],
-                          "type": "string",
-                        },
-                        "avatarValue": {
-                          "nullable": true,
-                          "type": "string",
-                        },
-                        "favorite": {
-                          "type": "boolean",
-                        },
-                        "firstName": {
-                          "nullable": true,
-                          "type": "string",
-                        },
-                        "id": {
-                          "type": "string",
-                        },
-                        "lastName": {
-                          "nullable": true,
-                          "type": "string",
-                        },
-                        "location": {
-                          "nullable": true,
-                          "properties": {
-                            "id": {
-                              "type": "string",
-                            },
-                            "lat": {
-                              "type": "number",
-                            },
-                            "lng": {
-                              "type": "number",
-                            },
-                            "meters": {
-                              "type": "number",
-                            },
-                            "name": {
-                              "type": "string",
-                            },
-                          },
-                          "required": [
-                            "id",
-                            "name",
-                            "lat",
-                            "lng",
-                            "meters",
-                          ],
-                          "type": "object",
-                        },
-                        "promoted": {
-                          "type": "boolean",
-                        },
-                      },
-                      "required": [
-                        "id",
-                        "firstName",
-                        "lastName",
-                        "avatarKind",
-                        "avatarValue",
-                        "favorite",
-                        "promoted",
-                        "location",
-                      ],
-                      "type": "object",
+                      "$ref": "#/components/schemas/ContactListItem",
                     },
                     "locationReused": {
                       "type": "boolean",
@@ -425,76 +625,13 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "description": "201",
           },
           "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "400",
+            "$ref": "#/components/responses/BadRequest",
           },
           "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "401",
+            "$ref": "#/components/responses/Unauthorized",
           },
           "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "500",
+            "$ref": "#/components/responses/ServerError",
           },
         },
         "summary": "Create a contact + location + first interaction in one tx",
@@ -529,106 +666,14 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "avatarKind": {
-                      "enum": [
-                        "photo",
-                        "gravatar",
-                        "monogram",
-                        "emoji",
-                        "random",
-                      ],
-                      "type": "string",
-                    },
-                    "avatarValue": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "favorite": {
-                      "type": "boolean",
-                    },
-                    "firstName": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "id": {
-                      "type": "string",
-                    },
-                    "lastName": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "location": {
-                      "nullable": true,
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                        },
-                        "lat": {
-                          "type": "number",
-                        },
-                        "lng": {
-                          "type": "number",
-                        },
-                        "meters": {
-                          "type": "number",
-                        },
-                        "name": {
-                          "type": "string",
-                        },
-                      },
-                      "required": [
-                        "id",
-                        "name",
-                        "lat",
-                        "lng",
-                        "meters",
-                      ],
-                      "type": "object",
-                    },
-                    "promoted": {
-                      "type": "boolean",
-                    },
-                  },
-                  "required": [
-                    "id",
-                    "firstName",
-                    "lastName",
-                    "avatarKind",
-                    "avatarValue",
-                    "favorite",
-                    "promoted",
-                    "location",
-                  ],
-                  "type": "object",
+                  "$ref": "#/components/schemas/ContactListItem",
                 },
               },
             },
             "description": "200",
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "404",
+            "$ref": "#/components/responses/NotFound",
           },
         },
         "summary": "Fetch one contact by id",
@@ -660,35 +705,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "company": {
-                    "maxLength": 160,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                  "favorite": {
-                    "type": "boolean",
-                  },
-                  "firstName": {
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                  "lastName": {
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                  "notes": {
-                    "maxLength": 2000,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                },
-                "type": "object",
+                "$ref": "#/components/schemas/PatchContactBody",
               },
             },
           },
@@ -699,130 +716,17 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "avatarKind": {
-                      "enum": [
-                        "photo",
-                        "gravatar",
-                        "monogram",
-                        "emoji",
-                        "random",
-                      ],
-                      "type": "string",
-                    },
-                    "avatarValue": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "favorite": {
-                      "type": "boolean",
-                    },
-                    "firstName": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "id": {
-                      "type": "string",
-                    },
-                    "lastName": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "location": {
-                      "nullable": true,
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                        },
-                        "lat": {
-                          "type": "number",
-                        },
-                        "lng": {
-                          "type": "number",
-                        },
-                        "meters": {
-                          "type": "number",
-                        },
-                        "name": {
-                          "type": "string",
-                        },
-                      },
-                      "required": [
-                        "id",
-                        "name",
-                        "lat",
-                        "lng",
-                        "meters",
-                      ],
-                      "type": "object",
-                    },
-                    "promoted": {
-                      "type": "boolean",
-                    },
-                  },
-                  "required": [
-                    "id",
-                    "firstName",
-                    "lastName",
-                    "avatarKind",
-                    "avatarValue",
-                    "favorite",
-                    "promoted",
-                    "location",
-                  ],
-                  "type": "object",
+                  "$ref": "#/components/schemas/ContactListItem",
                 },
               },
             },
             "description": "200",
           },
           "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "400",
+            "$ref": "#/components/responses/BadRequest",
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "404",
+            "$ref": "#/components/responses/NotFound",
           },
         },
         "summary": "Partial update of mutable contact fields",
@@ -889,47 +793,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
               "application/json": {
                 "schema": {
                   "items": {
-                    "properties": {
-                      "coverImage": {
-                        "nullable": true,
-                        "type": "string",
-                      },
-                      "createdAt": {
-                        "type": "string",
-                      },
-                      "id": {
-                        "type": "string",
-                      },
-                      "kind": {
-                        "enum": [
-                          "custom",
-                          "location",
-                          "group",
-                          "favorites",
-                          "promoted",
-                        ],
-                        "type": "string",
-                      },
-                      "memberCount": {
-                        "type": "number",
-                      },
-                      "name": {
-                        "type": "string",
-                      },
-                      "updatedAt": {
-                        "type": "string",
-                      },
-                    },
-                    "required": [
-                      "id",
-                      "name",
-                      "kind",
-                      "coverImage",
-                      "createdAt",
-                      "updatedAt",
-                      "memberCount",
-                    ],
-                    "type": "object",
+                    "$ref": "#/components/schemas/ListItem",
                   },
                   "type": "array",
                 },
@@ -950,18 +814,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "name": {
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "name",
-                ],
-                "type": "object",
+                "$ref": "#/components/schemas/PatchListBody",
               },
             },
           },
@@ -972,75 +825,14 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "coverImage": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "createdAt": {
-                      "type": "string",
-                    },
-                    "id": {
-                      "type": "string",
-                    },
-                    "kind": {
-                      "enum": [
-                        "custom",
-                        "location",
-                        "group",
-                        "favorites",
-                        "promoted",
-                      ],
-                      "type": "string",
-                    },
-                    "memberCount": {
-                      "type": "number",
-                    },
-                    "name": {
-                      "type": "string",
-                    },
-                    "updatedAt": {
-                      "type": "string",
-                    },
-                  },
-                  "required": [
-                    "id",
-                    "name",
-                    "kind",
-                    "coverImage",
-                    "createdAt",
-                    "updatedAt",
-                    "memberCount",
-                  ],
-                  "type": "object",
+                  "$ref": "#/components/schemas/ListItem",
                 },
               },
             },
             "description": "201",
           },
           "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "400",
+            "$ref": "#/components/responses/BadRequest",
           },
         },
         "summary": "Create a new custom list",
@@ -1095,28 +887,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "description": "200",
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "404",
+            "$ref": "#/components/responses/NotFound",
           },
         },
         "summary": "Delete a list (cascades to list_members)",
@@ -1149,153 +920,14 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "coverImage": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "createdAt": {
-                      "type": "string",
-                    },
-                    "id": {
-                      "type": "string",
-                    },
-                    "kind": {
-                      "enum": [
-                        "custom",
-                        "location",
-                        "group",
-                        "favorites",
-                        "promoted",
-                      ],
-                      "type": "string",
-                    },
-                    "memberCount": {
-                      "type": "number",
-                    },
-                    "members": {
-                      "items": {
-                        "properties": {
-                          "avatarKind": {
-                            "enum": [
-                              "photo",
-                              "gravatar",
-                              "monogram",
-                              "emoji",
-                              "random",
-                            ],
-                            "type": "string",
-                          },
-                          "avatarValue": {
-                            "nullable": true,
-                            "type": "string",
-                          },
-                          "favorite": {
-                            "type": "boolean",
-                          },
-                          "firstName": {
-                            "nullable": true,
-                            "type": "string",
-                          },
-                          "id": {
-                            "type": "string",
-                          },
-                          "lastName": {
-                            "nullable": true,
-                            "type": "string",
-                          },
-                          "location": {
-                            "nullable": true,
-                            "properties": {
-                              "id": {
-                                "type": "string",
-                              },
-                              "lat": {
-                                "type": "number",
-                              },
-                              "lng": {
-                                "type": "number",
-                              },
-                              "meters": {
-                                "type": "number",
-                              },
-                              "name": {
-                                "type": "string",
-                              },
-                            },
-                            "required": [
-                              "id",
-                              "name",
-                              "lat",
-                              "lng",
-                              "meters",
-                            ],
-                            "type": "object",
-                          },
-                          "promoted": {
-                            "type": "boolean",
-                          },
-                        },
-                        "required": [
-                          "id",
-                          "firstName",
-                          "lastName",
-                          "avatarKind",
-                          "avatarValue",
-                          "favorite",
-                          "promoted",
-                          "location",
-                        ],
-                        "type": "object",
-                      },
-                      "type": "array",
-                    },
-                    "name": {
-                      "type": "string",
-                    },
-                    "updatedAt": {
-                      "type": "string",
-                    },
-                  },
-                  "required": [
-                    "id",
-                    "name",
-                    "kind",
-                    "coverImage",
-                    "createdAt",
-                    "updatedAt",
-                    "memberCount",
-                    "members",
-                  ],
-                  "type": "object",
+                  "$ref": "#/components/schemas/ListWithMembers",
                 },
               },
             },
             "description": "200",
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "404",
+            "$ref": "#/components/responses/NotFound",
           },
         },
         "summary": "Fetch one list + its members",
@@ -1319,18 +951,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "name": {
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "name",
-                ],
-                "type": "object",
+                "$ref": "#/components/schemas/PatchListBody",
               },
             },
           },
@@ -1341,99 +962,17 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "coverImage": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "createdAt": {
-                      "type": "string",
-                    },
-                    "id": {
-                      "type": "string",
-                    },
-                    "kind": {
-                      "enum": [
-                        "custom",
-                        "location",
-                        "group",
-                        "favorites",
-                        "promoted",
-                      ],
-                      "type": "string",
-                    },
-                    "memberCount": {
-                      "type": "number",
-                    },
-                    "name": {
-                      "type": "string",
-                    },
-                    "updatedAt": {
-                      "type": "string",
-                    },
-                  },
-                  "required": [
-                    "id",
-                    "name",
-                    "kind",
-                    "coverImage",
-                    "createdAt",
-                    "updatedAt",
-                    "memberCount",
-                  ],
-                  "type": "object",
+                  "$ref": "#/components/schemas/ListItem",
                 },
               },
             },
             "description": "200",
           },
           "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "400",
+            "$ref": "#/components/responses/BadRequest",
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "404",
+            "$ref": "#/components/responses/NotFound",
           },
         },
         "summary": "Rename a list",
@@ -1460,17 +999,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "contactId": {
-                    "format": "uuid",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "contactId",
-                ],
-                "type": "object",
+                "$ref": "#/components/schemas/AddMemberBody",
               },
             },
           },
@@ -1503,28 +1032,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "description": "200",
           },
           "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "400",
+            "$ref": "#/components/responses/BadRequest",
           },
         },
         "summary": "Add a contact to a list",
@@ -1587,28 +1095,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "description": "200",
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "404",
+            "$ref": "#/components/responses/NotFound",
           },
         },
         "summary": "Remove a contact from a list",
