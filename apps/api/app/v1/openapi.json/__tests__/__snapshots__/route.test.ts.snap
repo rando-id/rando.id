@@ -167,7 +167,9 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           },
         },
         "summary": "List contacts for the authenticated user",
-        "tags": [],
+        "tags": [
+          "Contacts",
+        ],
       },
       "post": {
         "description": "Compound endpoint: creates the location (with 50m PostGIS dedup), the contact, and the first interaction in a single DB transaction. At least one of firstName/lastName/company is required.",
@@ -425,7 +427,9 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           },
         },
         "summary": "Create a contact + location + first interaction in one tx",
-        "tags": [],
+        "tags": [
+          "Contacts",
+        ],
       },
     },
     "/v1/contacts/{id}": {
@@ -557,7 +561,9 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           },
         },
         "summary": "Fetch one contact by id",
-        "tags": [],
+        "tags": [
+          "Contacts",
+        ],
       },
       "patch": {
         "description": "Strict zod — unknown fields are rejected. Returns the updated contact (with distance from \`near\` if provided).",
@@ -749,7 +755,9 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           },
         },
         "summary": "Partial update of mutable contact fields",
-        "tags": [],
+        "tags": [
+          "Contacts",
+        ],
       },
     },
     "/v1/health": {
@@ -793,7 +801,9 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           },
         },
         "summary": "Liveness check",
-        "tags": [],
+        "tags": [
+          "Health",
+        ],
       },
     },
     "/v1/lists": {
@@ -857,7 +867,9 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           },
         },
         "summary": "List the user's custom lists",
-        "tags": [],
+        "tags": [
+          "Lists",
+        ],
       },
       "post": {
         "operationId": "createList",
@@ -960,7 +972,9 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           },
         },
         "summary": "Create a new custom list",
-        "tags": [],
+        "tags": [
+          "Lists",
+        ],
       },
     },
     "/v1/lists/{id}": {
@@ -1034,7 +1048,9 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           },
         },
         "summary": "Delete a list (cascades to list_members)",
-        "tags": [],
+        "tags": [
+          "Lists",
+        ],
       },
       "get": {
         "description": "Owner-scoped. Members are returned as ContactListItem rows, distance-sorted from \`near\` when provided.",
@@ -1211,7 +1227,9 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           },
         },
         "summary": "Fetch one list + its members",
-        "tags": [],
+        "tags": [
+          "Lists",
+        ],
       },
       "patch": {
         "operationId": "updateList",
@@ -1347,7 +1365,9 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           },
         },
         "summary": "Rename a list",
-        "tags": [],
+        "tags": [
+          "Lists",
+        ],
       },
     },
     "/v1/lists/{id}/members": {
@@ -1436,7 +1456,9 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           },
         },
         "summary": "Add a contact to a list",
-        "tags": [],
+        "tags": [
+          "Lists",
+        ],
       },
     },
     "/v1/lists/{id}/members/{contactId}": {
@@ -1518,7 +1540,9 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           },
         },
         "summary": "Remove a contact from a list",
-        "tags": [],
+        "tags": [
+          "Lists",
+        ],
       },
     },
   },
@@ -1530,6 +1554,20 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
     {
       "description": "Local dev",
       "url": "http://localhost:4000",
+    },
+  ],
+  "tags": [
+    {
+      "description": "Liveness + identity checks (unauthenticated).",
+      "name": "Health",
+    },
+    {
+      "description": "Create, read, and update a user’s contacts.",
+      "name": "Contacts",
+    },
+    {
+      "description": "Custom lists of contacts and their members.",
+      "name": "Lists",
     },
   ],
 }
