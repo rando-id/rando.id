@@ -72,14 +72,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
       "ContactListItem": {
         "properties": {
           "avatarKind": {
-            "enum": [
-              "photo",
-              "gravatar",
-              "monogram",
-              "emoji",
-              "random",
-            ],
-            "type": "string",
+            "$ref": "#/components/schemas/AvatarKind",
           },
           "avatarValue": {
             "nullable": true,
@@ -100,32 +93,12 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "type": "string",
           },
           "location": {
-            "nullable": true,
-            "properties": {
-              "id": {
-                "type": "string",
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ContactLocation",
               },
-              "lat": {
-                "type": "number",
-              },
-              "lng": {
-                "type": "number",
-              },
-              "meters": {
-                "type": "number",
-              },
-              "name": {
-                "type": "string",
-              },
-            },
-            "required": [
-              "id",
-              "name",
-              "lat",
-              "lng",
-              "meters",
             ],
-            "type": "object",
+            "nullable": true,
           },
           "promoted": {
             "type": "boolean",
@@ -258,6 +231,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
       },
       "CreateListBody": {
         "additionalProperties": false,
+        "description": "Request body for POST /v1/lists — create a new custom list.",
         "properties": {
           "name": {
             "maxLength": 120,
@@ -300,14 +274,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "type": "string",
           },
           "kind": {
-            "enum": [
-              "custom",
-              "location",
-              "group",
-              "favorites",
-              "promoted",
-            ],
-            "type": "string",
+            "$ref": "#/components/schemas/ListKind",
           },
           "memberCount": {
             "type": "number",
@@ -353,92 +320,14 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "type": "string",
           },
           "kind": {
-            "enum": [
-              "custom",
-              "location",
-              "group",
-              "favorites",
-              "promoted",
-            ],
-            "type": "string",
+            "$ref": "#/components/schemas/ListKind",
           },
           "memberCount": {
             "type": "number",
           },
           "members": {
             "items": {
-              "properties": {
-                "avatarKind": {
-                  "enum": [
-                    "photo",
-                    "gravatar",
-                    "monogram",
-                    "emoji",
-                    "random",
-                  ],
-                  "type": "string",
-                },
-                "avatarValue": {
-                  "nullable": true,
-                  "type": "string",
-                },
-                "favorite": {
-                  "type": "boolean",
-                },
-                "firstName": {
-                  "nullable": true,
-                  "type": "string",
-                },
-                "id": {
-                  "type": "string",
-                },
-                "lastName": {
-                  "nullable": true,
-                  "type": "string",
-                },
-                "location": {
-                  "nullable": true,
-                  "properties": {
-                    "id": {
-                      "type": "string",
-                    },
-                    "lat": {
-                      "type": "number",
-                    },
-                    "lng": {
-                      "type": "number",
-                    },
-                    "meters": {
-                      "type": "number",
-                    },
-                    "name": {
-                      "type": "string",
-                    },
-                  },
-                  "required": [
-                    "id",
-                    "name",
-                    "lat",
-                    "lng",
-                    "meters",
-                  ],
-                  "type": "object",
-                },
-                "promoted": {
-                  "type": "boolean",
-                },
-              },
-              "required": [
-                "id",
-                "firstName",
-                "lastName",
-                "avatarKind",
-                "avatarValue",
-                "favorite",
-                "promoted",
-                "location",
-              ],
-              "type": "object",
+              "$ref": "#/components/schemas/ContactListItem",
             },
             "type": "array",
           },
@@ -494,6 +383,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
       },
       "PatchListBody": {
         "additionalProperties": false,
+        "description": "Request body for PATCH /v1/lists/:id — rename an existing list.",
         "properties": {
           "name": {
             "maxLength": 120,
@@ -814,7 +704,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/PatchListBody",
+                "$ref": "#/components/schemas/CreateListBody",
               },
             },
           },

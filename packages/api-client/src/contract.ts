@@ -90,8 +90,14 @@ export const ListWithMembers = ListItem.extend({
   members: z.array(ContactListItem),
 })
 
-export const CreateListBody = z.object({ name: z.string().trim().min(1).max(120) }).strict()
-export const PatchListBody = z.object({ name: z.string().trim().min(1).max(120) }).strict()
+export const CreateListBody = z
+  .object({ name: z.string().trim().min(1).max(120) })
+  .strict()
+  .describe('Request body for POST /v1/lists — create a new custom list.')
+export const PatchListBody = z
+  .object({ name: z.string().trim().min(1).max(120) })
+  .strict()
+  .describe('Request body for PATCH /v1/lists/:id — rename an existing list.')
 export const AddMemberBody = z.object({ contactId: z.string().uuid() }).strict()
 
 export const ErrorBody = z.object({

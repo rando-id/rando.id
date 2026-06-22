@@ -100,7 +100,34 @@ for (const [name, zodSchema] of Object.entries(NAMED_ZOD_SCHEMAS)) {
 const FINGERPRINT_TO_REF = new Map<string, string>()
 for (const [name, schema] of Object.entries(COMPONENT_SCHEMAS)) {
   if (name === 'ErrorBody') continue
-  FINGERPRINT_TO_REF.set(canonicalize(schema), `#/components/schemas/${name}`)
+  const fp = canonicalize(schema)
+  if (FINGERPRINT_TO_REF.has(fp)) {
+    // Two named schemas have identical canonical JSON — last-write-wins
+    // would silently drop one. Surfacing this in dev avoids ambiguous
+    // $ref behavior; the fix is to disambiguate via `.describe()` or
+    // a structural difference on one of the zod schemas.
+    throw new Error(
+      `OpenAPI schema collision: ${name} has the same canonical fingerprint as ${FINGERPRINT_TO_REF.get(fp)}. ` +
+        `Differentiate them (e.g. add a description) in @rando/api-client/contract.ts.`,
+    )
+  }
+  FINGERPRINT_TO_REF.set(fp, `#/components/schemas/${name}`)
+}
+
+// Refify the components themselves so nested schemas (e.g. AvatarKind
+// inside ContactListItem) pick up $refs to their own component
+// definitions instead of staying inline. Without this pass, lifted
+// schemas that only appear nested in another schema look "unused" to
+// spec linters even though they're conceptually part of the contract.
+//
+// Self-match guard: a schema can't $ref itself, so we exclude its own
+// fingerprint from the lookup table while refifying it.
+for (const name of Object.keys(COMPONENT_SCHEMAS)) {
+  if (name === 'ErrorBody') continue
+  const own = canonicalize(COMPONENT_SCHEMAS[name])
+  const withoutSelf = new Map(FINGERPRINT_TO_REF)
+  withoutSelf.delete(own)
+  COMPONENT_SCHEMAS[name] = refifyWith(COMPONENT_SCHEMAS[name], withoutSelf)
 }
 
 // ─── security ───────────────────────────────────────────────────────
@@ -241,12 +268,37 @@ export function GET(): NextResponse {
  * will miss; that's intentional, false-positive refs would be worse.
  */
 function refifySchemas(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(refifySchemas)
+  return refifyWith(value, FINGERPRINT_TO_REF)
+}
+
+/**
+ * Same as refifySchemas but with an explicit fingerprint map. Used by
+ * the components self-refify pass, which needs to exclude each
+ * schema's own fingerprint (a schema can't $ref itself).
+ *
+ * Two match modes:
+ *   1. Exact: object fingerprint == a component → `{ $ref }`
+ *   2. Nullable: `{ nullable: true, ...rest }` and `rest` matches a
+ *      component → `{ nullable: true, allOf: [{ $ref }] }`. The
+ *      `allOf` is required in OpenAPI 3.0 because a `$ref` sibling
+ *      of `nullable` is undefined behavior (refs override siblings);
+ *      `allOf` is the documented escape hatch.
+ */
+function refifyWith(value: unknown, fingerprints: Map<string, string>): unknown {
+  if (Array.isArray(value)) return value.map((v) => refifyWith(v, fingerprints))
   if (value && typeof value === 'object') {
-    const ref = FINGERPRINT_TO_REF.get(canonicalize(value))
+    const ref = fingerprints.get(canonicalize(value))
     if (ref) return { $ref: ref }
+
+    const obj = value as Record<string, unknown>
+    if (obj.nullable === true) {
+      const { nullable: _nullable, ...rest } = obj
+      const innerRef = fingerprints.get(canonicalize(rest))
+      if (innerRef) return { nullable: true, allOf: [{ $ref: innerRef }] }
+    }
+
     const out: Record<string, unknown> = {}
-    for (const [k, v] of Object.entries(value)) out[k] = refifySchemas(v)
+    for (const [k, v] of Object.entries(obj)) out[k] = refifyWith(v, fingerprints)
     return out
   }
   return value
