@@ -64,6 +64,12 @@ any direct `pnpm exec …` calls that need `NEON_API_KEY` /
 `VERCEL_TOKEN` / etc. outside the `rando` bin wrapper). The bootstrap
 script prints the same hint when it detects the hook isn't installed.
 
+Once the hook is loaded, you'll see a `direnv: loading …/.envrc` line
+every time you start a shell inside the repo (or `cd` into it). That's
+direnv announcing which variables it exported — normal, not an error.
+To silence those status lines without disabling direnv, add
+`export DIRENV_LOG_FORMAT=""` to your rc file.
+
 ## 1Password integration (required path)
 
 Rando treats **1Password as the source of truth for every secret**;
@@ -295,8 +301,17 @@ BASE_URL=https://staging-api.rando-id.dev pnpm test:api
 # Inject 1Password secrets (when authed tests land):
 op run --env-file=postman/.op.env -- pnpm test:api
 
-# Mirror the local collection to your Postman workspace:
+# Mirror the local collection to your Postman workspace. Also pushes
+# the OpenAPI spec into Postman's Spec Hub (the spec-shaped sidebar
+# view, separate from the collection) so docs/governance stay anchored
+# to the contract. Spec Hub works on the Postman Free tier.
 rando api postman sync
+
+# Push only the spec (skip the collection half). Default --target is
+# `spec` (Spec Hub). Use --target api to push to the API Builder
+# entity instead (paid feature; returns "upgrade required" on Free).
+rando api postman push-spec
+rando api postman push-spec --target api      # paid-tier API Builder push
 
 # Regenerate the collection skeleton from the OpenAPI spec.
 # IMPORTANT: refuses to overwrite without --force — generate to a
@@ -305,6 +320,30 @@ rando api postman sync
 rando api postman generate --out /tmp/new-collection.json
 diff postman/rando-api.postman_collection.json /tmp/new-collection.json
 ```
+
+### Spec linting
+
+Two lints, by design:
+
+```bash
+# Static (offline) — renders the spec from the contract, runs Spectral
+# with the rules in `.spectral.yaml`. No dev server, no network.
+# Enforces Rando-specific rules: every operation tagged + has a
+# summary, every 4xx/5xx response uses $ref to components.responses,
+# bearerAuth declared. Gated on the `api` aggregate in lint.yml.
+pnpm spec:lint:static
+
+# Live (against a running API) — runs `postman api lint` against the
+# served /v1/openapi.json. Uses Postman Cloud's OWASP / OAS ruleset.
+# Catches things Spectral's defaults don't (security best-practices,
+# governance rules from Postman). Gated on preview-deploy readiness in
+# integration-tests.yml; locally requires the dev server.
+pnpm spec:lint
+```
+
+The static lint is the fast gate (~5s, runs on every PR with an API
+change). The live lint is the depth gate (runs once the preview URL
+comes up). Both must pass before merge.
 
 ## End-to-end demo flow
 

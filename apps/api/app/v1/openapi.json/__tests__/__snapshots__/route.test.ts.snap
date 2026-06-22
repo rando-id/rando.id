@@ -2,6 +2,410 @@
 
 exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] = `
 {
+  "components": {
+    "responses": {
+      "BadRequest": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorBody",
+            },
+          },
+        },
+        "description": "Request body or query parameters failed zod validation. \`issues[]\` carries the per-field detail.",
+      },
+      "NotFound": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorBody",
+            },
+          },
+        },
+        "description": "Requested resource does not exist OR is owned by a different user (handlers conflate the two on purpose so cross-tenant existence isn’t leaked).",
+      },
+      "ServerError": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorBody",
+            },
+          },
+        },
+        "description": "Unexpected server error — typically a database constraint violation or downstream timeout. Safe to retry on a backoff.",
+      },
+      "Unauthorized": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorBody",
+            },
+          },
+        },
+        "description": "Missing or invalid Clerk session JWT.",
+      },
+    },
+    "schemas": {
+      "AddMemberBody": {
+        "additionalProperties": false,
+        "properties": {
+          "contactId": {
+            "format": "uuid",
+            "type": "string",
+          },
+        },
+        "required": [
+          "contactId",
+        ],
+        "type": "object",
+      },
+      "AvatarKind": {
+        "enum": [
+          "photo",
+          "gravatar",
+          "monogram",
+          "emoji",
+          "random",
+        ],
+        "type": "string",
+      },
+      "ContactListItem": {
+        "properties": {
+          "avatarKind": {
+            "$ref": "#/components/schemas/AvatarKind",
+          },
+          "avatarValue": {
+            "nullable": true,
+            "type": "string",
+          },
+          "favorite": {
+            "type": "boolean",
+          },
+          "firstName": {
+            "nullable": true,
+            "type": "string",
+          },
+          "id": {
+            "type": "string",
+          },
+          "lastName": {
+            "nullable": true,
+            "type": "string",
+          },
+          "location": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/ContactLocation",
+              },
+            ],
+            "nullable": true,
+          },
+          "promoted": {
+            "type": "boolean",
+          },
+        },
+        "required": [
+          "id",
+          "firstName",
+          "lastName",
+          "avatarKind",
+          "avatarValue",
+          "favorite",
+          "promoted",
+          "location",
+        ],
+        "type": "object",
+      },
+      "ContactLocation": {
+        "properties": {
+          "id": {
+            "type": "string",
+          },
+          "lat": {
+            "type": "number",
+          },
+          "lng": {
+            "type": "number",
+          },
+          "meters": {
+            "type": "number",
+          },
+          "name": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+          "name",
+          "lat",
+          "lng",
+          "meters",
+        ],
+        "type": "object",
+      },
+      "ContactSort": {
+        "enum": [
+          "distance",
+          "last_name",
+          "date_added",
+          "date_updated",
+        ],
+        "type": "string",
+      },
+      "CreateContactBody": {
+        "properties": {
+          "company": {
+            "maxLength": 160,
+            "nullable": true,
+            "type": "string",
+          },
+          "favorite": {
+            "type": "boolean",
+          },
+          "firstName": {
+            "maxLength": 120,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string",
+          },
+          "interaction": {
+            "properties": {
+              "metAt": {
+                "format": "date-time",
+                "type": "string",
+              },
+              "notes": {
+                "maxLength": 2000,
+                "nullable": true,
+                "type": "string",
+              },
+            },
+            "type": "object",
+          },
+          "lastName": {
+            "maxLength": 120,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string",
+          },
+          "location": {
+            "properties": {
+              "address": {
+                "maxLength": 400,
+                "nullable": true,
+                "type": "string",
+              },
+              "lat": {
+                "maximum": 90,
+                "minimum": -90,
+                "type": "number",
+              },
+              "lng": {
+                "maximum": 180,
+                "minimum": -180,
+                "type": "number",
+              },
+              "name": {
+                "maxLength": 160,
+                "minLength": 1,
+                "type": "string",
+              },
+            },
+            "required": [
+              "lat",
+              "lng",
+              "name",
+            ],
+            "type": "object",
+          },
+          "notes": {
+            "maxLength": 2000,
+            "nullable": true,
+            "type": "string",
+          },
+        },
+        "required": [
+          "location",
+        ],
+        "type": "object",
+      },
+      "CreateListBody": {
+        "additionalProperties": false,
+        "description": "Request body for POST /v1/lists — create a new custom list.",
+        "properties": {
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "name",
+        ],
+        "type": "object",
+      },
+      "ErrorBody": {
+        "properties": {
+          "error": {
+            "description": "Short, human-readable error message — safe to log + display.",
+            "type": "string",
+          },
+          "issues": {
+            "description": "Per-field zod validation issues when applicable (400 only).",
+            "items": {},
+            "type": "array",
+          },
+        },
+        "required": [
+          "error",
+        ],
+        "type": "object",
+      },
+      "ListItem": {
+        "properties": {
+          "coverImage": {
+            "nullable": true,
+            "type": "string",
+          },
+          "createdAt": {
+            "type": "string",
+          },
+          "id": {
+            "type": "string",
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ListKind",
+          },
+          "memberCount": {
+            "type": "number",
+          },
+          "name": {
+            "type": "string",
+          },
+          "updatedAt": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "coverImage",
+          "createdAt",
+          "updatedAt",
+          "memberCount",
+        ],
+        "type": "object",
+      },
+      "ListKind": {
+        "enum": [
+          "custom",
+          "location",
+          "group",
+          "favorites",
+          "promoted",
+        ],
+        "type": "string",
+      },
+      "ListWithMembers": {
+        "properties": {
+          "coverImage": {
+            "nullable": true,
+            "type": "string",
+          },
+          "createdAt": {
+            "type": "string",
+          },
+          "id": {
+            "type": "string",
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ListKind",
+          },
+          "memberCount": {
+            "type": "number",
+          },
+          "members": {
+            "items": {
+              "$ref": "#/components/schemas/ContactListItem",
+            },
+            "type": "array",
+          },
+          "name": {
+            "type": "string",
+          },
+          "updatedAt": {
+            "type": "string",
+          },
+        },
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "coverImage",
+          "createdAt",
+          "updatedAt",
+          "memberCount",
+          "members",
+        ],
+        "type": "object",
+      },
+      "PatchContactBody": {
+        "additionalProperties": false,
+        "properties": {
+          "company": {
+            "maxLength": 160,
+            "nullable": true,
+            "type": "string",
+          },
+          "favorite": {
+            "type": "boolean",
+          },
+          "firstName": {
+            "maxLength": 120,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string",
+          },
+          "lastName": {
+            "maxLength": 120,
+            "minLength": 1,
+            "nullable": true,
+            "type": "string",
+          },
+          "notes": {
+            "maxLength": 2000,
+            "nullable": true,
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "PatchListBody": {
+        "additionalProperties": false,
+        "description": "Request body for PATCH /v1/lists/:id — rename an existing list.",
+        "properties": {
+          "name": {
+            "maxLength": 120,
+            "minLength": 1,
+            "type": "string",
+          },
+        },
+        "required": [
+          "name",
+        ],
+        "type": "object",
+      },
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "description": "Clerk-issued session JWT. Frontend obtains it via \`clerk.session.getToken()\` and forwards as \`Authorization: Bearer <token>\`. Validated server-side by \`requireCurrentUser\`.",
+        "scheme": "bearer",
+        "type": "http",
+      },
+    },
+  },
   "info": {
     "description": "Auto-generated from the ts-rest contract in @rando/api-client. Edit the contract, not this output.",
     "title": "Rando API",
@@ -46,13 +450,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "in": "query",
             "name": "sort",
             "schema": {
-              "enum": [
-                "distance",
-                "last_name",
-                "date_added",
-                "date_updated",
-              ],
-              "type": "string",
+              "$ref": "#/components/schemas/ContactSort",
             },
           },
         ],
@@ -62,78 +460,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
               "application/json": {
                 "schema": {
                   "items": {
-                    "properties": {
-                      "avatarKind": {
-                        "enum": [
-                          "photo",
-                          "gravatar",
-                          "monogram",
-                          "emoji",
-                          "random",
-                        ],
-                        "type": "string",
-                      },
-                      "avatarValue": {
-                        "nullable": true,
-                        "type": "string",
-                      },
-                      "favorite": {
-                        "type": "boolean",
-                      },
-                      "firstName": {
-                        "nullable": true,
-                        "type": "string",
-                      },
-                      "id": {
-                        "type": "string",
-                      },
-                      "lastName": {
-                        "nullable": true,
-                        "type": "string",
-                      },
-                      "location": {
-                        "nullable": true,
-                        "properties": {
-                          "id": {
-                            "type": "string",
-                          },
-                          "lat": {
-                            "type": "number",
-                          },
-                          "lng": {
-                            "type": "number",
-                          },
-                          "meters": {
-                            "type": "number",
-                          },
-                          "name": {
-                            "type": "string",
-                          },
-                        },
-                        "required": [
-                          "id",
-                          "name",
-                          "lat",
-                          "lng",
-                          "meters",
-                        ],
-                        "type": "object",
-                      },
-                      "promoted": {
-                        "type": "boolean",
-                      },
-                    },
-                    "required": [
-                      "id",
-                      "firstName",
-                      "lastName",
-                      "avatarKind",
-                      "avatarValue",
-                      "favorite",
-                      "promoted",
-                      "location",
-                    ],
-                    "type": "object",
+                    "$ref": "#/components/schemas/ContactListItem",
                   },
                   "type": "array",
                 },
@@ -142,32 +469,13 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "description": "200",
           },
           "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "401",
+            "$ref": "#/components/responses/Unauthorized",
           },
         },
         "summary": "List contacts for the authenticated user",
-        "tags": [],
+        "tags": [
+          "Contacts",
+        ],
       },
       "post": {
         "description": "Compound endpoint: creates the location (with 50m PostGIS dedup), the contact, and the first interaction in a single DB transaction. At least one of firstName/lastName/company is required.",
@@ -177,81 +485,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           "content": {
             "application/json": {
               "schema": {
-                "properties": {
-                  "company": {
-                    "maxLength": 160,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                  "favorite": {
-                    "type": "boolean",
-                  },
-                  "firstName": {
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                  "interaction": {
-                    "properties": {
-                      "metAt": {
-                        "format": "date-time",
-                        "type": "string",
-                      },
-                      "notes": {
-                        "maxLength": 2000,
-                        "nullable": true,
-                        "type": "string",
-                      },
-                    },
-                    "type": "object",
-                  },
-                  "lastName": {
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                  "location": {
-                    "properties": {
-                      "address": {
-                        "maxLength": 400,
-                        "nullable": true,
-                        "type": "string",
-                      },
-                      "lat": {
-                        "maximum": 90,
-                        "minimum": -90,
-                        "type": "number",
-                      },
-                      "lng": {
-                        "maximum": 180,
-                        "minimum": -180,
-                        "type": "number",
-                      },
-                      "name": {
-                        "maxLength": 160,
-                        "minLength": 1,
-                        "type": "string",
-                      },
-                    },
-                    "required": [
-                      "lat",
-                      "lng",
-                      "name",
-                    ],
-                    "type": "object",
-                  },
-                  "notes": {
-                    "maxLength": 2000,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "location",
-                ],
-                "type": "object",
+                "$ref": "#/components/schemas/CreateContactBody",
               },
             },
           },
@@ -264,78 +498,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
                 "schema": {
                   "properties": {
                     "contact": {
-                      "properties": {
-                        "avatarKind": {
-                          "enum": [
-                            "photo",
-                            "gravatar",
-                            "monogram",
-                            "emoji",
-                            "random",
-                          ],
-                          "type": "string",
-                        },
-                        "avatarValue": {
-                          "nullable": true,
-                          "type": "string",
-                        },
-                        "favorite": {
-                          "type": "boolean",
-                        },
-                        "firstName": {
-                          "nullable": true,
-                          "type": "string",
-                        },
-                        "id": {
-                          "type": "string",
-                        },
-                        "lastName": {
-                          "nullable": true,
-                          "type": "string",
-                        },
-                        "location": {
-                          "nullable": true,
-                          "properties": {
-                            "id": {
-                              "type": "string",
-                            },
-                            "lat": {
-                              "type": "number",
-                            },
-                            "lng": {
-                              "type": "number",
-                            },
-                            "meters": {
-                              "type": "number",
-                            },
-                            "name": {
-                              "type": "string",
-                            },
-                          },
-                          "required": [
-                            "id",
-                            "name",
-                            "lat",
-                            "lng",
-                            "meters",
-                          ],
-                          "type": "object",
-                        },
-                        "promoted": {
-                          "type": "boolean",
-                        },
-                      },
-                      "required": [
-                        "id",
-                        "firstName",
-                        "lastName",
-                        "avatarKind",
-                        "avatarValue",
-                        "favorite",
-                        "promoted",
-                        "location",
-                      ],
-                      "type": "object",
+                      "$ref": "#/components/schemas/ContactListItem",
                     },
                     "locationReused": {
                       "type": "boolean",
@@ -352,80 +515,19 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "description": "201",
           },
           "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "400",
+            "$ref": "#/components/responses/BadRequest",
           },
           "401": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "401",
+            "$ref": "#/components/responses/Unauthorized",
           },
           "500": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "500",
+            "$ref": "#/components/responses/ServerError",
           },
         },
         "summary": "Create a contact + location + first interaction in one tx",
-        "tags": [],
+        "tags": [
+          "Contacts",
+        ],
       },
     },
     "/v1/contacts/{id}": {
@@ -454,110 +556,20 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "avatarKind": {
-                      "enum": [
-                        "photo",
-                        "gravatar",
-                        "monogram",
-                        "emoji",
-                        "random",
-                      ],
-                      "type": "string",
-                    },
-                    "avatarValue": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "favorite": {
-                      "type": "boolean",
-                    },
-                    "firstName": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "id": {
-                      "type": "string",
-                    },
-                    "lastName": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "location": {
-                      "nullable": true,
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                        },
-                        "lat": {
-                          "type": "number",
-                        },
-                        "lng": {
-                          "type": "number",
-                        },
-                        "meters": {
-                          "type": "number",
-                        },
-                        "name": {
-                          "type": "string",
-                        },
-                      },
-                      "required": [
-                        "id",
-                        "name",
-                        "lat",
-                        "lng",
-                        "meters",
-                      ],
-                      "type": "object",
-                    },
-                    "promoted": {
-                      "type": "boolean",
-                    },
-                  },
-                  "required": [
-                    "id",
-                    "firstName",
-                    "lastName",
-                    "avatarKind",
-                    "avatarValue",
-                    "favorite",
-                    "promoted",
-                    "location",
-                  ],
-                  "type": "object",
+                  "$ref": "#/components/schemas/ContactListItem",
                 },
               },
             },
             "description": "200",
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "404",
+            "$ref": "#/components/responses/NotFound",
           },
         },
         "summary": "Fetch one contact by id",
-        "tags": [],
+        "tags": [
+          "Contacts",
+        ],
       },
       "patch": {
         "description": "Strict zod — unknown fields are rejected. Returns the updated contact (with distance from \`near\` if provided).",
@@ -583,35 +595,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "company": {
-                    "maxLength": 160,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                  "favorite": {
-                    "type": "boolean",
-                  },
-                  "firstName": {
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                  "lastName": {
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                  "notes": {
-                    "maxLength": 2000,
-                    "nullable": true,
-                    "type": "string",
-                  },
-                },
-                "type": "object",
+                "$ref": "#/components/schemas/PatchContactBody",
               },
             },
           },
@@ -622,134 +606,23 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "avatarKind": {
-                      "enum": [
-                        "photo",
-                        "gravatar",
-                        "monogram",
-                        "emoji",
-                        "random",
-                      ],
-                      "type": "string",
-                    },
-                    "avatarValue": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "favorite": {
-                      "type": "boolean",
-                    },
-                    "firstName": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "id": {
-                      "type": "string",
-                    },
-                    "lastName": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "location": {
-                      "nullable": true,
-                      "properties": {
-                        "id": {
-                          "type": "string",
-                        },
-                        "lat": {
-                          "type": "number",
-                        },
-                        "lng": {
-                          "type": "number",
-                        },
-                        "meters": {
-                          "type": "number",
-                        },
-                        "name": {
-                          "type": "string",
-                        },
-                      },
-                      "required": [
-                        "id",
-                        "name",
-                        "lat",
-                        "lng",
-                        "meters",
-                      ],
-                      "type": "object",
-                    },
-                    "promoted": {
-                      "type": "boolean",
-                    },
-                  },
-                  "required": [
-                    "id",
-                    "firstName",
-                    "lastName",
-                    "avatarKind",
-                    "avatarValue",
-                    "favorite",
-                    "promoted",
-                    "location",
-                  ],
-                  "type": "object",
+                  "$ref": "#/components/schemas/ContactListItem",
                 },
               },
             },
             "description": "200",
           },
           "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "400",
+            "$ref": "#/components/responses/BadRequest",
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "404",
+            "$ref": "#/components/responses/NotFound",
           },
         },
         "summary": "Partial update of mutable contact fields",
-        "tags": [],
+        "tags": [
+          "Contacts",
+        ],
       },
     },
     "/v1/health": {
@@ -792,8 +665,11 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "description": "200",
           },
         },
+        "security": [],
         "summary": "Liveness check",
-        "tags": [],
+        "tags": [
+          "Health",
+        ],
       },
     },
     "/v1/lists": {
@@ -807,47 +683,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
               "application/json": {
                 "schema": {
                   "items": {
-                    "properties": {
-                      "coverImage": {
-                        "nullable": true,
-                        "type": "string",
-                      },
-                      "createdAt": {
-                        "type": "string",
-                      },
-                      "id": {
-                        "type": "string",
-                      },
-                      "kind": {
-                        "enum": [
-                          "custom",
-                          "location",
-                          "group",
-                          "favorites",
-                          "promoted",
-                        ],
-                        "type": "string",
-                      },
-                      "memberCount": {
-                        "type": "number",
-                      },
-                      "name": {
-                        "type": "string",
-                      },
-                      "updatedAt": {
-                        "type": "string",
-                      },
-                    },
-                    "required": [
-                      "id",
-                      "name",
-                      "kind",
-                      "coverImage",
-                      "createdAt",
-                      "updatedAt",
-                      "memberCount",
-                    ],
-                    "type": "object",
+                    "$ref": "#/components/schemas/ListItem",
                   },
                   "type": "array",
                 },
@@ -857,27 +693,19 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           },
         },
         "summary": "List the user's custom lists",
-        "tags": [],
+        "tags": [
+          "Lists",
+        ],
       },
       "post": {
+        "description": "Owner-scoped. Returns the created ListItem with memberCount: 0. No nested members in the response — call GET /v1/lists/:id to fetch members after creation.",
         "operationId": "createList",
         "parameters": [],
         "requestBody": {
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "name": {
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "name",
-                ],
-                "type": "object",
+                "$ref": "#/components/schemas/CreateListBody",
               },
             },
           },
@@ -888,83 +716,25 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "coverImage": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "createdAt": {
-                      "type": "string",
-                    },
-                    "id": {
-                      "type": "string",
-                    },
-                    "kind": {
-                      "enum": [
-                        "custom",
-                        "location",
-                        "group",
-                        "favorites",
-                        "promoted",
-                      ],
-                      "type": "string",
-                    },
-                    "memberCount": {
-                      "type": "number",
-                    },
-                    "name": {
-                      "type": "string",
-                    },
-                    "updatedAt": {
-                      "type": "string",
-                    },
-                  },
-                  "required": [
-                    "id",
-                    "name",
-                    "kind",
-                    "coverImage",
-                    "createdAt",
-                    "updatedAt",
-                    "memberCount",
-                  ],
-                  "type": "object",
+                  "$ref": "#/components/schemas/ListItem",
                 },
               },
             },
             "description": "201",
           },
           "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "400",
+            "$ref": "#/components/responses/BadRequest",
           },
         },
         "summary": "Create a new custom list",
-        "tags": [],
+        "tags": [
+          "Lists",
+        ],
       },
     },
     "/v1/lists/{id}": {
       "delete": {
+        "description": "Owner-scoped. The list row + every list_members join row are deleted in one transaction; contacts themselves are unaffected. Returns 404 (not 200) when the list is missing or owned by a different user.",
         "operationId": "deleteList",
         "parameters": [
           {
@@ -1009,32 +779,13 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "description": "200",
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "404",
+            "$ref": "#/components/responses/NotFound",
           },
         },
         "summary": "Delete a list (cascades to list_members)",
-        "tags": [],
+        "tags": [
+          "Lists",
+        ],
       },
       "get": {
         "description": "Owner-scoped. Members are returned as ContactListItem rows, distance-sorted from \`near\` when provided.",
@@ -1061,159 +812,23 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "coverImage": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "createdAt": {
-                      "type": "string",
-                    },
-                    "id": {
-                      "type": "string",
-                    },
-                    "kind": {
-                      "enum": [
-                        "custom",
-                        "location",
-                        "group",
-                        "favorites",
-                        "promoted",
-                      ],
-                      "type": "string",
-                    },
-                    "memberCount": {
-                      "type": "number",
-                    },
-                    "members": {
-                      "items": {
-                        "properties": {
-                          "avatarKind": {
-                            "enum": [
-                              "photo",
-                              "gravatar",
-                              "monogram",
-                              "emoji",
-                              "random",
-                            ],
-                            "type": "string",
-                          },
-                          "avatarValue": {
-                            "nullable": true,
-                            "type": "string",
-                          },
-                          "favorite": {
-                            "type": "boolean",
-                          },
-                          "firstName": {
-                            "nullable": true,
-                            "type": "string",
-                          },
-                          "id": {
-                            "type": "string",
-                          },
-                          "lastName": {
-                            "nullable": true,
-                            "type": "string",
-                          },
-                          "location": {
-                            "nullable": true,
-                            "properties": {
-                              "id": {
-                                "type": "string",
-                              },
-                              "lat": {
-                                "type": "number",
-                              },
-                              "lng": {
-                                "type": "number",
-                              },
-                              "meters": {
-                                "type": "number",
-                              },
-                              "name": {
-                                "type": "string",
-                              },
-                            },
-                            "required": [
-                              "id",
-                              "name",
-                              "lat",
-                              "lng",
-                              "meters",
-                            ],
-                            "type": "object",
-                          },
-                          "promoted": {
-                            "type": "boolean",
-                          },
-                        },
-                        "required": [
-                          "id",
-                          "firstName",
-                          "lastName",
-                          "avatarKind",
-                          "avatarValue",
-                          "favorite",
-                          "promoted",
-                          "location",
-                        ],
-                        "type": "object",
-                      },
-                      "type": "array",
-                    },
-                    "name": {
-                      "type": "string",
-                    },
-                    "updatedAt": {
-                      "type": "string",
-                    },
-                  },
-                  "required": [
-                    "id",
-                    "name",
-                    "kind",
-                    "coverImage",
-                    "createdAt",
-                    "updatedAt",
-                    "memberCount",
-                    "members",
-                  ],
-                  "type": "object",
+                  "$ref": "#/components/schemas/ListWithMembers",
                 },
               },
             },
             "description": "200",
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "404",
+            "$ref": "#/components/responses/NotFound",
           },
         },
         "summary": "Fetch one list + its members",
-        "tags": [],
+        "tags": [
+          "Lists",
+        ],
       },
       "patch": {
+        "description": "Owner-scoped. Only the \`name\` field is mutable — list kind, cover image, and timestamps are managed by the system.",
         "operationId": "updateList",
         "parameters": [
           {
@@ -1229,18 +844,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "name": {
-                    "maxLength": 120,
-                    "minLength": 1,
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "name",
-                ],
-                "type": "object",
+                "$ref": "#/components/schemas/PatchListBody",
               },
             },
           },
@@ -1251,103 +855,23 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "content": {
               "application/json": {
                 "schema": {
-                  "properties": {
-                    "coverImage": {
-                      "nullable": true,
-                      "type": "string",
-                    },
-                    "createdAt": {
-                      "type": "string",
-                    },
-                    "id": {
-                      "type": "string",
-                    },
-                    "kind": {
-                      "enum": [
-                        "custom",
-                        "location",
-                        "group",
-                        "favorites",
-                        "promoted",
-                      ],
-                      "type": "string",
-                    },
-                    "memberCount": {
-                      "type": "number",
-                    },
-                    "name": {
-                      "type": "string",
-                    },
-                    "updatedAt": {
-                      "type": "string",
-                    },
-                  },
-                  "required": [
-                    "id",
-                    "name",
-                    "kind",
-                    "coverImage",
-                    "createdAt",
-                    "updatedAt",
-                    "memberCount",
-                  ],
-                  "type": "object",
+                  "$ref": "#/components/schemas/ListItem",
                 },
               },
             },
             "description": "200",
           },
           "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "400",
+            "$ref": "#/components/responses/BadRequest",
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "404",
+            "$ref": "#/components/responses/NotFound",
           },
         },
         "summary": "Rename a list",
-        "tags": [],
+        "tags": [
+          "Lists",
+        ],
       },
     },
     "/v1/lists/{id}/members": {
@@ -1368,17 +892,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
           "content": {
             "application/json": {
               "schema": {
-                "additionalProperties": false,
-                "properties": {
-                  "contactId": {
-                    "format": "uuid",
-                    "type": "string",
-                  },
-                },
-                "required": [
-                  "contactId",
-                ],
-                "type": "object",
+                "$ref": "#/components/schemas/AddMemberBody",
               },
             },
           },
@@ -1411,36 +925,18 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "description": "200",
           },
           "400": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "400",
+            "$ref": "#/components/responses/BadRequest",
           },
         },
         "summary": "Add a contact to a list",
-        "tags": [],
+        "tags": [
+          "Lists",
+        ],
       },
     },
     "/v1/lists/{id}/members/{contactId}": {
       "delete": {
+        "description": "Owner-scoped on both the list and the contact. Idempotent — returns 200 even if the contact was never in the list, as long as both ids belong to the user. 404 only if the list itself is missing or cross-tenant.",
         "operationId": "removeListMember",
         "parameters": [
           {
@@ -1493,35 +989,21 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "description": "200",
           },
           "404": {
-            "content": {
-              "application/json": {
-                "schema": {
-                  "properties": {
-                    "error": {
-                      "type": "string",
-                    },
-                    "issues": {
-                      "items": {
-                        "nullable": true,
-                      },
-                      "type": "array",
-                    },
-                  },
-                  "required": [
-                    "error",
-                  ],
-                  "type": "object",
-                },
-              },
-            },
-            "description": "404",
+            "$ref": "#/components/responses/NotFound",
           },
         },
         "summary": "Remove a contact from a list",
-        "tags": [],
+        "tags": [
+          "Lists",
+        ],
       },
     },
   },
+  "security": [
+    {
+      "bearerAuth": [],
+    },
+  ],
   "servers": [
     {
       "description": "Production",
@@ -1530,6 +1012,20 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
     {
       "description": "Local dev",
       "url": "http://localhost:4000",
+    },
+  ],
+  "tags": [
+    {
+      "description": "Liveness + identity checks (unauthenticated).",
+      "name": "Health",
+    },
+    {
+      "description": "Create, read, and update a user’s contacts.",
+      "name": "Contacts",
+    },
+    {
+      "description": "Custom lists of contacts and their members.",
+      "name": "Lists",
     },
   ],
 }

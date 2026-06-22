@@ -16,8 +16,12 @@ import { z } from 'zod'
 const c = initContract()
 
 // ─── shared schemas ──────────────────────────────────────────────────
+// Exported so the OpenAPI spec generator (apps/api/app/v1/openapi.json)
+// can lift them into `components.schemas` and the operations can
+// `$ref` them instead of inlining. Local routes still consume the
+// zod schemas directly via the contract router below.
 
-const ContactLocation = z.object({
+export const ContactLocation = z.object({
   id: z.string(),
   name: z.string(),
   lat: z.number(),
@@ -25,9 +29,9 @@ const ContactLocation = z.object({
   meters: z.number(),
 })
 
-const AvatarKind = z.enum(['photo', 'gravatar', 'monogram', 'emoji', 'random'])
+export const AvatarKind = z.enum(['photo', 'gravatar', 'monogram', 'emoji', 'random'])
 
-const ContactListItem = z.object({
+export const ContactListItem = z.object({
   id: z.string(),
   firstName: z.string().nullable(),
   lastName: z.string().nullable(),
@@ -38,7 +42,7 @@ const ContactListItem = z.object({
   location: ContactLocation.nullable(),
 })
 
-const CreateContactBody = z.object({
+export const CreateContactBody = z.object({
   firstName: z.string().trim().min(1).max(120).nullish(),
   lastName: z.string().trim().min(1).max(120).nullish(),
   company: z.string().trim().max(160).nullish(),
@@ -58,7 +62,7 @@ const CreateContactBody = z.object({
     .optional(),
 })
 
-const PatchContactBody = z
+export const PatchContactBody = z
   .object({
     firstName: z.string().trim().min(1).max(120).nullable().optional(),
     lastName: z.string().trim().min(1).max(120).nullable().optional(),
@@ -68,11 +72,11 @@ const PatchContactBody = z
   })
   .strict()
 
-const ContactSort = z.enum(['distance', 'last_name', 'date_added', 'date_updated'])
+export const ContactSort = z.enum(['distance', 'last_name', 'date_added', 'date_updated'])
 
-const ListKind = z.enum(['custom', 'location', 'group', 'favorites', 'promoted'])
+export const ListKind = z.enum(['custom', 'location', 'group', 'favorites', 'promoted'])
 
-const ListItem = z.object({
+export const ListItem = z.object({
   id: z.string(),
   name: z.string(),
   kind: ListKind,
@@ -82,15 +86,21 @@ const ListItem = z.object({
   memberCount: z.number(),
 })
 
-const ListWithMembers = ListItem.extend({
+export const ListWithMembers = ListItem.extend({
   members: z.array(ContactListItem),
 })
 
-const CreateListBody = z.object({ name: z.string().trim().min(1).max(120) }).strict()
-const PatchListBody = z.object({ name: z.string().trim().min(1).max(120) }).strict()
-const AddMemberBody = z.object({ contactId: z.string().uuid() }).strict()
+export const CreateListBody = z
+  .object({ name: z.string().trim().min(1).max(120) })
+  .strict()
+  .describe('Request body for POST /v1/lists — create a new custom list.')
+export const PatchListBody = z
+  .object({ name: z.string().trim().min(1).max(120) })
+  .strict()
+  .describe('Request body for PATCH /v1/lists/:id — rename an existing list.')
+export const AddMemberBody = z.object({ contactId: z.string().uuid() }).strict()
 
-const ErrorBody = z.object({
+export const ErrorBody = z.object({
   error: z.string(),
   issues: z.array(z.unknown()).optional(),
 })
@@ -209,6 +219,8 @@ export const contract = c.router({
     method: 'POST',
     path: '/v1/lists',
     summary: 'Create a new custom list',
+    description:
+      'Owner-scoped. Returns the created ListItem with memberCount: 0. No nested members in the response — call GET /v1/lists/:id to fetch members after creation.',
     body: CreateListBody,
     responses: {
       201: ListItem,
@@ -234,6 +246,8 @@ export const contract = c.router({
     method: 'PATCH',
     path: '/v1/lists/:id',
     summary: 'Rename a list',
+    description:
+      'Owner-scoped. Only the `name` field is mutable — list kind, cover image, and timestamps are managed by the system.',
     pathParams: z.object({ id: z.string() }),
     body: PatchListBody,
     responses: {
@@ -247,6 +261,8 @@ export const contract = c.router({
     method: 'DELETE',
     path: '/v1/lists/:id',
     summary: 'Delete a list (cascades to list_members)',
+    description:
+      'Owner-scoped. The list row + every list_members join row are deleted in one transaction; contacts themselves are unaffected. Returns 404 (not 200) when the list is missing or owned by a different user.',
     pathParams: z.object({ id: z.string() }),
     body: z.unknown().optional(),
     responses: {
@@ -273,6 +289,8 @@ export const contract = c.router({
     method: 'DELETE',
     path: '/v1/lists/:id/members/:contactId',
     summary: 'Remove a contact from a list',
+    description:
+      'Owner-scoped on both the list and the contact. Idempotent — returns 200 even if the contact was never in the list, as long as both ids belong to the user. 404 only if the list itself is missing or cross-tenant.',
     pathParams: z.object({ id: z.string(), contactId: z.string() }),
     body: z.unknown().optional(),
     responses: {

@@ -5,13 +5,16 @@ on:
     branches: [main]
   pull_request:
 
+permissions:
+  contents: read
+
 concurrency:
   group: lint-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
   lint:
-    name: ESLint + Prettier
+    name: ESLint + Prettier + OpenAPI spec
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -26,6 +29,19 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: pnpm lint
 
+      # Static OpenAPI spec lint via Spectral — runs offline against a
+      # freshly-rendered spec dump (no preview deploy needed). The
+      # deeper `pnpm spec:lint` in integration-tests.yml runs Postman
+      # Cloud's ruleset against the live preview URL once it's up.
+      # Gated on `specLint` so we run when EITHER the API workspace
+      # was affected OR the ruleset / render script itself changed
+      # (those live at the repo root, outside Turbo's view).
+      - name: Lint OpenAPI spec (static)
+        if: steps.changes.outputs.specLint == 'true'
+        run: pnpm spec:lint:static
+        env:
+          FORCE_COLOR: '1'
+
       - name: Skip (no code touched)
-        if: steps.changes.outputs.code != 'true'
-        run: echo "::notice title=Lint skipped::No code files changed in this PR."
+        if: steps.changes.outputs.code != 'true' && steps.changes.outputs.specLint != 'true'
+        run: echo "::notice title=Lint skipped::No code or spec-lint files changed in this PR."

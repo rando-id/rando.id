@@ -31,3 +31,25 @@ export class MissingConfigError extends Error {
     this.name = 'MissingConfigError'
   }
 }
+
+/**
+ * Raised when a Postman operation is blocked by a plan limit (e.g. the
+ * Free tier allows 0 APIs). Distinct from a missing-scope auth failure
+ * — no PAT change will unblock it; only a plan upgrade will. Commands
+ * catch this specifically so the user sees "plan upgrade required"
+ * rather than a raw 400 JSON dump.
+ */
+export class PostmanPlanLimitError extends ProviderApiError {
+  constructor(
+    public readonly limit: string,
+    body: string,
+  ) {
+    super(
+      'postman',
+      400,
+      body,
+      `Postman plan limit reached: ${limit}. Upgrade your Postman plan to enable this feature.`,
+    )
+    this.name = 'PostmanPlanLimitError'
+  }
+}

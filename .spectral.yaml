@@ -1,0 +1,76 @@
+# Spectral ruleset for the Rando OpenAPI spec.
+#
+# Run via `pnpm spec:lint:static` (static, no dev server) or as part
+# of CI in `lint.yml`. The deeper `pnpm spec:lint` runs Postman
+# Cloud's ruleset against the preview URL — this file is what
+# guarantees Rando-specific conventions stay enforced offline.
+#
+# `spectral:oas` extends the bundled OAS ruleset (operationId required,
+# info-contact / info-license recommended, no $ref siblings, etc.).
+
+extends:
+  - spectral:oas
+
+rules:
+  # ─── relax warning-noise we don't care about ──────────────────────
+
+  # We use ts-rest's auto-generated operationIds; the names are camelCase
+  # from the contract, which is fine. The default rule wants kebab-case
+  # in many style guides; ours stays as-is.
+  operation-operationId-valid-in-url: off
+
+  # info.contact / info.license / tag descriptions are nice-to-have but
+  # don't add real value yet — turn down to "info" so they don't fail CI.
+  info-contact: info
+  info-license: info
+  info-description: info
+  operation-description: info
+
+  # ─── Rando-specific rules (enforced) ──────────────────────────────
+
+  rando-operation-must-have-tag:
+    description: 'Every operation must be assigned to a tag — keeps the Spec Hub sidebar grouped and matches the path-prefix rule in apps/api/app/v1/openapi.json/spec.ts.'
+    message: '{{path}} {{property}} has no tag — add it to the path-prefix map in spec.ts.'
+    severity: error
+    given: '$.paths[*][get,post,put,patch,delete]'
+    then:
+      field: tags
+      # NOT `truthy` — empty arrays are truthy in JS, and ts-rest emits
+      # `tags: []` by default for any operation tagForPath() doesn't
+      # match. `length` with min:1 enforces "at least one tag string".
+      function: length
+      functionOptions:
+        min: 1
+
+  rando-operation-must-have-summary:
+    description: "Every operation's contract entry must declare a summary — it shows up as the request name in Postman, Swagger UI, etc."
+    message: '{{path}} {{property}} has no summary — add it in packages/api-client/src/contract.ts.'
+    severity: error
+    given: '$.paths[*][get,post,put,patch,delete]'
+    then:
+      field: summary
+      function: truthy
+
+  rando-error-responses-must-use-ref:
+    description: '4xx/5xx responses must reference a named component (Unauthorized / NotFound / BadRequest / ServerError) instead of inlining the ErrorBody shape. Catches drift in the refify pass.'
+    message: 'Inline error response — should be `$ref` to #/components/responses/...'
+    severity: error
+    # `resolved: false` is critical: Spectral resolves $refs by default,
+    # so without this it'd see the dereferenced target (no $ref field)
+    # and fire on every operation, plus on the components.responses
+    # definitions themselves. We want to inspect the raw operation
+    # response objects as authored.
+    resolved: false
+    given: "$.paths[*][get,post,put,patch,delete].responses['400','401','404','500']"
+    then:
+      field: $ref
+      function: truthy
+
+  rando-must-declare-bearer-auth:
+    description: 'The spec must declare a bearerAuth security scheme. Operations may opt out via an empty security array (only /v1/health does today), but the scheme itself has to exist.'
+    message: 'components.securitySchemes.bearerAuth is missing.'
+    severity: error
+    given: '$'
+    then:
+      field: components.securitySchemes.bearerAuth
+      function: truthy

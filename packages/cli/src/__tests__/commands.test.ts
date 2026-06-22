@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { run } from '../cli'
 import type { ClerkProvider } from '../domain/clerk'
 import type { Adapters } from '../config'
+import { PostmanPlanLimitError } from '../domain/errors'
 import type { DbProvider } from '../domain/db'
 import type { DeployProvider } from '../domain/deploy'
 import type { DnsProvider } from '../domain/dns'
@@ -455,8 +456,17 @@ describe('api postman sync', () => {
     return path
   }
 
+  // Mocks for the Spec Hub push half of sync — every sync call now hits these too.
+  // sync targets Spec Hub by default (works on Postman Free, unlike API Builder).
+  const specMocks = (): Partial<PostmanProvider> => ({
+    findSpecByName: vi.fn(async () => null),
+    createSpec: vi.fn(async () => ({ id: 'spec-1', name: 'Rando API', type: 'OPENAPI:3.0' })),
+    upsertSpecFile: vi.fn(async () => {}),
+  })
+
   it('replaces an existing collection when one with the same name exists', async () => {
     const postman: Partial<PostmanProvider> = {
+      ...specMocks(),
       findCollectionByName: vi.fn(async () => ({ id: 'c-old', uid: 'u-old', name: 'Rando API' })),
       deleteCollection: vi.fn(async () => {}),
       importOpenApi: vi.fn(async () => ({ id: 'c-new', uid: 'u-new', name: 'Rando API' })),
@@ -479,6 +489,7 @@ describe('api postman sync', () => {
 
   it('creates a new collection when no previous one exists', async () => {
     const postman: Partial<PostmanProvider> = {
+      ...specMocks(),
       findCollectionByName: vi.fn(async () => null),
       deleteCollection: vi.fn(async () => {}),
       importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
@@ -491,6 +502,88 @@ describe('api postman sync', () => {
     })
     expect(postman.deleteCollection).not.toHaveBeenCalled()
     expect(io.stdout.join('\n')).toContain('created')
+  })
+
+  it('also pushes the spec into Spec Hub alongside the collection', async () => {
+    const findSpec = vi.fn(async () => null)
+    const createSpec = vi.fn(async () => ({
+      id: 'spec-9',
+      name: 'Rando API',
+      type: 'OPENAPI:3.0',
+    }))
+    const upsertSpecFile = vi.fn(async () => {})
+    const postman: Partial<PostmanProvider> = {
+      findSpecByName: findSpec,
+      createSpec,
+      upsertSpecFile,
+      findCollectionByName: vi.fn(async () => null),
+      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
+    }
+    const io = captureIo()
+    await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1'], {
+      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(findSpec).toHaveBeenCalledWith({ workspaceId: 'ws-1', name: 'Rando API' })
+    expect(createSpec).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      name: 'Rando API',
+      type: undefined, // pushSpecHub leaves type undefined so the adapter applies its default
+      filePath: 'index.json',
+      fileContent: JSON.stringify({ openapi: '3.0.0', paths: {} }),
+    })
+    // First push creates, doesn't upsert content separately.
+    expect(upsertSpecFile).not.toHaveBeenCalled()
+  })
+
+  it('updates the Spec Hub spec in place on a second sync', async () => {
+    const findSpec = vi.fn(async () => ({ id: 'spec-7', name: 'Rando API', type: 'OPENAPI:3.0' }))
+    const createSpec = vi.fn()
+    const upsertSpecFile = vi.fn(async () => {})
+    const postman: Partial<PostmanProvider> = {
+      findSpecByName: findSpec,
+      createSpec: createSpec as PostmanProvider['createSpec'],
+      upsertSpecFile,
+      findCollectionByName: vi.fn(async () => null),
+      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
+    }
+    const io = captureIo()
+    await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1'], {
+      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(createSpec).not.toHaveBeenCalled()
+    expect(upsertSpecFile).toHaveBeenCalledWith({
+      specId: 'spec-7',
+      filePath: 'index.json',
+      content: JSON.stringify({ openapi: '3.0.0', paths: {} }),
+    })
+  })
+
+  it('soft-skips spec push when Spec Hub returns an error (collection push still wins)', async () => {
+    const postman: Partial<PostmanProvider> = {
+      findSpecByName: vi.fn(async () => {
+        throw new Error('502 Bad Gateway')
+      }),
+      createSpec: vi.fn(),
+      upsertSpecFile: vi.fn(),
+      findCollectionByName: vi.fn(async () => null),
+      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
+    }
+    const io = captureIo()
+    await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1'], {
+      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    // Collection push still succeeded; spec push failed and was noted.
+    expect(postman.importOpenApi).toHaveBeenCalled()
+    const out = io.stdout.join('\n')
+    expect(out).toContain('created')
+    expect(out).toContain('Spec Hub push skipped')
+    expect(out).toContain('502 Bad Gateway')
   })
 
   it('fails clearly when no workspace can be resolved', async () => {
@@ -517,6 +610,7 @@ describe('api postman sync', () => {
 
   it('--json emits structured output instead of human summary', async () => {
     const postman: Partial<PostmanProvider> = {
+      ...specMocks(),
       findCollectionByName: vi.fn(async () => null),
       importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
     }
@@ -531,7 +625,42 @@ describe('api postman sync', () => {
       ok: true,
       replaced: false,
       collection: { uid: 'u-1', name: 'Rando API' },
+      spec: { id: 'spec-1', name: 'Rando API' },
+      specSkipped: false,
       url: 'https://web.postman.co/workspace/ws-1/collection/u-1',
+    })
+  })
+
+  it('--json + spec push failure: stdout stays parseable JSON, skip reason in payload', async () => {
+    // Regression guard: previously the soft-skip path wrote a `note: …`
+    // line to stdout before the JSON payload, breaking JSON.parse for
+    // downstream consumers (CI scripts, `jq`, etc.).
+    const postman: Partial<PostmanProvider> = {
+      findSpecByName: vi.fn(async () => {
+        throw new Error('502 Bad Gateway')
+      }),
+      createSpec: vi.fn(),
+      upsertSpecFile: vi.fn(),
+      findCollectionByName: vi.fn(async () => null),
+      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
+    }
+    const io = captureIo()
+    await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1', '--json'], {
+      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    // No human `note:` line should leak into stdout when --json is set.
+    expect(io.stdout.join('\n')).not.toContain('Spec Hub push skipped')
+    expect(io.stdout.join('\n')).not.toContain('note:')
+    // stdout must be parseable as JSON, with the skip reason surfaced
+    // structurally instead.
+    const json = JSON.parse(io.stdout.join(''))
+    expect(json).toMatchObject({
+      ok: true,
+      spec: null,
+      specSkipped: true,
+      specSkipReason: '502 Bad Gateway',
     })
   })
 
@@ -685,6 +814,7 @@ describe('api postman sync', () => {
       }),
     )
     const postman: Partial<PostmanProvider> = {
+      ...specMocks(),
       findCollectionByName: vi.fn(async () => null),
       importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
     }
@@ -697,6 +827,273 @@ describe('api postman sync', () => {
     expect(postman.importOpenApi).toHaveBeenCalledWith(
       expect.objectContaining({ workspaceId: 'ws-from-config' }),
     )
+  })
+
+  // ─── push-spec (standalone) ─────────────────────────────────────────
+  // Default --target is "spec" (Spec Hub — works on Postman Free).
+  // --target api hits the API Builder entity (paid; returns plan-limit error on Free).
+
+  it('push-spec creates a new Spec Hub spec by default when none exists with that name', async () => {
+    const findSpec = vi.fn(async () => null)
+    const createSpec = vi.fn(async () => ({
+      id: 'spec-9',
+      name: 'Rando API',
+      type: 'OPENAPI:3.0',
+    }))
+    const upsertSpecFile = vi.fn(async () => {})
+    const postman: Partial<PostmanProvider> = {
+      findSpecByName: findSpec,
+      createSpec,
+      upsertSpecFile,
+    }
+    const io = captureIo()
+    await run(['api', 'postman', 'push-spec', '--spec', writeSpec(), '--workspace', 'ws-1'], {
+      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(findSpec).toHaveBeenCalledWith({ workspaceId: 'ws-1', name: 'Rando API' })
+    expect(createSpec).toHaveBeenCalledWith({
+      workspaceId: 'ws-1',
+      name: 'Rando API',
+      type: 'OPENAPI:3.0',
+      filePath: 'index.json',
+      fileContent: JSON.stringify({ openapi: '3.0.0', paths: {} }),
+    })
+    expect(upsertSpecFile).not.toHaveBeenCalled()
+    expect(io.stdout.join('\n')).toContain('created Spec Hub spec Rando API')
+  })
+
+  it('push-spec updates the existing Spec Hub file in place (idempotent re-run)', async () => {
+    const findSpec = vi.fn(async () => ({ id: 'spec-7', name: 'Rando API', type: 'OPENAPI:3.0' }))
+    const createSpec = vi.fn()
+    const upsertSpecFile = vi.fn(async () => {})
+    const postman: Partial<PostmanProvider> = {
+      findSpecByName: findSpec,
+      createSpec: createSpec as PostmanProvider['createSpec'],
+      upsertSpecFile,
+    }
+    const io = captureIo()
+    await run(['api', 'postman', 'push-spec', '--spec', writeSpec(), '--workspace', 'ws-1'], {
+      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    expect(createSpec).not.toHaveBeenCalled()
+    expect(upsertSpecFile).toHaveBeenCalledWith({
+      specId: 'spec-7',
+      filePath: 'index.json',
+      content: JSON.stringify({ openapi: '3.0.0', paths: {} }),
+    })
+    expect(io.stdout.join('\n')).toContain('updated Spec Hub spec Rando API')
+  })
+
+  it('push-spec respects --spec-type for non-default OpenAPI versions', async () => {
+    const createSpec = vi.fn(async () => ({ id: 's', name: 'Rando API', type: 'OPENAPI:3.1' }))
+    const postman: Partial<PostmanProvider> = {
+      findSpecByName: vi.fn(async () => null),
+      createSpec,
+      upsertSpecFile: vi.fn(),
+    }
+    const io = captureIo()
+    await run(
+      [
+        'api',
+        'postman',
+        'push-spec',
+        '--spec',
+        writeSpec(),
+        '--workspace',
+        'ws-1',
+        '--spec-type',
+        'OPENAPI:3.1',
+      ],
+      { adapters: mockAdapters({ postman: postman as PostmanProvider }), io: io.io, exit: noExit },
+    )
+    expect(createSpec).toHaveBeenCalledWith(expect.objectContaining({ type: 'OPENAPI:3.1' }))
+  })
+
+  it('push-spec --json emits structured output for Spec Hub target', async () => {
+    const postman: Partial<PostmanProvider> = {
+      findSpecByName: vi.fn(async () => null),
+      createSpec: vi.fn(async () => ({ id: 'spec-9', name: 'Rando API', type: 'OPENAPI:3.0' })),
+      upsertSpecFile: vi.fn(async () => {}),
+    }
+    const io = captureIo()
+    await run(
+      ['api', 'postman', 'push-spec', '--spec', writeSpec(), '--workspace', 'ws-1', '--json'],
+      { adapters: mockAdapters({ postman: postman as PostmanProvider }), io: io.io, exit: noExit },
+    )
+    expect(JSON.parse(io.stdout.join(''))).toMatchObject({
+      ok: true,
+      created: true,
+      spec: { id: 'spec-9', name: 'Rando API', type: 'OPENAPI:3.0' },
+    })
+  })
+
+  it('push-spec --target api creates an API Builder entity (paid path)', async () => {
+    const findApi = vi.fn(async () => null)
+    const createApi = vi.fn(async () => ({ id: 'api-9', name: 'Rando API' }))
+    const upsertSchema = vi.fn(async () => {})
+    const postman: Partial<PostmanProvider> = {
+      findApiByName: findApi,
+      createApi,
+      upsertApiSchema: upsertSchema,
+    }
+    const io = captureIo()
+    await run(
+      [
+        'api',
+        'postman',
+        'push-spec',
+        '--target',
+        'api',
+        '--spec',
+        writeSpec(),
+        '--workspace',
+        'ws-1',
+      ],
+      { adapters: mockAdapters({ postman: postman as PostmanProvider }), io: io.io, exit: noExit },
+    )
+    expect(findApi).toHaveBeenCalledWith({ workspaceId: 'ws-1', name: 'Rando API' })
+    expect(createApi).toHaveBeenCalledWith({ workspaceId: 'ws-1', name: 'Rando API' })
+    expect(upsertSchema).toHaveBeenCalledWith({
+      apiId: 'api-9',
+      version: 'v1',
+      spec: { openapi: '3.0.0', paths: {} },
+    })
+    expect(io.stdout.join('\n')).toContain('created API entity Rando API')
+  })
+
+  it('push-spec --target api with --api-version flag forwards the version', async () => {
+    const upsertSchema = vi.fn(async () => {})
+    const postman: Partial<PostmanProvider> = {
+      findApiByName: vi.fn(async () => ({ id: 'api-1', name: 'Rando API' })),
+      createApi: vi.fn(),
+      upsertApiSchema: upsertSchema,
+    }
+    const io = captureIo()
+    await run(
+      [
+        'api',
+        'postman',
+        'push-spec',
+        '--target',
+        'api',
+        '--spec',
+        writeSpec(),
+        '--workspace',
+        'ws-1',
+        '--api-version',
+        'v2',
+      ],
+      { adapters: mockAdapters({ postman: postman as PostmanProvider }), io: io.io, exit: noExit },
+    )
+    expect(upsertSchema).toHaveBeenCalledWith(expect.objectContaining({ version: 'v2' }))
+  })
+
+  it('push-spec --target api surfaces a plan-upgrade message on Free tier', async () => {
+    // Postman Free tier rejects POST /apis with limitReachedError. The /specs surface (default)
+    // doesn't have this limit, so the upgrade message only fires under --target api.
+    const postman: Partial<PostmanProvider> = {
+      findApiByName: vi.fn(async () => null),
+      createApi: vi.fn(async () => {
+        throw new PostmanPlanLimitError(
+          'You can create up to 0 APIs on your current plan.',
+          '{"error":{"name":"limitReachedError"}}',
+        )
+      }),
+      upsertApiSchema: vi.fn(),
+    }
+    const io = captureIo()
+    const exitCalls: number[] = []
+    await run(
+      [
+        'api',
+        'postman',
+        'push-spec',
+        '--target',
+        'api',
+        '--spec',
+        writeSpec(),
+        '--workspace',
+        'ws-1',
+      ],
+      {
+        adapters: mockAdapters({ postman: postman as PostmanProvider }),
+        io: io.io,
+        exit: ((c: number) => {
+          exitCalls.push(c)
+        }) as never,
+      },
+    )
+    expect(exitCalls[0]).toBe(1)
+    const err = io.stderr.join('\n')
+    expect(err).toContain('Postman plan blocks API entities')
+    expect(err).toContain('Upgrade to a Postman plan')
+    // The raw 400 JSON should NOT leak into the error.
+    expect(err).not.toContain('limitReachedError')
+  })
+
+  it('push-spec rejects unknown --target values', async () => {
+    const postman: Partial<PostmanProvider> = {
+      findSpecByName: vi.fn(),
+    }
+    const io = captureIo()
+    const exitCalls: number[] = []
+    await run(
+      [
+        'api',
+        'postman',
+        'push-spec',
+        '--target',
+        'mocks',
+        '--spec',
+        writeSpec(),
+        '--workspace',
+        'ws-1',
+      ],
+      {
+        adapters: mockAdapters({ postman: postman as PostmanProvider }),
+        io: io.io,
+        exit: ((c: number) => {
+          exitCalls.push(c)
+        }) as never,
+      },
+    )
+    expect(exitCalls[0]).toBe(1)
+    expect(io.stderr.join('\n')).toMatch(/Unknown --target "mocks"/)
+  })
+
+  it('push-spec fails clearly when no workspace can be resolved', async () => {
+    const postman: Partial<PostmanProvider> = {
+      findSpecByName: vi.fn(),
+      createSpec: vi.fn(),
+      upsertSpecFile: vi.fn(),
+    }
+    const io = captureIo()
+    const exitCalls: number[] = []
+    await run(
+      [
+        'api',
+        'postman',
+        'push-spec',
+        '--spec',
+        writeSpec(),
+        '--config',
+        join(tmpDir, 'missing.json'),
+      ],
+      {
+        adapters: mockAdapters({ postman: postman as PostmanProvider }),
+        io: io.io,
+        exit: ((c: number) => {
+          exitCalls.push(c)
+        }) as never,
+      },
+    )
+    expect(exitCalls[0]).toBe(1)
+    expect(io.stderr.join('\n')).toMatch(/No Postman workspace/)
+    expect(postman.findSpecByName).not.toHaveBeenCalled()
   })
 
   it('push updates an existing collection (PUT) when one with the same name exists', async () => {

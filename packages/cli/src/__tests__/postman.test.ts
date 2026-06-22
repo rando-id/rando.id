@@ -4,7 +4,7 @@
 
 import { describe, expect, it } from 'vitest'
 import { PostmanRestProvider } from '../adapters/postman'
-import { ProviderApiError } from '../domain/errors'
+import { PostmanPlanLimitError, ProviderApiError } from '../domain/errors'
 import { stubFetch } from './helpers'
 
 function adapter(stub: ReturnType<typeof stubFetch>) {
@@ -188,5 +188,223 @@ describe('PostmanRestProvider', () => {
     })
     expect(stub.calls[0]?.method).toBe('PUT')
     expect(stub.calls[0]?.url).toBe('https://api.postman.test/environments/u-9')
+  })
+
+  // ─── API entity (spec-shaped sidebar) ───────────────────────────────
+
+  it('findApiByName uses `workspaceId=` query (Postman naming inconsistency)', async () => {
+    const stub = stubFetch([
+      {
+        body: {
+          apis: [
+            { id: 'api-1', name: 'Other' },
+            { id: 'api-2', name: 'Rando API' },
+          ],
+        },
+      },
+    ])
+    const hit = await adapter(stub).findApiByName({ workspaceId: 'ws-1', name: 'Rando API' })
+    expect(hit).toEqual({ id: 'api-2', name: 'Rando API' })
+    // Regression guard: this endpoint differs from /collections (which uses `workspace=`).
+    expect(stub.calls[0]?.url).toBe('https://api.postman.test/apis?workspaceId=ws-1')
+  })
+
+  it('findApiByName returns null when no name matches', async () => {
+    const stub = stubFetch([{ body: { apis: [{ id: 'api-1', name: 'Other' }] } }])
+    const miss = await adapter(stub).findApiByName({ workspaceId: 'ws-1', name: 'Missing' })
+    expect(miss).toBeNull()
+  })
+
+  it('createApi POSTs the api wrapped under `api` with workspaceId', async () => {
+    const stub = stubFetch([{ body: { api: { id: 'api-9', name: 'Rando API' } } }])
+    const result = await adapter(stub).createApi({
+      workspaceId: 'ws-1',
+      name: 'Rando API',
+      summary: 'Generated from /v1/openapi.json',
+    })
+    expect(result).toEqual({ id: 'api-9', name: 'Rando API' })
+    expect(stub.calls[0]?.method).toBe('POST')
+    expect(stub.calls[0]?.url).toBe('https://api.postman.test/apis')
+    expect(stub.calls[0]?.body).toEqual({
+      api: {
+        name: 'Rando API',
+        summary: 'Generated from /v1/openapi.json',
+        workspaceId: 'ws-1',
+      },
+    })
+  })
+
+  it('upsertApiSchema creates version + schema on a fresh API', async () => {
+    const spec = { openapi: '3.0.0', info: { title: 'Rando', version: '1.0' }, paths: {} }
+    const stub = stubFetch([
+      { body: { versions: [] } }, // GET versions → empty
+      { body: { version: { id: 'ver-1', name: 'v1' } } }, // POST versions → created
+      { body: { schemas: [] } }, // GET schemas → empty
+      { body: { schema: { id: 'sch-1' } } }, // POST schemas → created
+    ])
+    await adapter(stub).upsertApiSchema({ apiId: 'api-1', version: 'v1', spec })
+    expect(stub.calls[0]).toMatchObject({
+      method: 'GET',
+      url: 'https://api.postman.test/apis/api-1/versions',
+    })
+    expect(stub.calls[1]).toMatchObject({
+      method: 'POST',
+      url: 'https://api.postman.test/apis/api-1/versions',
+      body: { version: { name: 'v1' } },
+    })
+    expect(stub.calls[2]).toMatchObject({
+      method: 'GET',
+      url: 'https://api.postman.test/apis/api-1/versions/ver-1/schemas',
+    })
+    expect(stub.calls[3]).toMatchObject({
+      method: 'POST',
+      url: 'https://api.postman.test/apis/api-1/versions/ver-1/schemas',
+    })
+    expect(stub.calls[3]?.body).toEqual({
+      schema: {
+        type: 'openapi3',
+        language: 'json',
+        schema: JSON.stringify(spec),
+      },
+    })
+  })
+
+  it('upsertApiSchema reuses existing version + PUTs to existing schema', async () => {
+    const spec = { openapi: '3.0.0', paths: {} }
+    const stub = stubFetch([
+      { body: { versions: [{ id: 'ver-1', name: 'v1' }] } }, // GET versions → match
+      { body: { schemas: [{ id: 'sch-1' }] } }, // GET schemas → match
+      { body: { schema: { id: 'sch-1' } } }, // PUT schemas/sch-1 → updated
+    ])
+    await adapter(stub).upsertApiSchema({ apiId: 'api-1', version: 'v1', spec })
+    expect(stub.calls).toHaveLength(3)
+    expect(stub.calls[1]).toMatchObject({
+      method: 'GET',
+      url: 'https://api.postman.test/apis/api-1/versions/ver-1/schemas',
+    })
+    expect(stub.calls[2]).toMatchObject({
+      method: 'PUT',
+      url: 'https://api.postman.test/apis/api-1/versions/ver-1/schemas/sch-1',
+    })
+  })
+
+  it('translates Postman limitReachedError bodies into PostmanPlanLimitError', async () => {
+    // Real-world body from Postman Free tier trying to POST /apis.
+    const body = JSON.stringify({
+      error: {
+        name: 'limitReachedError',
+        message: 'You can create up to 0 APIs on your current plan.',
+      },
+    })
+    const stub = stubFetch([{ status: 400, text: body }])
+    const err = await adapter(stub)
+      .createApi({ workspaceId: 'ws-1', name: 'Rando API' })
+      .catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(PostmanPlanLimitError)
+    if (err instanceof PostmanPlanLimitError) {
+      expect(err.limit).toBe('You can create up to 0 APIs on your current plan.')
+      expect(err.body).toBe(body)
+    }
+  })
+
+  it('non-limit 4xx bodies still surface as plain ProviderApiError', async () => {
+    // Different error shape (e.g. malformed JSON, auth) shouldn't get tagged.
+    const stub = stubFetch([
+      { status: 400, body: { error: { name: 'badRequestError', message: 'bad' } } },
+    ])
+    const err = await adapter(stub)
+      .createApi({ workspaceId: 'ws-1', name: 'Rando API' })
+      .catch((e: unknown) => e)
+    expect(err).toBeInstanceOf(ProviderApiError)
+    expect(err).not.toBeInstanceOf(PostmanPlanLimitError)
+  })
+
+  it('upsertApiSchema accepts a pre-stringified spec without double-encoding', async () => {
+    const specString = '{"openapi":"3.0.0"}'
+    const stub = stubFetch([
+      { body: { versions: [{ id: 'ver-1', name: 'v1' }] } },
+      { body: { schemas: [] } },
+      { body: { schema: { id: 'sch-1' } } },
+    ])
+    await adapter(stub).upsertApiSchema({ apiId: 'api-1', version: 'v1', spec: specString })
+    expect(stub.calls[2]?.body).toMatchObject({
+      schema: { type: 'openapi3', language: 'json', schema: specString },
+    })
+  })
+
+  // ─── Spec Hub (the Free-tier-friendly surface) ──────────────────────
+
+  it('findSpecByName GETs /specs?workspaceId= and matches by name', async () => {
+    const stub = stubFetch([
+      {
+        body: {
+          specs: [
+            { id: 's-1', name: 'Other', type: 'OPENAPI:3.0' },
+            { id: 's-2', name: 'Rando API', type: 'OPENAPI:3.0' },
+          ],
+        },
+      },
+    ])
+    const hit = await adapter(stub).findSpecByName({ workspaceId: 'ws-1', name: 'Rando API' })
+    expect(hit).toEqual({ id: 's-2', name: 'Rando API', type: 'OPENAPI:3.0' })
+    expect(stub.calls[0]?.url).toBe('https://api.postman.test/specs?workspaceId=ws-1')
+  })
+
+  it('findSpecByName returns null when no name matches', async () => {
+    const stub = stubFetch([{ body: { specs: [] } }])
+    const miss = await adapter(stub).findSpecByName({ workspaceId: 'ws-1', name: 'Missing' })
+    expect(miss).toBeNull()
+  })
+
+  it('createSpec POSTs flat body (name/type/files at top level, NOT wrapped under spec)', async () => {
+    // Regression guard: POST /apis takes `{ api: {...} }` but POST /specs takes
+    // flat `{ name, type, files }` — confirmed empirically against the live API.
+    const stub = stubFetch([
+      { status: 201, body: { id: 's-9', name: 'Rando API', type: 'OPENAPI:3.0' } },
+    ])
+    const result = await adapter(stub).createSpec({
+      workspaceId: 'ws-1',
+      name: 'Rando API',
+      fileContent: '{"openapi":"3.0.0","paths":{}}',
+    })
+    expect(result).toEqual({ id: 's-9', name: 'Rando API', type: 'OPENAPI:3.0' })
+    expect(stub.calls[0]?.method).toBe('POST')
+    expect(stub.calls[0]?.url).toBe('https://api.postman.test/specs?workspaceId=ws-1')
+    expect(stub.calls[0]?.body).toEqual({
+      name: 'Rando API',
+      type: 'OPENAPI:3.0',
+      files: [{ path: 'index.json', content: '{"openapi":"3.0.0","paths":{}}' }],
+    })
+  })
+
+  it('createSpec respects custom type + filePath', async () => {
+    const stub = stubFetch([{ status: 201, body: { id: 's-9', name: 'X', type: 'OPENAPI:3.1' } }])
+    await adapter(stub).createSpec({
+      workspaceId: 'ws-1',
+      name: 'X',
+      type: 'OPENAPI:3.1',
+      filePath: 'root.yaml',
+      fileContent: 'openapi: 3.1.0',
+    })
+    expect(stub.calls[0]?.body).toMatchObject({
+      type: 'OPENAPI:3.1',
+      files: [{ path: 'root.yaml', content: 'openapi: 3.1.0' }],
+    })
+  })
+
+  it('upsertSpecFile PATCHes /specs/{id}/files/{path} with the new content', async () => {
+    // Regression guard: PUT returns 404 on this endpoint — PATCH is the supported verb,
+    // confirmed empirically against the live API.
+    const stub = stubFetch([{ status: 200, body: { id: 'f-1', path: 'index.json' } }])
+    await adapter(stub).upsertSpecFile({
+      specId: 's-1',
+      filePath: 'index.json',
+      content: '{"openapi":"3.0.0","info":{"title":"updated","version":"1.1.0"},"paths":{}}',
+    })
+    expect(stub.calls[0]?.method).toBe('PATCH')
+    expect(stub.calls[0]?.url).toBe('https://api.postman.test/specs/s-1/files/index.json')
+    expect(stub.calls[0]?.body).toEqual({
+      content: '{"openapi":"3.0.0","info":{"title":"updated","version":"1.1.0"},"paths":{}}',
+    })
   })
 })
