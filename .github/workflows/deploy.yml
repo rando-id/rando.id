@@ -29,17 +29,13 @@ name: Deploy
 on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
-    # Docs-only PRs don't need a preview environment. `paths-ignore` runs
-    # the workflow only when at least one changed file is OUTSIDE the
-    # listed patterns — a PR mixing code + docs still triggers a deploy.
-    # Safe to use here because this workflow isn't a required status
-    # check (gated on `vars.PREVIEW_ENABLED`); if that ever changes,
-    # switch to a path-filter step that no-ops gracefully so required
-    # checks still report success on skipped PRs.
-    paths-ignore:
-      - '.notes/**'
-      - '**/*.md'
-      - 'LICENSE'
+    # NOTE: do NOT add `paths-ignore` here. It would apply to the
+    # `closed` event too — if a PR was deployed and then amended to
+    # docs-only before close, the workflow wouldn't fire and the
+    # teardown job would never run, orphaning Vercel custom domains
+    # and Cloudflare CNAMEs. Docs-only filtering lives inside the
+    # branch-deploy job below via .github/actions/changes; teardown
+    # always runs on close.
 
 concurrency:
   # Serialize per-PR so a quick close-after-open doesn't race the deploy job.
@@ -59,20 +55,33 @@ jobs:
         with:
           install-cli: 'true'
 
+      # Detect docs-only PRs so we can short-circuit the deploy steps.
+      # The composite action's `docs` output is true when EVERY changed
+      # file matches a docs pattern (`**/*.md`, `LICENSE`, GitHub
+      # templates, etc.). A PR mixing code + docs still deploys.
+      - uses: ./.github/actions/changes
+        id: changes
+
+      - name: Docs-only PR — skipping deploy
+        if: steps.changes.outputs.docs == 'true'
+        run: echo "::notice::Docs-only PR — skipping preview deploy. Teardown stays unconditional on close."
+
       # Stream the staging 1Password Environment into $GITHUB_ENV. Adding
       # a new secret means adding it to the Environment in the 1Password
       # UI — no workflow change required.
       - uses: ./.github/actions/op-env
+        if: steps.changes.outputs.docs != 'true'
         with:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       # Optional: spin up a per-PR Neon branch off main so migrations and
       # seed data are isolated. Requires RANDO_NEON_PROJECT_ID variable.
       # - name: Create Neon branch
-      #   if: vars.RANDO_NEON_PROJECT_ID != ''
+      #   if: vars.RANDO_NEON_PROJECT_ID != '' && steps.changes.outputs.docs != 'true'
       #   run: rando db branch create ${{ vars.RANDO_NEON_PROJECT_ID }} pr-${{ github.event.pull_request.number }} --from main
 
       - name: Trigger preview deploys
+        if: steps.changes.outputs.docs != 'true'
         run: rando deploy branch '${{ github.head_ref }}' --stable-url
         env:
           FORCE_COLOR: '1'
@@ -81,11 +90,11 @@ jobs:
       # plus a comment with the per-app stable deploy URLs. Soft-fails
       # so a tracker hiccup doesn't fail the deploy job.
       - id: refs
-        if: vars.TRACKER_ENABLED != 'false'
+        if: vars.TRACKER_ENABLED != 'false' && steps.changes.outputs.docs != 'true'
         uses: ./.github/actions/issue-refs
 
       - name: Sync issues → In Review with deploy URLs
-        if: vars.TRACKER_ENABLED != 'false' && steps.refs.outputs.keys != ''
+        if: vars.TRACKER_ENABLED != 'false' && steps.changes.outputs.docs != 'true' && steps.refs.outputs.keys != ''
         run: |
           BRANCH='${{ github.head_ref }}'
           MSG=$(printf 'Branch deploy live:\n\n- https://%s-api.rando-id.dev\n- https://%s-web.rando-id.dev\n- https://%s-admin.rando-id.dev\n\nPR: %s' \

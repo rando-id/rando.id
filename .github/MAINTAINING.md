@@ -180,11 +180,14 @@ itself doesn't change.
 
 Two seams filter out PRs / pushes that don't change deployable code:
 
-- **PR preview deploys** — `.github/workflows/deploy.yml` uses
-  `paths-ignore` so PRs touching only `.notes/**`, `**/*.md`, or
-  `LICENSE` don't trigger `rando deploy branch`. A PR mixing code +
-  docs still deploys because `paths-ignore` only matches when **every**
-  changed file is in the list.
+- **PR preview deploys** — `.github/workflows/deploy.yml`'s
+  `branch-deploy` job runs `.github/actions/changes` first and short-
+  circuits the deploy steps when `outputs.docs == 'true'` (every
+  changed file matches a docs pattern: `**/*.md`, `LICENSE`, GitHub
+  templates). A PR mixing code + docs still deploys. **The teardown
+  job stays unconditional** so closing a PR always tears down its
+  Vercel custom domains + Cloudflare CNAMEs — even if the final diff
+  ended up docs-only.
 - **Prod / staging push deploys** — each app's `vercel.json` sets
   `ignoreCommand: "npx -y turbo-ignore @rando/<app>"`. Turbo walks the
   workspace dep graph and exits 1 (skip) when nothing the app
@@ -192,11 +195,15 @@ Two seams filter out PRs / pushes that don't change deployable code:
   triggers `web` + `admin` (both depend on it); a change inside
   `.notes/**` triggers none of them.
 
-To widen the filter, add patterns to the `paths-ignore` list and adjust
-`turbo.json`'s `inputs` if you need to exclude per-workspace docs from
-the cache key. Don't add patterns to one seam without the other — the
-two need to stay aligned or you'll get a deploy where you didn't expect
-one (or vice versa).
+**Do NOT use `paths-ignore` at the workflow `on:` level for deploy.yml.**
+It applies to every `pull_request` event type, so a PR amended to
+docs-only before close would skip the workflow entirely and orphan
+infra. The job-level gate above keeps teardown safe.
+
+To widen the docs filter, edit the `docs:` patterns in
+`.github/actions/changes/action.yml` (shared with other workflows like
+`unit-tests.yml`). Adjust `turbo.json`'s `inputs` if you need to exclude
+per-workspace docs from the cache key.
 
 ## Cloudflare
 
