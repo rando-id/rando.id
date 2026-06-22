@@ -61,8 +61,26 @@ in `packages/api-client/src/contract.ts`.
 
 ## Resolved questions
 
-- **Postman plan blocks API entities entirely on the Free tier.** First live run of `rando api postman push-spec` against the user's workspace returned `400 limitReachedError: "You can create up to 0 APIs on your current plan."` This is a _plan_ limit, not a _scope_ limit on the PAT — no PAT change will unblock it. Two paths forward:
-  1. Upgrade to a Postman plan that includes APIs (Basic ~$15/user/mo as of mid-2026, includes 3 APIs). Not warranted while Rando is solo + pre-launch.
-  2. Stay on Free, lean on the collection-only flow, and let `sync`'s soft-skip absorb the failure with a note. Standalone `rando api postman push-spec` will hard-fail until upgrade — that's correct behavior, no fix needed in code.
-- **API entity name = `Rando API`** — matches the collection name (`DEFAULT_COLLECTION_NAME`), so when the plan limit is lifted the sidebar shows one logical "API" with collection nested under it.
-- **Versioning = `v1` from day one** — cheap, future-proofs for `v2` later.
+- **Postman exposes TWO spec surfaces, not one. We use Spec Hub.** The first cut of this work targeted `POST /apis` (API Builder), but that hit `400 limitReachedError: "You can create up to 0 APIs on your current plan."` on the Free tier. A live probe of `POST /specs` (Spec Hub) on the same workspace succeeded — Spec Hub is the Free-tier-friendly surface, separate from API Builder.
+  - **Default `--target` is `spec`** (Spec Hub) — works on every plan.
+  - **`--target api`** still pushes to API Builder for users on a paid plan; on Free it surfaces a friendly "upgrade required" error via `PostmanPlanLimitError` rather than a raw 400 JSON dump.
+  - `sync` pushes the collection + Spec Hub spec. The API Builder push has been removed from sync because it's a no-op on Free and `push-spec --target api` is available for paid users.
+- **API entity name = `Rando API`** — matches the collection name (`DEFAULT_COLLECTION_NAME`), so the sidebar shows one logical "API" across both surfaces.
+- **Spec type = `OPENAPI:3.0`** — Postman's enum for the type field; overridable via `--spec-type` (e.g. `OPENAPI:3.1`).
+- **Versioning** (API Builder only) **= `v1` from day one** — cheap, future-proofs for `v2` later. Configurable via `--api-version`.
+
+## Postman REST surface used (verified empirically)
+
+The public learning.postman.com docs don't currently cover the Spec Hub endpoints. Confirmed against the live API on 2026-06-21:
+
+```
+POST   /specs?workspaceId=<id>             body: { name, type, files: [{path, content}] }
+                                           → 201 { id, name, type, ... }
+GET    /specs?workspaceId=<id>             → { specs: [{id, name, type, ...}] }
+GET    /specs/{id}/files                   → { files: [{id, path, type, ...}] }
+GET    /specs/{id}/files/{path}            → { content, id, path, ... }
+PATCH  /specs/{id}/files/{path}            body: { content }   → 200
+DELETE /specs/{id}                         → 204
+```
+
+Note: PUT to `/specs/{id}/files/{path}` returns 404. PATCH is the supported verb for in-place content updates.

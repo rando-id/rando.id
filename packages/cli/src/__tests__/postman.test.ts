@@ -331,4 +331,80 @@ describe('PostmanRestProvider', () => {
       schema: { type: 'openapi3', language: 'json', schema: specString },
     })
   })
+
+  // ─── Spec Hub (the Free-tier-friendly surface) ──────────────────────
+
+  it('findSpecByName GETs /specs?workspaceId= and matches by name', async () => {
+    const stub = stubFetch([
+      {
+        body: {
+          specs: [
+            { id: 's-1', name: 'Other', type: 'OPENAPI:3.0' },
+            { id: 's-2', name: 'Rando API', type: 'OPENAPI:3.0' },
+          ],
+        },
+      },
+    ])
+    const hit = await adapter(stub).findSpecByName({ workspaceId: 'ws-1', name: 'Rando API' })
+    expect(hit).toEqual({ id: 's-2', name: 'Rando API', type: 'OPENAPI:3.0' })
+    expect(stub.calls[0]?.url).toBe('https://api.postman.test/specs?workspaceId=ws-1')
+  })
+
+  it('findSpecByName returns null when no name matches', async () => {
+    const stub = stubFetch([{ body: { specs: [] } }])
+    const miss = await adapter(stub).findSpecByName({ workspaceId: 'ws-1', name: 'Missing' })
+    expect(miss).toBeNull()
+  })
+
+  it('createSpec POSTs flat body (name/type/files at top level, NOT wrapped under spec)', async () => {
+    // Regression guard: POST /apis takes `{ api: {...} }` but POST /specs takes
+    // flat `{ name, type, files }` — confirmed empirically against the live API.
+    const stub = stubFetch([
+      { status: 201, body: { id: 's-9', name: 'Rando API', type: 'OPENAPI:3.0' } },
+    ])
+    const result = await adapter(stub).createSpec({
+      workspaceId: 'ws-1',
+      name: 'Rando API',
+      fileContent: '{"openapi":"3.0.0","paths":{}}',
+    })
+    expect(result).toEqual({ id: 's-9', name: 'Rando API', type: 'OPENAPI:3.0' })
+    expect(stub.calls[0]?.method).toBe('POST')
+    expect(stub.calls[0]?.url).toBe('https://api.postman.test/specs?workspaceId=ws-1')
+    expect(stub.calls[0]?.body).toEqual({
+      name: 'Rando API',
+      type: 'OPENAPI:3.0',
+      files: [{ path: 'index.json', content: '{"openapi":"3.0.0","paths":{}}' }],
+    })
+  })
+
+  it('createSpec respects custom type + filePath', async () => {
+    const stub = stubFetch([{ status: 201, body: { id: 's-9', name: 'X', type: 'OPENAPI:3.1' } }])
+    await adapter(stub).createSpec({
+      workspaceId: 'ws-1',
+      name: 'X',
+      type: 'OPENAPI:3.1',
+      filePath: 'root.yaml',
+      fileContent: 'openapi: 3.1.0',
+    })
+    expect(stub.calls[0]?.body).toMatchObject({
+      type: 'OPENAPI:3.1',
+      files: [{ path: 'root.yaml', content: 'openapi: 3.1.0' }],
+    })
+  })
+
+  it('upsertSpecFile PATCHes /specs/{id}/files/{path} with the new content', async () => {
+    // Regression guard: PUT returns 404 on this endpoint — PATCH is the supported verb,
+    // confirmed empirically against the live API.
+    const stub = stubFetch([{ status: 200, body: { id: 'f-1', path: 'index.json' } }])
+    await adapter(stub).upsertSpecFile({
+      specId: 's-1',
+      filePath: 'index.json',
+      content: '{"openapi":"3.0.0","info":{"title":"updated","version":"1.1.0"},"paths":{}}',
+    })
+    expect(stub.calls[0]?.method).toBe('PATCH')
+    expect(stub.calls[0]?.url).toBe('https://api.postman.test/specs/s-1/files/index.json')
+    expect(stub.calls[0]?.body).toEqual({
+      content: '{"openapi":"3.0.0","info":{"title":"updated","version":"1.1.0"},"paths":{}}',
+    })
+  })
 })

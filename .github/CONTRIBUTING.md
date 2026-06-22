@@ -302,17 +302,16 @@ BASE_URL=https://staging-api.rando-id.dev pnpm test:api
 op run --env-file=postman/.op.env -- pnpm test:api
 
 # Mirror the local collection to your Postman workspace. Also pushes
-# the OpenAPI spec as a Postman "API" entity (the spec-shaped sidebar
-# view, separate from the collection) so governance / docs / mocks
-# stay anchored to the contract. If your PAT lacks API-Builder
-# permissions, the spec push soft-skips with a note and the collection
-# push still wins.
+# the OpenAPI spec into Postman's Spec Hub (the spec-shaped sidebar
+# view, separate from the collection) so docs/governance stay anchored
+# to the contract. Spec Hub works on the Postman Free tier.
 rando api postman sync
 
-# Push only the spec (skip the collection half) — useful when running
-# collection-as-code mode (`postman push`) but still wanting the API
-# entity to reflect the latest spec.
+# Push only the spec (skip the collection half). Default --target is
+# `spec` (Spec Hub). Use --target api to push to the API Builder
+# entity instead (paid feature; returns "upgrade required" on Free).
 rando api postman push-spec
+rando api postman push-spec --target api      # paid-tier API Builder push
 
 # Regenerate the collection skeleton from the OpenAPI spec.
 # IMPORTANT: refuses to overwrite without --force — generate to a

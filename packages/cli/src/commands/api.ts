@@ -18,9 +18,13 @@ import { loadSetupConfig } from '../setup-config'
 const DEFAULT_CONFIG_PATH = 'rando.config.json'
 const DEFAULT_COLLECTION_NAME = 'Rando API'
 const DEFAULT_API_VERSION = 'v1'
+const DEFAULT_SPEC_TYPE = 'OPENAPI:3.0'
+const DEFAULT_SPEC_FILE_PATH = 'index.json'
 const DEFAULT_SPEC_URL = 'http://localhost:4000/v1/openapi.json'
 const DEFAULT_COLLECTION_OUTPUT = 'postman/rando-api.postman_collection.json'
 const DEFAULT_ENV_DIR = 'postman/environments'
+
+type PushTarget = 'spec' | 'api'
 
 export function apiCommand(adapters: Adapters, io: Io): Command {
   const api = new Command('api').description('API surface tooling (Postman, OpenAPI dump, etc.)')
@@ -110,49 +114,40 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
           throw e
         }
 
-        // Mirror the spec into Postman's API entity surface alongside
-        // the collection — soft-skip per the orchestrator rule if the
-        // PAT lacks API-Builder permissions or the endpoint is
-        // unavailable, since the collection push (the load-bearing
-        // half) has already succeeded.
-        let api: { id: string; name: string } | null = null
-        let apiCreated = false
+        // Mirror the spec into Postman's Spec Hub alongside the
+        // collection. Spec Hub works on the Free tier (API Builder
+        // doesn't — that's a paid feature), so this is the default.
+        // Soft-skip per the orchestrator rule if Spec Hub itself errors,
+        // since the collection push has already succeeded.
+        let spec_: { id: string; name: string } | null = null
+        let specCreated = false
         try {
-          const result = await pushSpec(provider, io, {
+          const result = await pushSpecHub(provider, io, {
             workspaceId,
             name: opts.name,
-            version: DEFAULT_API_VERSION,
-            spec,
+            fileContent: typeof spec === 'string' ? spec : JSON.stringify(spec),
           })
-          api = result.api
-          apiCreated = result.apiCreated
+          spec_ = { id: result.spec.id, name: result.spec.name }
+          specCreated = result.specCreated
         } catch (e) {
-          // Plan-limit failures are expected on Postman Free (0 APIs
-          // allowed) — surface a focused "upgrade required" line
-          // instead of dumping the raw 400 JSON.
-          const msg =
-            e instanceof PostmanPlanLimitError
-              ? `Postman plan blocks API entities (${e.limit}) — upgrade to enable spec push`
-              : e instanceof Error
-                ? e.message
-                : String(e)
-          io.stdout(`  ${colors.warn('note:')} spec push to Postman API surface skipped — ${msg}`)
+          const msg = e instanceof Error ? e.message : String(e)
+          io.stdout(`  ${colors.warn('note:')} Spec Hub push skipped — ${msg}`)
         }
 
         const url = collectionUrl(created.uid, workspaceId)
         emit(
           io,
           opts.json,
-          { ok: true, replaced: existing != null, collection: created, api, url },
+          { ok: true, replaced: existing != null, collection: created, spec: spec_, url },
           () => {
             const lines = [
               `${colors.success('✓')} ${existing ? 'replaced' : 'created'} ${colors.resource(created.name)}`,
               `  ${colors.hint('uid:')}  ${created.uid}`,
               `  ${colors.hint('open:')} ${url}`,
             ]
-            if (api) {
+            if (spec_) {
               lines.push(
-                `${colors.success('✓')} ${apiCreated ? 'created' : 'updated'} API entity ${colors.resource(api.name)} (id ${api.id})`,
+                `${colors.success('✓')} ${specCreated ? 'created' : 'updated'} Spec Hub spec ${colors.resource(spec_.name)} (id ${spec_.id})`,
               )
             }
             return lines.join('\n')
@@ -164,7 +159,12 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
   postman
     .command('push-spec')
     .description(
-      'Push the OpenAPI spec into a Postman workspace as an API entity (separate from the collection). Idempotent: a matching named API is updated in place; otherwise a new one is created. Use this when collection-as-code mode is desired but governance / spec views still need to mirror the contract.',
+      'Push the OpenAPI spec into a Postman workspace. Default target is Spec Hub (works on the Free tier). Use --target api to push to the API Builder entity instead (paid-tier feature, returns a plan-upgrade error on Free). Idempotent: a matching named entity is updated in place; otherwise a new one is created.',
+    )
+    .option(
+      '--target <kind>',
+      `Postman surface — "spec" (Spec Hub, default) or "api" (API Builder, paid).`,
+      'spec',
     )
     .option(
       '--spec <urlOrPath>',
@@ -177,27 +177,38 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
     )
     .option(
       '--name <name>',
-      `API entity name shown in Postman (defaults to "${DEFAULT_COLLECTION_NAME}")`,
+      `Entity name shown in Postman (defaults to "${DEFAULT_COLLECTION_NAME}")`,
       DEFAULT_COLLECTION_NAME,
     )
     .option(
-      '--version <name>',
-      `API version label (defaults to "${DEFAULT_API_VERSION}")`,
+      '--api-version <name>',
+      `API version label (only used with --target api). Defaults to "${DEFAULT_API_VERSION}".`,
       DEFAULT_API_VERSION,
+    )
+    .option(
+      '--spec-type <type>',
+      `Spec Hub type (only used with --target spec). Defaults to "${DEFAULT_SPEC_TYPE}".`,
+      DEFAULT_SPEC_TYPE,
     )
     .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
     .option('--json', 'Emit raw JSON', false)
     .action(
       async (opts: {
+        target: string
         spec: string
         workspace?: string
         name: string
-        version: string
+        apiVersion: string
+        specType: string
         config: string
         json: boolean
       }) => {
         const { colors } = io
         const provider = adapters.postman()
+        const target = opts.target as PushTarget
+        if (target !== 'spec' && target !== 'api') {
+          throw new Error(`Unknown --target "${opts.target}" — must be "spec" or "api".`)
+        }
         const workspaceId = resolveWorkspaceId(opts.workspace, opts.config)
 
         const sp = io.spinner(`Fetching OpenAPI spec from ${colors.resource(opts.spec)}…`)
@@ -210,31 +221,50 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
           throw e
         }
 
-        let api, apiCreated
-        try {
-          ;({ api, apiCreated } = await pushSpec(provider, io, {
+        if (target === 'spec') {
+          const { spec: pushed, specCreated } = await pushSpecHub(provider, io, {
             workspaceId,
             name: opts.name,
-            version: opts.version,
+            type: opts.specType,
+            fileContent: typeof spec === 'string' ? spec : JSON.stringify(spec),
+          })
+          emit(
+            io,
+            opts.json,
+            { ok: true, created: specCreated, spec: pushed },
+            () =>
+              `${colors.success('✓')} ${specCreated ? 'created' : 'updated'} Spec Hub spec ${colors.resource(pushed.name)}\n` +
+              `  ${colors.hint('id:')}   ${pushed.id}\n` +
+              `  ${colors.hint('type:')} ${pushed.type}`,
+          )
+          return
+        }
+
+        // target === 'api'
+        let api, apiCreated
+        try {
+          ;({ api, apiCreated } = await pushApiEntity(provider, io, {
+            workspaceId,
+            name: opts.name,
+            version: opts.apiVersion,
             spec,
           }))
         } catch (e) {
           if (e instanceof PostmanPlanLimitError) {
             throw new Error(
-              `Postman plan blocks API entities (${e.limit}). Upgrade to a Postman plan that includes APIs, or stay on Free and rely on \`rando api postman sync\` (the spec-push half soft-skips on plan limits).`,
+              `Postman plan blocks API entities (${e.limit}). Upgrade to a Postman plan that includes APIs, or run \`rando api postman push-spec\` without --target api to use Spec Hub instead (works on Free).`,
             )
           }
           throw e
         }
-
         emit(
           io,
           opts.json,
-          { ok: true, created: apiCreated, api, version: opts.version },
+          { ok: true, created: apiCreated, api, version: opts.apiVersion },
           () =>
             `${colors.success('✓')} ${apiCreated ? 'created' : 'updated'} API entity ${colors.resource(api.name)}\n` +
             `  ${colors.hint('id:')}      ${api.id}\n` +
-            `  ${colors.hint('version:')} ${opts.version}`,
+            `  ${colors.hint('version:')} ${opts.apiVersion}`,
         )
       },
     )
@@ -417,13 +447,61 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
 }
 
 /**
- * Push an OpenAPI spec into a Postman workspace as an API entity. Find
- * the API by name (idempotent across re-runs) → create it if missing →
- * upsert the schema on the named version. Used by both `sync` (as the
- * second half after collection import) and the standalone `push-spec`
- * command.
+ * Push an OpenAPI spec into Postman's Spec Hub. Find spec by name
+ * (idempotent across re-runs) → create if missing, otherwise PATCH the
+ * root file's content. Used by both `sync` (as the spec-push half
+ * after collection import) and `push-spec --target spec` (default).
+ *
+ * Spec Hub works on the Postman Free tier, so this is the load-bearing
+ * path for unpaid users. The API Builder counterpart (`pushApiEntity`)
+ * is only invoked when `--target api` is set.
  */
-async function pushSpec(
+async function pushSpecHub(
+  provider: ReturnType<Adapters['postman']>,
+  io: Io,
+  input: { workspaceId: string; name: string; type?: string; fileContent: string },
+): Promise<{
+  spec: { id: string; name: string; type: string }
+  specCreated: boolean
+}> {
+  const { colors } = io
+  const sp = io.spinner(`Pushing spec ${colors.resource(input.name)} → Spec Hub…`)
+  try {
+    const existing = await provider.findSpecByName({
+      workspaceId: input.workspaceId,
+      name: input.name,
+    })
+    if (existing) {
+      await provider.upsertSpecFile({
+        specId: existing.id,
+        filePath: DEFAULT_SPEC_FILE_PATH,
+        content: input.fileContent,
+      })
+      sp.succeed(`Updated Spec Hub spec ${colors.resource(existing.name)}`)
+      return { spec: existing, specCreated: false }
+    }
+    const created = await provider.createSpec({
+      workspaceId: input.workspaceId,
+      name: input.name,
+      type: input.type,
+      filePath: DEFAULT_SPEC_FILE_PATH,
+      fileContent: input.fileContent,
+    })
+    sp.succeed(`Created Spec Hub spec ${colors.resource(created.name)}`)
+    return { spec: created, specCreated: true }
+  } catch (e) {
+    sp.fail('Spec Hub push failed')
+    throw e
+  }
+}
+
+/**
+ * Push an OpenAPI spec into Postman's API Builder ("API" entity).
+ * Find the API by name → create if missing → upsert the schema on the
+ * named version. Paid-tier feature; the Free tier returns a
+ * PostmanPlanLimitError that callers translate into "upgrade required".
+ */
+async function pushApiEntity(
   provider: ReturnType<Adapters['postman']>,
   io: Io,
   input: { workspaceId: string; name: string; version: string; spec: unknown },

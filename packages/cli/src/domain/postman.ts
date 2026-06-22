@@ -35,16 +35,27 @@ export interface PostmanEnvironment {
 }
 
 /**
- * Postman "API" entity — the spec-shaped view in the Postman sidebar.
- * Separate from PostmanCollection: a collection is a list of requests
- * (what the Postman runner executes); an API is the OpenAPI spec the
- * collection was derived from (what governance / docs / mocks anchor
- * to). Both can co-exist in the same workspace pointing at the same
- * source.
+ * Postman "API" entity — the spec-shaped view in the Postman API
+ * Builder. Paid-tier on Postman (Free allows 0 APIs). Commands target
+ * this surface only when --target=api is explicit; the default
+ * (PostmanSpec) works on Free.
  */
 export interface PostmanApi {
   id: string
   name: string
+}
+
+/**
+ * Postman "Spec" entity — the standalone Spec Hub viewer/editor. Works
+ * on Free tier (unlike PostmanApi). Each spec contains one or more
+ * files (the OpenAPI document plus any referenced sub-files); we only
+ * push the single root file today.
+ */
+export interface PostmanSpec {
+  id: string
+  name: string
+  /** Postman's enum for spec type, e.g. "OPENAPI:3.0" or "OPENAPI:3.1". */
+  type: string
 }
 
 export interface SyncResult {
@@ -140,4 +151,33 @@ export interface PostmanProvider {
    * adapter — pass the parsed object.
    */
   upsertApiSchema(input: { apiId: string; version: string; spec: unknown }): Promise<void>
+
+  /**
+   * Find a Spec Hub spec by name within a workspace. Returns null when
+   * no match exists — used to decide create-vs-update on spec push.
+   */
+  findSpecByName(input: { workspaceId: string; name: string }): Promise<PostmanSpec | null>
+
+  /**
+   * Create a new Spec Hub spec with a single root file holding the
+   * OpenAPI content. Returns the created spec metadata. Use
+   * upsertSpecFile to push subsequent updates without rotating the id.
+   */
+  createSpec(input: {
+    workspaceId: string
+    name: string
+    /** Postman spec type — defaults to "OPENAPI:3.0" if omitted. */
+    type?: string
+    /** Filename within the spec — defaults to "index.json". */
+    filePath?: string
+    /** OpenAPI content as a string. Caller is responsible for serialization. */
+    fileContent: string
+  }): Promise<PostmanSpec>
+
+  /**
+   * Replace the content of an existing spec's file (PATCH semantics —
+   * keeps the spec id and file path stable so anyone watching the spec
+   * in Postman desktop sees an in-place update, not a new entry).
+   */
+  upsertSpecFile(input: { specId: string; filePath: string; content: string }): Promise<void>
 }

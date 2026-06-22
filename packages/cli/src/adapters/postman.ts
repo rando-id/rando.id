@@ -17,16 +17,19 @@
 //   GET    /apis/{id}/versions/{v}/schemas                    → list schemas on a version
 //   POST   /apis/{id}/versions/{v}/schemas                    → create a schema (OpenAPI JSON)
 //   PUT    /apis/{id}/versions/{v}/schemas/{s}                → replace an existing schema
+//   GET    /specs?workspaceId=…                               → list Spec Hub specs
+//   POST   /specs?workspaceId=…                               → create a new Spec Hub spec
+//   PATCH  /specs/{id}/files/{filePath}                       → replace a spec file's content
 //
 // We chose delete-and-recreate over hunting for a stable update path
 // because Postman's "API Builder" stable-id workflow is much more
 // complex and changing under our feet. Trade-off is the collection ID
 // changes per sync; documented in the domain interface.
 //
-// For API entities (spec-shaped view, separate from collections) we
-// DO keep the id stable: API ids are referenced from governance rules
-// and any future Postman-anchored tooling, so the adapter only creates
-// the entity on first push and upserts the schema on subsequent ones.
+// For API and Spec entities we DO keep the id stable: future
+// Postman-anchored tooling (governance rules, share-by-id links)
+// references the entity id. The adapter creates on first push and
+// updates the file content on subsequent ones.
 
 import { PostmanPlanLimitError, ProviderApiError } from '../domain/errors'
 import type {
@@ -34,6 +37,7 @@ import type {
   PostmanCollection,
   PostmanEnvironment,
   PostmanProvider,
+  PostmanSpec,
   PostmanUser,
   PostmanWorkspace,
 } from '../domain/postman'
@@ -224,6 +228,62 @@ export class PostmanRestProvider implements PostmanProvider {
     return created.version.id
   }
 
+  async findSpecByName(input: { workspaceId: string; name: string }): Promise<PostmanSpec | null> {
+    const raw = await this.request<{ specs: RawSpec[] }>(
+      'GET',
+      `/specs?workspaceId=${encodeURIComponent(input.workspaceId)}`,
+    )
+    const match = raw.specs.find((s) => s.name === input.name)
+    return match ? mapSpec(match) : null
+  }
+
+  async createSpec(input: {
+    workspaceId: string
+    name: string
+    type?: string
+    filePath?: string
+    fileContent: string
+  }): Promise<PostmanSpec> {
+    // Endpoint shape verified empirically (Postman's public docs don't
+    // currently cover this path):
+    //   POST /specs?workspaceId=<id>
+    //   body: { name, type, files: [{path, content}] }
+    //   response 201: { id, name, type, ... }
+    // Required fields are flat — name and type are NOT wrapped under
+    // a `spec` key (unlike POST /apis which DOES wrap under `api`).
+    const raw = await this.request<RawSpec>(
+      'POST',
+      `/specs?workspaceId=${encodeURIComponent(input.workspaceId)}`,
+      {
+        name: input.name,
+        type: input.type ?? 'OPENAPI:3.0',
+        files: [
+          {
+            path: input.filePath ?? 'index.json',
+            content: input.fileContent,
+          },
+        ],
+      },
+    )
+    return mapSpec(raw)
+  }
+
+  async upsertSpecFile(input: {
+    specId: string
+    filePath: string
+    content: string
+  }): Promise<void> {
+    // PATCH (not PUT — PUT returns 404 on this surface, verified
+    // empirically). Body holds only the new content; path identifies
+    // the file. Postman returns the file metadata; we discard it
+    // since callers only need the side-effect.
+    await this.request(
+      'PATCH',
+      `/specs/${encodeURIComponent(input.specId)}/files/${encodeURIComponent(input.filePath)}`,
+      { content: input.content },
+    )
+  }
+
   async importOpenApi(input: { workspaceId: string; spec: unknown }): Promise<PostmanCollection> {
     // Postman's import endpoint accepts the spec as a JSON-stringified
     // body under the `input` field. The workspace is selected via the
@@ -315,6 +375,12 @@ interface RawSchema {
   id: string
 }
 
+interface RawSpec {
+  id: string
+  name: string
+  type: string
+}
+
 function mapUser(raw: RawUser): PostmanUser {
   return { id: raw.id, username: raw.username, fullName: raw.fullName }
 }
@@ -333,6 +399,10 @@ function mapEnvironment(raw: RawEnvironment): PostmanEnvironment {
 
 function mapApi(raw: RawApi): PostmanApi {
   return { id: raw.id, name: raw.name }
+}
+
+function mapSpec(raw: RawSpec): PostmanSpec {
+  return { id: raw.id, name: raw.name, type: raw.type }
 }
 
 /**
