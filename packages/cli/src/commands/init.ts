@@ -116,7 +116,8 @@ function writePostmanWorkspaceId(configPath: string, workspaceId: string): void 
 
 /** Help text shown above each token prompt — terse one-liner per var. */
 const TOKEN_HELP: Record<string, string> = {
-  GITHUB_TOKEN: 'GitHub PAT (fine-grained, Read+Write Issues on the repo) — or `gh auth token`',
+  GITHUB_TOKEN:
+    'GitHub fine-grained PAT on this repo — Contents / Issues / Pull requests R+W, Secrets W, Workflows + Actions R (see .notes/security-github-pat.md) — or `gh auth token`',
   NEON_API_KEY: 'Neon console → Settings → API keys (https://console.neon.tech)',
   CLOUDFLARE_API_TOKEN:
     'Cloudflare scoped token — see packages/cli/README.md → CLOUDFLARE_API_TOKEN',
