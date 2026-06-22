@@ -193,10 +193,11 @@ Two seams filter out PRs / pushes that don't change deployable code:
   the final diff ended up docs-only.
 - **Prod / staging push deploys** — each app's `vercel.json` sets
   `ignoreCommand: "npx -y turbo-ignore@<version> @rando/<app>"`. Turbo
-  walks the workspace dep graph and exits 1 (skip) when nothing the
-  app transitively depends on changed. A change inside `packages/ui`
-  still triggers `web` + `admin` (both depend on it); a change
-  inside `.notes/**` triggers none of them.
+  walks the workspace dep graph and exits **0** when nothing the app
+  transitively depends on changed; Vercel's `ignoreCommand` contract
+  is **exit 0 = skip**, exit 1 = proceed. A change inside
+  `packages/ui` still triggers `web` + `admin` (both depend on it);
+  a change inside `.notes/**` triggers none of them.
 
   The `turbo-ignore` version is **pinned to match the installed
   `turbo` version** in `pnpm-lock.yaml` so the dep-graph schema

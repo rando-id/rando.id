@@ -26,10 +26,15 @@ Use two complementary seams:
 2. **Prod / staging push deploys** (Vercel's native GitHub
    integration → `vercel build`) — each app's `vercel.json` sets
    `ignoreCommand: "npx -y turbo-ignore@<exact-version> @rando/<app>"`.
-   Turbo walks the workspace dep graph and exits 1 (skip) when the
-   app and its transitive deps haven't changed. The pinned version
-   must match the installed `turbo` version exactly so they share
-   the same dep-graph schema; see "Bump policy" below.
+   Turbo walks the workspace dep graph and exits **0** when the app
+   and its transitive deps haven't changed; Vercel's `ignoreCommand`
+   contract is **exit 0 = skip the build**, exit 1 = proceed.
+   Verified against `npx turbo-ignore --help` ("Only proceed with
+   deployment if the workspace or any of its dependencies have
+   changed") + a live run that printed `⏭ Ignoring the change` and
+   exited 0. The pinned version must match the installed `turbo`
+   version exactly so they share the same dep-graph schema; see
+   "Bump policy" below.
 
 ## Why two seams
 
