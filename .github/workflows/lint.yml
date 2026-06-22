@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   lint:
-    name: ESLint + Prettier
+    name: ESLint + Prettier + OpenAPI spec
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -26,6 +26,19 @@ jobs:
         if: steps.changes.outputs.code == 'true'
         run: pnpm lint
 
+      # Static OpenAPI spec lint via Spectral — runs offline against a
+      # freshly-rendered spec dump (no preview deploy needed). The
+      # deeper `pnpm spec:lint` in integration-tests.yml runs Postman
+      # Cloud's ruleset against the live preview URL once it's up.
+      # Gated on the narrower `api` aggregate because the contract
+      # (api-client), the spec route (apps/api), and the ruleset file
+      # are all in that bucket — non-API PRs skip.
+      - name: Lint OpenAPI spec (static)
+        if: steps.changes.outputs.api == 'true'
+        run: pnpm spec:lint:static
+        env:
+          FORCE_COLOR: '1'
+
       - name: Skip (no code touched)
-        if: steps.changes.outputs.code != 'true'
-        run: echo "::notice title=Lint skipped::No code files changed in this PR."
+        if: steps.changes.outputs.code != 'true' && steps.changes.outputs.api != 'true'
+        run: echo "::notice title=Lint skipped::No code or API files changed in this PR."
