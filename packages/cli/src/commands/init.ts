@@ -297,7 +297,7 @@ export function initCommand(adapters: Adapters, io: Io): Command {
       //    workspaces, let them pick, write to rando.config.json.
       if (process.env.POSTMAN_API_KEY) {
         try {
-          const postman = adapters.postman()
+          const postman = adapters.postman({ configPath: opts.config })
           const existingWsId = readPostmanWorkspaceId(opts.config)
           if (!existingWsId) {
             io.stdout('')

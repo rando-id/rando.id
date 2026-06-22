@@ -858,6 +858,105 @@ describe('api postman sync', () => {
     )
   })
 
+  // ─── --config flag forwards to the adapter factories ────────────────
+  // Regression guards for the kind-dispatch seam: every command that
+  // takes `--config <path>` must thread that path through to the
+  // factories so `cfg.testing.api.kind` is read from the user-supplied
+  // config, not the default `rando.config.json`. Today the zod enum
+  // only allows `'postman'` so a missing forward is silent; once a
+  // second kind ships it becomes a correctness bug.
+
+  it('sync forwards --config to apiTesting() AND postman()', async () => {
+    const apiTesting = stubSync()
+    const apiTestingFactory = vi.fn(
+      (_opts?: { configPath?: string }) => apiTesting as ApiCollectionProvider,
+    )
+    const postmanProvider: Partial<PostmanProvider> = specMocks()
+    const postmanFactory = vi.fn(
+      (_opts?: { configPath?: string }) => postmanProvider as PostmanProvider,
+    )
+    const adapters: Adapters = {
+      ...mockAdapters({}),
+      apiTesting: apiTestingFactory,
+      postman: postmanFactory,
+    }
+    const io = captureIo()
+    await run(
+      [
+        'api',
+        'postman',
+        'sync',
+        '--spec',
+        writeSpec(),
+        '--workspace',
+        'ws-1',
+        '--config',
+        '/x.json',
+      ],
+      { adapters, io: io.io, exit: noExit },
+    )
+    expect(apiTestingFactory).toHaveBeenCalledWith({ configPath: '/x.json' })
+    expect(postmanFactory).toHaveBeenCalledWith({ configPath: '/x.json' })
+  })
+
+  it('push-spec forwards --config to postman()', async () => {
+    const postmanProvider: Partial<PostmanProvider> = {
+      findSpecByName: vi.fn(async () => null),
+      createSpec: vi.fn(async () => ({ id: 'spec-1', name: 'Rando API', type: 'OPENAPI:3.0' })),
+      upsertSpecFile: vi.fn(async () => {}),
+    }
+    const postmanFactory = vi.fn(
+      (_opts?: { configPath?: string }) => postmanProvider as PostmanProvider,
+    )
+    const adapters: Adapters = { ...mockAdapters({}), postman: postmanFactory }
+    const io = captureIo()
+    await run(
+      [
+        'api',
+        'postman',
+        'push-spec',
+        '--spec',
+        writeSpec(),
+        '--workspace',
+        'ws-1',
+        '--config',
+        '/x.json',
+      ],
+      { adapters, io: io.io, exit: noExit },
+    )
+    expect(postmanFactory).toHaveBeenCalledWith({ configPath: '/x.json' })
+  })
+
+  it('push forwards --config to postman()', async () => {
+    const collectionPath = join(tmpDir, 'pushed.postman_collection.json')
+    writeFileSync(collectionPath, JSON.stringify({ info: { name: 'Rando API' }, item: [] }))
+    const postmanProvider: Partial<PostmanProvider> = {
+      findCollectionByName: vi.fn(async () => null),
+      createCollection: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
+    }
+    const postmanFactory = vi.fn(
+      (_opts?: { configPath?: string }) => postmanProvider as PostmanProvider,
+    )
+    const adapters: Adapters = { ...mockAdapters({}), postman: postmanFactory }
+    const io = captureIo()
+    await run(
+      [
+        'api',
+        'postman',
+        'push',
+        '--collection',
+        collectionPath,
+        '--no-envs',
+        '--workspace',
+        'ws-1',
+        '--config',
+        '/x.json',
+      ],
+      { adapters, io: io.io, exit: noExit },
+    )
+    expect(postmanFactory).toHaveBeenCalledWith({ configPath: '/x.json' })
+  })
+
   // ─── push-spec (standalone) ─────────────────────────────────────────
   // Default --target is "spec" (Spec Hub — works on Postman Free).
   // --target api hits the API Builder entity (paid; returns plan-limit error on Free).

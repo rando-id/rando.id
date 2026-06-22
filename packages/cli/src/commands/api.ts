@@ -218,7 +218,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
         json: boolean
       }) => {
         const { colors } = io
-        const provider = adapters.postman()
+        const provider = adapters.postman({ configPath: opts.config })
         const target = opts.target as PushTarget
         if (target !== 'spec' && target !== 'api') {
           throw new Error(`Unknown --target "${opts.target}" — must be "spec" or "api".`)
@@ -373,7 +373,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
         json: boolean
       }) => {
         const { colors } = io
-        const provider = adapters.postman()
+        const provider = adapters.postman({ configPath: opts.config })
         const workspaceId = resolveWorkspaceId(opts.workspace, opts.config)
 
         // 1. Collection — load file, find by name, PUT or POST.
