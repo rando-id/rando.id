@@ -109,7 +109,7 @@ function writePostmanWorkspaceId(configPath: string, workspaceId: string): void 
     testing?: { api?: { kind?: string; workspaceId?: string } }
   }
   const testing = parsed.testing ?? {}
-  testing.api = { kind: 'postman', ...(testing.api ?? {}), workspaceId }
+  testing.api = { ...(testing.api ?? {}), kind: 'postman', workspaceId }
   parsed.testing = testing
   writeFileSync(path, JSON.stringify(parsed, null, 2) + '\n', 'utf-8')
 }
