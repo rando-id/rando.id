@@ -35,7 +35,12 @@ rules:
     given: '$.paths[*][get,post,put,patch,delete]'
     then:
       field: tags
-      function: truthy
+      # NOT `truthy` — empty arrays are truthy in JS, and ts-rest emits
+      # `tags: []` by default for any operation tagForPath() doesn't
+      # match. `length` with min:1 enforces "at least one tag string".
+      function: length
+      functionOptions:
+        min: 1
 
   rando-operation-must-have-summary:
     description: "Every operation's contract entry must declare a summary — it shows up as the request name in Postman, Swagger UI, etc."
