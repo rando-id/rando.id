@@ -1,7 +1,7 @@
 # Spectral ruleset for the Rando OpenAPI spec.
 #
 # Run via `pnpm spec:lint:static` (static, no dev server) or as part
-# of CI in `unit-tests.yml`. The deeper `pnpm spec:lint` runs Postman
+# of CI in `lint.yml`. The deeper `pnpm spec:lint` runs Postman
 # Cloud's ruleset against the preview URL — this file is what
 # guarantees Rando-specific conventions stay enforced offline.
 #
