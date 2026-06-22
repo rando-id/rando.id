@@ -45,6 +45,9 @@ outputs:
   docs:
     description: Only docs / license / GitHub templates changed.
     value: ${{ steps.filter.outputs.docs }}
+  specLint:
+    description: 'true when EITHER @rando/api was affected OR the spec-lint surface itself (`.spectral.yaml`, render-spec / spec-lint scripts) changed. The latter live at the repo root, outside any workspace, so the Turbo-based `api` aggregate alone would miss ruleset-only PRs and let a tightened rule merge without verifying the existing spec passes.'
+    value: ${{ steps.affected.outputs.api == 'true' || steps.filter.outputs.specLintConfig == 'true' }}
 
 runs:
   using: composite
@@ -66,6 +69,13 @@ runs:
             - 'LICENSE'
             - '.github/ISSUE_TEMPLATE/**'
             - '.github/PULL_REQUEST_TEMPLATE.md'
+          # Files that drive the spec-lint pipeline but live outside
+          # any workspace, so Turbo's --filter doesn't see them.
+          # Combined with the `api` workspace signal into `specLint`.
+          specLintConfig:
+            - '.spectral.yaml'
+            - 'scripts/render-spec.ts'
+            - 'scripts/spec-lint.mjs'
 
     # Resolve the base ref (PR base, or HEAD~1 on push, or "everything"
     # for schedule / workflow_dispatch). Fetched shallowly so Turbo's

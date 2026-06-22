@@ -33,15 +33,15 @@ jobs:
       # freshly-rendered spec dump (no preview deploy needed). The
       # deeper `pnpm spec:lint` in integration-tests.yml runs Postman
       # Cloud's ruleset against the live preview URL once it's up.
-      # Gated on the narrower `api` aggregate because the contract
-      # (api-client), the spec route (apps/api), and the ruleset file
-      # are all in that bucket — non-API PRs skip.
+      # Gated on `specLint` so we run when EITHER the API workspace
+      # was affected OR the ruleset / render script itself changed
+      # (those live at the repo root, outside Turbo's view).
       - name: Lint OpenAPI spec (static)
-        if: steps.changes.outputs.api == 'true'
+        if: steps.changes.outputs.specLint == 'true'
         run: pnpm spec:lint:static
         env:
           FORCE_COLOR: '1'
 
       - name: Skip (no code touched)
-        if: steps.changes.outputs.code != 'true' && steps.changes.outputs.api != 'true'
-        run: echo "::notice title=Lint skipped::No code or API files changed in this PR."
+        if: steps.changes.outputs.code != 'true' && steps.changes.outputs.specLint != 'true'
+        run: echo "::notice title=Lint skipped::No code or spec-lint files changed in this PR."
