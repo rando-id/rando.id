@@ -2,6 +2,77 @@
 
 exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] = `
 {
+  "components": {
+    "responses": {
+      "BadRequest": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorBody",
+            },
+          },
+        },
+        "description": "Request body or query parameters failed zod validation. \`issues[]\` carries the per-field detail.",
+      },
+      "NotFound": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorBody",
+            },
+          },
+        },
+        "description": "Requested resource does not exist OR is owned by a different user (handlers conflate the two on purpose so cross-tenant existence isn’t leaked).",
+      },
+      "ServerError": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorBody",
+            },
+          },
+        },
+        "description": "Unexpected server error — typically a database constraint violation or downstream timeout. Safe to retry on a backoff.",
+      },
+      "Unauthorized": {
+        "content": {
+          "application/json": {
+            "schema": {
+              "$ref": "#/components/schemas/ErrorBody",
+            },
+          },
+        },
+        "description": "Missing or invalid Clerk session JWT.",
+      },
+    },
+    "schemas": {
+      "ErrorBody": {
+        "properties": {
+          "error": {
+            "description": "Short, human-readable error message — safe to log + display.",
+            "type": "string",
+          },
+          "issues": {
+            "description": "Per-field zod validation issues when applicable (400 only).",
+            "items": {},
+            "type": "array",
+          },
+        },
+        "required": [
+          "error",
+        ],
+        "type": "object",
+      },
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "bearerFormat": "JWT",
+        "description": "Clerk-issued session JWT. Frontend obtains it via \`clerk.session.getToken()\` and forwards as \`Authorization: Bearer <token>\`. Validated server-side by \`requireCurrentUser\`.",
+        "scheme": "bearer",
+        "type": "http",
+      },
+    },
+  },
   "info": {
     "description": "Auto-generated from the ts-rest contract in @rando/api-client. Edit the contract, not this output.",
     "title": "Rando API",
@@ -800,6 +871,7 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
             "description": "200",
           },
         },
+        "security": [],
         "summary": "Liveness check",
         "tags": [
           "Health",
@@ -1546,6 +1618,11 @@ exports[`GET /v1/openapi.json > matches the committed snapshot (drift gate) 1`] 
       },
     },
   },
+  "security": [
+    {
+      "bearerAuth": [],
+    },
+  ],
   "servers": [
     {
       "description": "Production",
