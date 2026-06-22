@@ -108,7 +108,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
             spec,
           })
           syncSp.succeed(
-            `${synced.replaced ? 'Replaced' : 'Created'} ${colors.resource(opts.name)}`,
+            `${synced.replaced ? 'Replaced' : 'Created'} ${colors.resource(synced.name)}`,
           )
         } catch (e) {
           syncSp.fail('Sync failed')
@@ -141,7 +141,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
           {
             ok: true,
             replaced: synced.replaced,
-            collection: { uid: synced.ref, name: opts.name },
+            collection: { uid: synced.ref, name: synced.name },
             spec: spec_,
             specSkipped: specSkipReason !== null,
             ...(specSkipReason !== null ? { specSkipReason } : {}),
@@ -149,7 +149,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
           },
           () => {
             const lines = [
-              `${colors.success('✓')} ${synced.replaced ? 'replaced' : 'created'} ${colors.resource(opts.name)}`,
+              `${colors.success('✓')} ${synced.replaced ? 'replaced' : 'created'} ${colors.resource(synced.name)}`,
               `  ${colors.hint('uid:')}  ${synced.ref}`,
             ]
             if (synced.url) lines.push(`  ${colors.hint('open:')} ${synced.url}`)

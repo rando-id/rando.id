@@ -472,11 +472,12 @@ describe('api postman sync', () => {
   // this surface now; only the Spec Hub mirror still hits `postman`
   // directly.
   const stubSync = (
-    overrides: Partial<{ replaced: boolean; ref: string; url: string }> = {},
+    overrides: Partial<{ replaced: boolean; ref: string; name: string; url: string }> = {},
   ): Partial<ApiCollectionProvider> => ({
     syncCollectionFromSpec: vi.fn(async () => ({
       replaced: false,
       ref: 'u-1',
+      name: 'Rando API',
       url: 'https://web.postman.co/workspace/ws-1/collection/u-1',
       ...overrides,
     })),
@@ -656,6 +657,43 @@ describe('api postman sync', () => {
       specSkipped: false,
       url: 'https://web.postman.co/workspace/ws-1/collection/u-1',
     })
+  })
+
+  it('JSON + human output report the name Postman assigned, not --name', async () => {
+    // Regression guard: when the spec's info.title differs from the
+    // --name flag (e.g. Postman ignores --name and uses info.title
+    // verbatim during import), downstream consumers need to see the
+    // actual live name. Asserts SyncCollectionResult.name flows
+    // through to both JSON `collection.name` and the human summary,
+    // distinct from the --name flag the user supplied.
+    const apiTesting = stubSync({ name: 'Rando API (from spec title)' })
+    const postman: Partial<PostmanProvider> = specMocks()
+    const io = captureIo()
+    await run(
+      [
+        'api',
+        'postman',
+        'sync',
+        '--spec',
+        writeSpec(),
+        '--workspace',
+        'ws-1',
+        '--name',
+        'Flag Name Postman Ignored',
+        '--json',
+      ],
+      {
+        adapters: mockAdapters({
+          apiTesting: apiTesting as ApiCollectionProvider,
+          postman: postman as PostmanProvider,
+        }),
+        io: io.io,
+        exit: noExit,
+      },
+    )
+    const json = JSON.parse(io.stdout.join(''))
+    expect(json.collection.name).toBe('Rando API (from spec title)')
+    expect(json.collection.name).not.toBe('Flag Name Postman Ignored')
   })
 
   it('--json + spec push failure: stdout stays parseable JSON, skip reason in payload', async () => {

@@ -42,6 +42,15 @@ export interface SyncCollectionInput {
 export interface SyncCollectionResult {
   /** True when a previous collection of the same name was replaced. */
   replaced: boolean
+  /**
+   * Display name the tool ended up assigning. May differ from the
+   * `name` in `SyncCollectionInput` — Postman, for instance, reads
+   * `info.title` from the OpenAPI spec and uses it verbatim if the
+   * caller didn't override. Surface this back so JSON consumers and
+   * human-readable output report what's actually live, not what was
+   * requested.
+   */
+  name: string
   /** Direct URL into the vendor UI when available; undefined for offline tools. */
   url?: string
   /** Adapter-defined stable id (Postman uid, Bruno file path, etc.). */

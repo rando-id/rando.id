@@ -98,6 +98,11 @@ export class PostmanRestProvider implements PostmanProvider, ApiCollectionProvid
     const created = await this.importOpenApi({ workspaceId, spec: input.spec })
     return {
       replaced: existing !== null,
+      // Surface the name Postman actually assigned, NOT input.name —
+      // Postman's import endpoint reads `info.title` from the spec and
+      // can end up with a different value than the caller requested.
+      // JSON consumers downstream need to know what's actually live.
+      name: created.name,
       url: `https://web.postman.co/workspace/${workspaceId}/collection/${created.uid}`,
       ref: created.uid,
     }

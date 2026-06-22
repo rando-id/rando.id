@@ -440,6 +440,7 @@ describe('PostmanRestProvider', () => {
       })
       expect(result).toEqual({
         replaced: true,
+        name: 'Rando API',
         url: 'https://web.postman.co/workspace/ws-1/collection/u-new',
         ref: 'u-new',
       })
@@ -468,6 +469,33 @@ describe('PostmanRestProvider', () => {
       expect(result.replaced).toBe(false)
       expect(result.ref).toBe('u-1')
       expect(stub.calls.map((c) => c.method)).toEqual(['GET', 'POST'])
+    })
+
+    it('syncCollectionFromSpec returns the name Postman assigned, not the input name', async () => {
+      // Regression guard: Postman's /import/openapi endpoint reads
+      // `info.title` from the spec and ignores any caller-supplied
+      // name. The adapter must surface what Postman actually wrote
+      // (read from the import response) so JSON consumers see the
+      // live value.
+      const stub = stubFetch([
+        // 1. find by INPUT name: no match
+        { body: { collections: [] } },
+        // 2. import returns a collection with a DIFFERENT name
+        //    (e.g. info.title from the spec)
+        {
+          status: 200,
+          body: {
+            collections: [{ id: 'c-1', uid: 'u-1', name: 'Postman picked this from info.title' }],
+          },
+        },
+      ])
+      const result = await adapter(stub).syncCollectionFromSpec({
+        target: 'ws-1',
+        name: 'Caller asked for this',
+        spec: { openapi: '3.0.0', info: { title: 'Postman picked this from info.title' } },
+      })
+      expect(result.name).toBe('Postman picked this from info.title')
+      expect(result.name).not.toBe('Caller asked for this')
     })
   })
 })
