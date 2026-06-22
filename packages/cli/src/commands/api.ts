@@ -121,6 +121,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
         // since the collection push has already succeeded.
         let spec_: { id: string; name: string } | null = null
         let specCreated = false
+        let specSkipReason: string | null = null
         try {
           const result = await pushSpecHub(provider, io, {
             workspaceId,
@@ -130,15 +131,22 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
           spec_ = { id: result.spec.id, name: result.spec.name }
           specCreated = result.specCreated
         } catch (e) {
-          const msg = e instanceof Error ? e.message : String(e)
-          io.stdout(`  ${colors.warn('note:')} Spec Hub push skipped — ${msg}`)
+          specSkipReason = e instanceof Error ? e.message : String(e)
         }
 
         const url = collectionUrl(created.uid, workspaceId)
         emit(
           io,
           opts.json,
-          { ok: true, replaced: existing != null, collection: created, spec: spec_, url },
+          {
+            ok: true,
+            replaced: existing != null,
+            collection: created,
+            spec: spec_,
+            specSkipped: specSkipReason !== null,
+            ...(specSkipReason !== null ? { specSkipReason } : {}),
+            url,
+          },
           () => {
             const lines = [
               `${colors.success('✓')} ${existing ? 'replaced' : 'created'} ${colors.resource(created.name)}`,
@@ -149,6 +157,12 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
               lines.push(
                 `${colors.success('✓')} ${specCreated ? 'created' : 'updated'} Spec Hub spec ${colors.resource(spec_.name)} (id ${spec_.id})`,
               )
+            } else if (specSkipReason) {
+              // Human-readable note only — JSON consumers see it via
+              // `specSkipReason` in the structured payload instead, so
+              // stdout doesn't get a `note:` line mixed in with the
+              // JSON body (would break JSON.parse).
+              lines.push(`  ${colors.warn('note:')} Spec Hub push skipped — ${specSkipReason}`)
             }
             return lines.join('\n')
           },

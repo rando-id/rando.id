@@ -626,7 +626,41 @@ describe('api postman sync', () => {
       replaced: false,
       collection: { uid: 'u-1', name: 'Rando API' },
       spec: { id: 'spec-1', name: 'Rando API' },
+      specSkipped: false,
       url: 'https://web.postman.co/workspace/ws-1/collection/u-1',
+    })
+  })
+
+  it('--json + spec push failure: stdout stays parseable JSON, skip reason in payload', async () => {
+    // Regression guard: previously the soft-skip path wrote a `note: …`
+    // line to stdout before the JSON payload, breaking JSON.parse for
+    // downstream consumers (CI scripts, `jq`, etc.).
+    const postman: Partial<PostmanProvider> = {
+      findSpecByName: vi.fn(async () => {
+        throw new Error('502 Bad Gateway')
+      }),
+      createSpec: vi.fn(),
+      upsertSpecFile: vi.fn(),
+      findCollectionByName: vi.fn(async () => null),
+      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
+    }
+    const io = captureIo()
+    await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1', '--json'], {
+      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      io: io.io,
+      exit: noExit,
+    })
+    // No human `note:` line should leak into stdout when --json is set.
+    expect(io.stdout.join('\n')).not.toContain('Spec Hub push skipped')
+    expect(io.stdout.join('\n')).not.toContain('note:')
+    // stdout must be parseable as JSON, with the skip reason surfaced
+    // structurally instead.
+    const json = JSON.parse(io.stdout.join(''))
+    expect(json).toMatchObject({
+      ok: true,
+      spec: null,
+      specSkipped: true,
+      specSkipReason: '502 Bad Gateway',
     })
   })
 
