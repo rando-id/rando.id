@@ -407,4 +407,67 @@ describe('PostmanRestProvider', () => {
       content: '{"openapi":"3.0.0","info":{"title":"updated","version":"1.1.0"},"paths":{}}',
     })
   })
+
+  // ── ApiCollectionProvider surface ─────────────────────────────────
+  // Adapter-level coverage for the high-level methods that command code
+  // consumes via Adapters.apiTesting().
+
+  describe('ApiCollectionProvider surface', () => {
+    it('verifyAuth wraps getMyself into a display string', async () => {
+      const stub = stubFetch([
+        { body: { user: { id: 1, username: 'newton', fullName: 'Chris Newton' } } },
+      ])
+      const id = await adapter(stub).verifyAuth()
+      expect(id).toEqual({ display: 'Chris Newton (@newton)' })
+    })
+
+    it('syncCollectionFromSpec deletes prior + imports + returns replaced=true', async () => {
+      const stub = stubFetch([
+        // 1. find: existing collection with the same name
+        { body: { collections: [{ id: 'c-old', uid: 'u-old', name: 'Rando API' }] } },
+        // 2. delete the old one — body is irrelevant, the adapter discards it
+        { status: 200, body: {} },
+        // 3. import returns the new collection
+        {
+          status: 200,
+          body: { collections: [{ id: 'c-new', uid: 'u-new', name: 'Rando API' }] },
+        },
+      ])
+      const result = await adapter(stub).syncCollectionFromSpec({
+        target: 'ws-1',
+        name: 'Rando API',
+        spec: { openapi: '3.0.0', paths: {} },
+      })
+      expect(result).toEqual({
+        replaced: true,
+        url: 'https://web.postman.co/workspace/ws-1/collection/u-new',
+        ref: 'u-new',
+      })
+      expect(stub.calls.map((c) => c.method + ' ' + c.url)).toEqual([
+        'GET https://api.postman.test/collections?workspace=ws-1',
+        'DELETE https://api.postman.test/collections/c-old',
+        'POST https://api.postman.test/import/openapi?workspace=ws-1',
+      ])
+    })
+
+    it('syncCollectionFromSpec skips the delete when no prior collection exists', async () => {
+      const stub = stubFetch([
+        // 1. find: no match
+        { body: { collections: [{ id: 'c-other', uid: 'u-other', name: 'Different' }] } },
+        // 2. import directly — no DELETE between
+        {
+          status: 200,
+          body: { collections: [{ id: 'c-1', uid: 'u-1', name: 'Rando API' }] },
+        },
+      ])
+      const result = await adapter(stub).syncCollectionFromSpec({
+        target: 'ws-1',
+        name: 'Rando API',
+        spec: { openapi: '3.0.0', paths: {} },
+      })
+      expect(result.replaced).toBe(false)
+      expect(result.ref).toBe('u-1')
+      expect(stub.calls.map((c) => c.method)).toEqual(['GET', 'POST'])
+    })
+  })
 })

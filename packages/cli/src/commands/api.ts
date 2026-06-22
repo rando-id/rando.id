@@ -61,7 +61,14 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
         json: boolean
       }) => {
         const { colors } = io
-        const provider = adapters.postman()
+        // Two adapters:
+        //   - apiTesting() dispatches on testing.api.kind for the
+        //     vendor-neutral collection push.
+        //   - postman() for the Spec Hub mirror, which is Postman-only.
+        // Both factories check kind so a misconfigured project errors
+        // before any I/O.
+        const apiTesting = adapters.apiTesting({ configPath: opts.config })
+        const postman = adapters.postman({ configPath: opts.config })
 
         // Resolve workspace id: --workspace > config testing.api.workspaceId.
         let workspaceId = opts.workspace
@@ -90,27 +97,21 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
           throw e
         }
 
-        // Find + delete any previous collection with the same name so
-        // the sync stays a clean replace (Postman has no in-place
-        // OpenAPI-update endpoint we can rely on).
-        const existing = await provider.findCollectionByName({
-          workspaceId,
-          name: opts.name,
-        })
-        if (existing) {
-          io.stdout(
-            `${colors.hint(`removing previous collection ${existing.id} (${existing.name})`)}`,
-          )
-          await provider.deleteCollection(existing.id)
-        }
-
-        const importSp = io.spinner(`Importing into workspace ${colors.resource(workspaceId)}…`)
-        let created
+        // Sync the collection through the vendor-neutral high-level
+        // surface. The adapter owns find→delete→import orchestration.
+        const syncSp = io.spinner(`Syncing collection to ${colors.resource(workspaceId)}…`)
+        let synced
         try {
-          created = await provider.importOpenApi({ workspaceId, spec })
-          importSp.succeed(`Imported as ${colors.resource(created.name)}`)
+          synced = await apiTesting.syncCollectionFromSpec({
+            target: workspaceId,
+            name: opts.name,
+            spec,
+          })
+          syncSp.succeed(
+            `${synced.replaced ? 'Replaced' : 'Created'} ${colors.resource(opts.name)}`,
+          )
         } catch (e) {
-          importSp.fail('Import failed')
+          syncSp.fail('Sync failed')
           throw e
         }
 
@@ -123,7 +124,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
         let specCreated = false
         let specSkipReason: string | null = null
         try {
-          const result = await pushSpecHub(provider, io, {
+          const result = await pushSpecHub(postman, io, {
             workspaceId,
             name: opts.name,
             fileContent: typeof spec === 'string' ? spec : JSON.stringify(spec),
@@ -134,25 +135,24 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
           specSkipReason = e instanceof Error ? e.message : String(e)
         }
 
-        const url = collectionUrl(created.uid, workspaceId)
         emit(
           io,
           opts.json,
           {
             ok: true,
-            replaced: existing != null,
-            collection: created,
+            replaced: synced.replaced,
+            collection: { uid: synced.ref, name: opts.name },
             spec: spec_,
             specSkipped: specSkipReason !== null,
             ...(specSkipReason !== null ? { specSkipReason } : {}),
-            url,
+            url: synced.url,
           },
           () => {
             const lines = [
-              `${colors.success('✓')} ${existing ? 'replaced' : 'created'} ${colors.resource(created.name)}`,
-              `  ${colors.hint('uid:')}  ${created.uid}`,
-              `  ${colors.hint('open:')} ${url}`,
+              `${colors.success('✓')} ${synced.replaced ? 'replaced' : 'created'} ${colors.resource(opts.name)}`,
+              `  ${colors.hint('uid:')}  ${synced.ref}`,
             ]
+            if (synced.url) lines.push(`  ${colors.hint('open:')} ${synced.url}`)
             if (spec_) {
               lines.push(
                 `${colors.success('✓')} ${specCreated ? 'created' : 'updated'} Spec Hub spec ${colors.resource(spec_.name)} (id ${spec_.id})`,

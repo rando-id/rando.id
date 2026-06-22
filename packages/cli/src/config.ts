@@ -8,6 +8,7 @@
 
 import { resolve } from 'node:path'
 import { z } from 'zod'
+import type { ApiCollectionProvider } from './domain/api-testing'
 import type { DbProvider } from './domain/db'
 import type { DeployProvider } from './domain/deploy'
 import type { DnsProvider } from './domain/dns'
@@ -68,8 +69,19 @@ export interface Adapters {
    * `tracker.kind` in rando.config.json.
    */
   tracker(opts?: { configPath?: string }): IssueTrackerProvider
-  /** Postman REST API — for `rando api postman sync`. */
-  postman(): PostmanProvider
+  /**
+   * Vendor-neutral api-testing adapter — dispatches on
+   * `testing.api.kind` in rando.config.json. Use this from commands
+   * that should work for any future api-testing tool (Bruno, Insomnia)
+   * once we add the adapter.
+   */
+  apiTesting(opts?: { configPath?: string }): ApiCollectionProvider
+  /**
+   * Postman REST API — for Postman-specific commands
+   * (`rando api postman *`) and `rando init`'s workspace picker. Errors
+   * when `testing.api.kind` isn't `postman`.
+   */
+  postman(opts?: { configPath?: string }): PostmanProvider
   /**
    * Secret vault — 1Password CLI by default. Throws when the user
    * isn't signed in; callers should treat any failure as "skip 1P,
@@ -158,7 +170,31 @@ export function createAdapters(env: NodeJS.ProcessEnv = process.env): Adapters {
       }
       throw new Error(`tracker.kind="${tracker.kind satisfies never}" is not a supported tracker`)
     },
-    postman: () => {
+    apiTesting: (opts) => {
+      // Reads testing.api.kind to pick the implementation. Today only
+      // `postman` is wired — adding bruno/insomnia means extending the
+      // zod enum + adding a branch here. Returns the high-level
+      // ApiCollectionProvider; consumers that need vendor-specific
+      // methods should use postman() instead.
+      const kind = readApiTestingKind(opts?.configPath) ?? 'postman'
+      if (kind === 'postman') {
+        const parsed = PostmanEnv.safeParse(env)
+        if (!parsed.success) throw missingVar(parsed.error, 'postman')
+        return new PostmanRestProvider({ apiKey: parsed.data.POSTMAN_API_KEY })
+      }
+      throw new Error(
+        `testing.api.kind="${kind satisfies never}" is not a supported api-testing kind`,
+      )
+    },
+    postman: (opts) => {
+      // Hard-gate on kind so vendor-specific commands fail clearly when
+      // the user has switched the project to a non-Postman tool.
+      const kind = readApiTestingKind(opts?.configPath) ?? 'postman'
+      if (kind !== 'postman') {
+        throw new Error(
+          `testing.api.kind="${kind}" — the rando.config.json says this project doesn't use Postman. Switch testing.api.kind to "postman" or use the active provider's commands.`,
+        )
+      }
       const parsed = PostmanEnv.safeParse(env)
       if (!parsed.success) throw missingVar(parsed.error, 'postman')
       return new PostmanRestProvider({ apiKey: parsed.data.POSTMAN_API_KEY })
@@ -195,4 +231,18 @@ function missingVar(error: z.ZodError, adapter: string): MissingConfigError {
   const first = error.issues[0]
   const variable = first?.path[0]?.toString() ?? '<unknown>'
   return new MissingConfigError(variable, adapter)
+}
+
+/**
+ * Best-effort read of `testing.api.kind` from rando.config.json. Returns
+ * undefined when the file is unreadable or the block isn't set — callers
+ * default to `'postman'` for backward compat.
+ */
+function readApiTestingKind(configPath?: string): 'postman' | undefined {
+  try {
+    const cfg = loadSetupConfig(resolve(process.cwd(), configPath ?? 'rando.config.json'))
+    return cfg.testing?.api?.kind
+  } catch {
+    return undefined
+  }
 }

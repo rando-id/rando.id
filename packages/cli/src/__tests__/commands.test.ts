@@ -5,6 +5,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { run } from '../cli'
 import type { ClerkProvider } from '../domain/clerk'
 import type { Adapters } from '../config'
+import type { ApiCollectionProvider } from '../domain/api-testing'
 import { PostmanPlanLimitError } from '../domain/errors'
 import type { DbProvider } from '../domain/db'
 import type { DeployProvider } from '../domain/deploy'
@@ -24,6 +25,7 @@ function mockAdapters(
     dns: DnsProvider
     deploy: DeployProvider
     tracker: IssueTrackerProvider
+    apiTesting: ApiCollectionProvider
     postman: PostmanProvider
     secrets: SecretsProvider
     gh: GhProvider
@@ -35,6 +37,7 @@ function mockAdapters(
     dns: () => overrides.dns ?? notConfigured('dns'),
     deploy: () => overrides.deploy ?? notConfigured('deploy'),
     tracker: () => overrides.tracker ?? notConfigured('tracker'),
+    apiTesting: () => overrides.apiTesting ?? notConfigured('apiTesting'),
     postman: () => overrides.postman ?? notConfigured('postman'),
     secrets: () => overrides.secrets ?? notConfigured('secrets'),
     gh: () => overrides.gh ?? notConfigured('gh'),
@@ -464,22 +467,40 @@ describe('api postman sync', () => {
     upsertSpecFile: vi.fn(async () => {}),
   })
 
+  // Stub for the vendor-neutral apiTesting.syncCollectionFromSpec call.
+  // The collection-push half of `rando api postman sync` runs through
+  // this surface now; only the Spec Hub mirror still hits `postman`
+  // directly.
+  const stubSync = (
+    overrides: Partial<{ replaced: boolean; ref: string; url: string }> = {},
+  ): Partial<ApiCollectionProvider> => ({
+    syncCollectionFromSpec: vi.fn(async () => ({
+      replaced: false,
+      ref: 'u-1',
+      url: 'https://web.postman.co/workspace/ws-1/collection/u-1',
+      ...overrides,
+    })),
+  })
+
   it('replaces an existing collection when one with the same name exists', async () => {
-    const postman: Partial<PostmanProvider> = {
-      ...specMocks(),
-      findCollectionByName: vi.fn(async () => ({ id: 'c-old', uid: 'u-old', name: 'Rando API' })),
-      deleteCollection: vi.fn(async () => {}),
-      importOpenApi: vi.fn(async () => ({ id: 'c-new', uid: 'u-new', name: 'Rando API' })),
-    }
+    const apiTesting = stubSync({
+      replaced: true,
+      ref: 'u-new',
+      url: 'https://web.postman.co/workspace/ws-1/collection/u-new',
+    })
+    const postman: Partial<PostmanProvider> = specMocks()
     const io = captureIo()
     await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1'], {
-      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      adapters: mockAdapters({
+        apiTesting: apiTesting as ApiCollectionProvider,
+        postman: postman as PostmanProvider,
+      }),
       io: io.io,
       exit: noExit,
     })
-    expect(postman.deleteCollection).toHaveBeenCalledWith('c-old')
-    expect(postman.importOpenApi).toHaveBeenCalledWith({
-      workspaceId: 'ws-1',
+    expect(apiTesting.syncCollectionFromSpec).toHaveBeenCalledWith({
+      target: 'ws-1',
+      name: 'Rando API',
       spec: { openapi: '3.0.0', paths: {} },
     })
     const out = io.stdout.join('\n')
@@ -488,19 +509,18 @@ describe('api postman sync', () => {
   })
 
   it('creates a new collection when no previous one exists', async () => {
-    const postman: Partial<PostmanProvider> = {
-      ...specMocks(),
-      findCollectionByName: vi.fn(async () => null),
-      deleteCollection: vi.fn(async () => {}),
-      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
-    }
+    const apiTesting = stubSync({ replaced: false })
+    const postman: Partial<PostmanProvider> = specMocks()
     const io = captureIo()
     await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1'], {
-      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      adapters: mockAdapters({
+        apiTesting: apiTesting as ApiCollectionProvider,
+        postman: postman as PostmanProvider,
+      }),
       io: io.io,
       exit: noExit,
     })
-    expect(postman.deleteCollection).not.toHaveBeenCalled()
+    expect(apiTesting.syncCollectionFromSpec).toHaveBeenCalled()
     expect(io.stdout.join('\n')).toContain('created')
   })
 
@@ -512,16 +532,18 @@ describe('api postman sync', () => {
       type: 'OPENAPI:3.0',
     }))
     const upsertSpecFile = vi.fn(async () => {})
+    const apiTesting = stubSync()
     const postman: Partial<PostmanProvider> = {
       findSpecByName: findSpec,
       createSpec,
       upsertSpecFile,
-      findCollectionByName: vi.fn(async () => null),
-      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
     }
     const io = captureIo()
     await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1'], {
-      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      adapters: mockAdapters({
+        apiTesting: apiTesting as ApiCollectionProvider,
+        postman: postman as PostmanProvider,
+      }),
       io: io.io,
       exit: noExit,
     })
@@ -541,16 +563,18 @@ describe('api postman sync', () => {
     const findSpec = vi.fn(async () => ({ id: 'spec-7', name: 'Rando API', type: 'OPENAPI:3.0' }))
     const createSpec = vi.fn()
     const upsertSpecFile = vi.fn(async () => {})
+    const apiTesting = stubSync()
     const postman: Partial<PostmanProvider> = {
       findSpecByName: findSpec,
       createSpec: createSpec as PostmanProvider['createSpec'],
       upsertSpecFile,
-      findCollectionByName: vi.fn(async () => null),
-      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
     }
     const io = captureIo()
     await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1'], {
-      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      adapters: mockAdapters({
+        apiTesting: apiTesting as ApiCollectionProvider,
+        postman: postman as PostmanProvider,
+      }),
       io: io.io,
       exit: noExit,
     })
@@ -563,23 +587,25 @@ describe('api postman sync', () => {
   })
 
   it('soft-skips spec push when Spec Hub returns an error (collection push still wins)', async () => {
+    const apiTesting = stubSync()
     const postman: Partial<PostmanProvider> = {
       findSpecByName: vi.fn(async () => {
         throw new Error('502 Bad Gateway')
       }),
       createSpec: vi.fn(),
       upsertSpecFile: vi.fn(),
-      findCollectionByName: vi.fn(async () => null),
-      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
     }
     const io = captureIo()
     await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1'], {
-      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      adapters: mockAdapters({
+        apiTesting: apiTesting as ApiCollectionProvider,
+        postman: postman as PostmanProvider,
+      }),
       io: io.io,
       exit: noExit,
     })
     // Collection push still succeeded; spec push failed and was noted.
-    expect(postman.importOpenApi).toHaveBeenCalled()
+    expect(apiTesting.syncCollectionFromSpec).toHaveBeenCalled()
     const out = io.stdout.join('\n')
     expect(out).toContain('created')
     expect(out).toContain('Spec Hub push skipped')
@@ -587,16 +613,17 @@ describe('api postman sync', () => {
   })
 
   it('fails clearly when no workspace can be resolved', async () => {
-    const postman: Partial<PostmanProvider> = {
-      findCollectionByName: vi.fn(),
-      importOpenApi: vi.fn(),
-    }
+    const apiTesting = stubSync()
+    const postman: Partial<PostmanProvider> = {}
     const io = captureIo()
     const exitCalls: number[] = []
     await run(
       ['api', 'postman', 'sync', '--spec', writeSpec(), '--config', join(tmpDir, 'missing.json')],
       {
-        adapters: mockAdapters({ postman: postman as PostmanProvider }),
+        adapters: mockAdapters({
+          apiTesting: apiTesting as ApiCollectionProvider,
+          postman: postman as PostmanProvider,
+        }),
         io: io.io,
         exit: ((c: number) => {
           exitCalls.push(c)
@@ -605,18 +632,18 @@ describe('api postman sync', () => {
     )
     expect(exitCalls[0]).toBe(1)
     expect(io.stderr.join('\n')).toMatch(/No Postman workspace/)
-    expect(postman.findCollectionByName).not.toHaveBeenCalled()
+    expect(apiTesting.syncCollectionFromSpec).not.toHaveBeenCalled()
   })
 
   it('--json emits structured output instead of human summary', async () => {
-    const postman: Partial<PostmanProvider> = {
-      ...specMocks(),
-      findCollectionByName: vi.fn(async () => null),
-      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
-    }
+    const apiTesting = stubSync()
+    const postman: Partial<PostmanProvider> = specMocks()
     const io = captureIo()
     await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1', '--json'], {
-      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      adapters: mockAdapters({
+        apiTesting: apiTesting as ApiCollectionProvider,
+        postman: postman as PostmanProvider,
+      }),
       io: io.io,
       exit: noExit,
     })
@@ -635,18 +662,20 @@ describe('api postman sync', () => {
     // Regression guard: previously the soft-skip path wrote a `note: …`
     // line to stdout before the JSON payload, breaking JSON.parse for
     // downstream consumers (CI scripts, `jq`, etc.).
+    const apiTesting = stubSync()
     const postman: Partial<PostmanProvider> = {
       findSpecByName: vi.fn(async () => {
         throw new Error('502 Bad Gateway')
       }),
       createSpec: vi.fn(),
       upsertSpecFile: vi.fn(),
-      findCollectionByName: vi.fn(async () => null),
-      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
     }
     const io = captureIo()
     await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--workspace', 'ws-1', '--json'], {
-      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      adapters: mockAdapters({
+        apiTesting: apiTesting as ApiCollectionProvider,
+        postman: postman as PostmanProvider,
+      }),
       io: io.io,
       exit: noExit,
     })
@@ -813,19 +842,19 @@ describe('api postman sync', () => {
         testing: { api: { kind: 'postman', workspaceId: 'ws-from-config' } },
       }),
     )
-    const postman: Partial<PostmanProvider> = {
-      ...specMocks(),
-      findCollectionByName: vi.fn(async () => null),
-      importOpenApi: vi.fn(async () => ({ id: 'c-1', uid: 'u-1', name: 'Rando API' })),
-    }
+    const apiTesting = stubSync()
+    const postman: Partial<PostmanProvider> = specMocks()
     const io = captureIo()
     await run(['api', 'postman', 'sync', '--spec', writeSpec(), '--config', configPath], {
-      adapters: mockAdapters({ postman: postman as PostmanProvider }),
+      adapters: mockAdapters({
+        apiTesting: apiTesting as ApiCollectionProvider,
+        postman: postman as PostmanProvider,
+      }),
       io: io.io,
       exit: noExit,
     })
-    expect(postman.importOpenApi).toHaveBeenCalledWith(
-      expect.objectContaining({ workspaceId: 'ws-from-config' }),
+    expect(apiTesting.syncCollectionFromSpec).toHaveBeenCalledWith(
+      expect.objectContaining({ target: 'ws-from-config' }),
     )
   })
 
