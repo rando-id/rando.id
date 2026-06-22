@@ -21,7 +21,7 @@
     "@vitest/coverage-v8": "^2.1.9",
     "openapi-typescript": "^7.4.5",
     "typescript": "^5.7.2",
-    "vitest": "^2.1.9"
+    "vitest": "^4.1.9"
   },
   "dependencies": {
     "@ts-rest/core": "^3.52.1",
