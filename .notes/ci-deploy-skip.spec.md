@@ -15,11 +15,13 @@ Use two complementary seams:
 
 1. **PR preview deploys** (`.github/workflows/deploy.yml` →
    `rando deploy branch`) — gate the substantive deploy steps inside
-   the `branch-deploy` job on `steps.changes.outputs.docs != 'true'`,
-   reusing the existing `.github/actions/changes` composite.
-   `branch-deploy` short-circuits with a notice on docs-only PRs.
-   The `teardown` job stays untouched — fires unconditionally on
-   `event.action == 'closed'`.
+   the `branch-deploy` job on
+   `steps.changes.outputs.code == 'true' || steps.changes.outputs.shared == 'true'`,
+   reusing the existing `.github/actions/changes` composite. `code`
+   covers TS/JS source + tsconfig + lockfile; `shared` covers
+   `turbo.json` + root `package.json`. `branch-deploy` short-circuits
+   with a notice when neither matches. The `teardown` job stays
+   untouched — fires unconditionally on `event.action == 'closed'`.
 
 2. **Prod / staging push deploys** (Vercel's native GitHub
    integration → `vercel build`) — each app's `vercel.json` sets
@@ -68,6 +70,31 @@ that _should_ skip on docs-only. Teardown's only condition stays
 `event.action == 'closed'`, which always fires on close regardless
 of the diff.
 
+## Why gate on `code || shared` (not on `docs`)
+
+`dorny/paths-filter` outputs a filter true when **at least one
+changed file matches** the pattern — NOT when every changed file
+matches. So `outputs.docs == 'true'` means "this PR touched some
+docs file"; it does NOT mean "this PR is docs-only". A PR with one
+`.ts` change AND one `README.md` update has both `docs=true` AND
+`code=true`. A `docs != 'true'` gate would incorrectly skip it.
+
+Gating on the positive `code || shared` signal is consistent with
+how `lint.yml`, `typecheck.yml`, and `codeql.yml` already work in
+this repo:
+
+- `code = true` — any TS/JS source / tsconfig / lockfile changed
+- `shared = true` — any of `turbo.json` / root `package.json` /
+  lockfile changed
+
+Together they catch every deploy-worthy change pattern this repo
+has today. A PR touching only docs / `.notes/**` / `LICENSE` has
+both false and skips.
+
+The misleading `docs:` description that originally seeded the bug
+("Only docs / license / GitHub templates changed.") was corrected
+in the same PR — see `.github/actions/changes/action.yml`.
+
 ## Options considered
 
 - **Single seam: `paths-ignore` at trigger level.** Simplest. Killed
@@ -80,6 +107,14 @@ of the diff.
   every docs-only PR still spins up a full preview environment via
   `rando deploy branch`. Wastes Actions minutes and pollutes the
   PR's deploy URLs with empty diffs.
+- **Gate on the `docs` output as negative signal** (`docs != 'true'`
+  to deploy). Looked tempting given the goal ("skip docs-only
+  PRs") but semantically wrong — `dorny/paths-filter` outputs are
+  ORed across changed files, so a mixed code+docs PR has `docs=true`
+  and would be wrongly skipped. See "Why gate on code || shared"
+  above. The misleading description on the `docs` output in
+  `.github/actions/changes/action.yml` seeded this in the first
+  draft of the PR; fixed in the same PR.
 - **Vercel dashboard "Ignored Build Step" instead of `vercel.json`.**
   Same behavior, but config lives outside the repo. Violates the
   "Prefer automation" rule in CLAUDE.md — onboarding a new
@@ -94,29 +129,39 @@ of the diff.
   seams.** Tempting but Vercel's `ignoreCommand` runs in a Vercel
   build container that doesn't have the repo's composite actions
   available the same way GitHub Actions does. Two seams that share
-  a `docs` filter spec (via `.github/actions/changes` for one side,
+  signals conceptually (via `.github/actions/changes` for one side,
   via turbo's dep graph for the other) is the closest we can get.
 
 ## What we accept
 
 - **Two seams must stay aligned.** Widening one (adding patterns to
-  the `docs:` filter in `.github/actions/changes/action.yml`) without
-  the other can produce a PR preview that skips while prod deploy
-  fires, or vice versa. Documented in MAINTAINING.md → Deploy
-  strategy → "Skipping deploys for docs-only changes".
+  `code:` / `shared:` in `.github/actions/changes/action.yml`)
+  without the other can produce a PR preview that skips while prod
+  deploy fires, or vice versa. Documented in MAINTAINING.md →
+  Deploy strategy.
 - **Setup overhead on docs-only PRs.** `branch-deploy` still does a
   checkout + `setup` + `changes` detection before short-circuiting
   (~30s of CI time). Acceptable cost for the cleaner conditional
   structure vs. trying to gate the setup steps themselves.
-- **App-local README updates still deploy that app.** Turbo treats
-  all files inside a workspace as inputs by default. A change to
-  `apps/api/README.md` triggers `api`'s Vercel build. We can add
-  `inputs:` exclusions to `turbo.json` later if it bites.
+- **Asset / vercel.json / env-template / workflow-YAML changes
+  don't deploy alone.** None of those match `code` or `shared`
+  patterns. A PR that ONLY updates `apps/web/public/logo.svg`,
+  `apps/api/.env.example`, or `vercel.json` skips the preview
+  deploy. Rare in practice; the user can manually re-trigger with
+  `rando deploy branch` if needed. Catch-all "non-docs" detection
+  would require either a dorny/paths-filter negation pattern (not
+  cleanly supported) or a custom git-diff script. Both bigger than
+  the trade-off warrants today.
+- **App-local README updates still deploy that app via Vercel.**
+  Turbo treats all files inside a workspace as inputs by default.
+  A change to `apps/api/README.md` triggers `api`'s Vercel build
+  (but NOT a PR preview, since `README.md` doesn't match `code`).
+  Can add `inputs:` exclusions to `turbo.json` later if it bites.
 - **deploy.yml is not a required status check today.** The job-level
-  gate produces a "success" workflow result when docs-only (the
-  notice step runs; subsequent steps are skipped which counts as
-  success). If we ever make this required, audit that the skipped
-  steps still report success — they do today.
+  gate produces a "success" workflow result when there's no code
+  change (the notice step runs; subsequent steps are skipped which
+  counts as success). If we ever make this required, audit that the
+  skipped steps still report success — they do today.
 
 ## What would make us reconsider
 

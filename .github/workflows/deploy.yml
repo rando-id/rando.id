@@ -31,11 +31,11 @@ on:
     types: [opened, synchronize, reopened, closed]
     # NOTE: do NOT add `paths-ignore` here. It would apply to the
     # `closed` event too — if a PR was deployed and then amended to
-    # docs-only before close, the workflow wouldn't fire and the
-    # teardown job would never run, orphaning Vercel custom domains
-    # and Cloudflare CNAMEs. Docs-only filtering lives inside the
-    # branch-deploy job below via .github/actions/changes; teardown
-    # always runs on close.
+    # remove all deploy-worthy changes before close, the workflow
+    # wouldn't fire and the teardown job would never run, orphaning
+    # Vercel custom domains and Cloudflare CNAMEs. Deploy-worthy
+    # filtering lives inside the branch-deploy job below via
+    # .github/actions/changes; teardown always runs on close.
 
 concurrency:
   # Serialize per-PR so a quick close-after-open doesn't race the deploy job.
@@ -55,33 +55,41 @@ jobs:
         with:
           install-cli: 'true'
 
-      # Detect docs-only PRs so we can short-circuit the deploy steps.
-      # The composite action's `docs` output is true when EVERY changed
-      # file matches a docs pattern (`**/*.md`, `LICENSE`, GitHub
-      # templates, etc.). A PR mixing code + docs still deploys.
+      # Detect whether the PR has any deploy-worthy changes. `code` is
+      # true when any TS/JS source / tsconfig / lockfile changed; `shared`
+      # is true when build-graph infra (turbo.json, root package.json)
+      # changed. ORing them gives us "deploy needed" — consistent with
+      # how lint.yml, typecheck.yml, codeql.yml all gate. Docs-only PRs
+      # have both false and skip the substantive steps below.
+      #
+      # NOTE: do NOT gate on `outputs.docs` — dorny/paths-filter sets
+      # that to true if ANY file matches the docs pattern (e.g. a PR
+      # with both .ts + .md → `docs=true` AND `code=true`), so a
+      # "skip if docs" gate would block real code PRs that touch a
+      # README. Use the positive `code || shared` signal instead.
       - uses: ./.github/actions/changes
         id: changes
 
-      - name: Docs-only PR — skipping deploy
-        if: steps.changes.outputs.docs == 'true'
-        run: echo "::notice::Docs-only PR — skipping preview deploy. Teardown stays unconditional on close."
+      - name: No deploy-worthy changes — skipping
+        if: steps.changes.outputs.code != 'true' && steps.changes.outputs.shared != 'true'
+        run: echo "::notice::No code or shared-infra changes — skipping preview deploy. Teardown stays unconditional on close."
 
       # Stream the staging 1Password Environment into $GITHUB_ENV. Adding
       # a new secret means adding it to the Environment in the 1Password
       # UI — no workflow change required.
       - uses: ./.github/actions/op-env
-        if: steps.changes.outputs.docs != 'true'
+        if: steps.changes.outputs.code == 'true' || steps.changes.outputs.shared == 'true'
         with:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       # Optional: spin up a per-PR Neon branch off main so migrations and
       # seed data are isolated. Requires RANDO_NEON_PROJECT_ID variable.
       # - name: Create Neon branch
-      #   if: vars.RANDO_NEON_PROJECT_ID != '' && steps.changes.outputs.docs != 'true'
+      #   if: vars.RANDO_NEON_PROJECT_ID != '' && (steps.changes.outputs.code == 'true' || steps.changes.outputs.shared == 'true')
       #   run: rando db branch create ${{ vars.RANDO_NEON_PROJECT_ID }} pr-${{ github.event.pull_request.number }} --from main
 
       - name: Trigger preview deploys
-        if: steps.changes.outputs.docs != 'true'
+        if: steps.changes.outputs.code == 'true' || steps.changes.outputs.shared == 'true'
         run: rando deploy branch '${{ github.head_ref }}' --stable-url
         env:
           FORCE_COLOR: '1'
@@ -90,11 +98,11 @@ jobs:
       # plus a comment with the per-app stable deploy URLs. Soft-fails
       # so a tracker hiccup doesn't fail the deploy job.
       - id: refs
-        if: vars.TRACKER_ENABLED != 'false' && steps.changes.outputs.docs != 'true'
+        if: vars.TRACKER_ENABLED != 'false' && (steps.changes.outputs.code == 'true' || steps.changes.outputs.shared == 'true')
         uses: ./.github/actions/issue-refs
 
       - name: Sync issues → In Review with deploy URLs
-        if: vars.TRACKER_ENABLED != 'false' && steps.changes.outputs.docs != 'true' && steps.refs.outputs.keys != ''
+        if: vars.TRACKER_ENABLED != 'false' && (steps.changes.outputs.code == 'true' || steps.changes.outputs.shared == 'true') && steps.refs.outputs.keys != ''
         run: |
           BRANCH='${{ github.head_ref }}'
           MSG=$(printf 'Branch deploy live:\n\n- https://%s-api.rando-id.dev\n- https://%s-web.rando-id.dev\n- https://%s-admin.rando-id.dev\n\nPR: %s' \

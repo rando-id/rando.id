@@ -43,7 +43,7 @@ outputs:
     description: Any TS/JS source file or root tsconfig changed.
     value: ${{ steps.filter.outputs.code }}
   docs:
-    description: Only docs / license / GitHub templates changed.
+    description: 'At least one doc / license / GitHub-template file changed. dorny/paths-filter ORs across changed files, so this is true even when the PR ALSO changes code — don''t use it as a "docs-only" gate. To detect "no deploy-worthy changes", check `code != true && shared != true` instead.'
     value: ${{ steps.filter.outputs.docs }}
   specLint:
     description: 'true when EITHER @rando/api was affected OR the spec-lint surface itself (`.spectral.yaml`, render-spec / spec-lint scripts) changed. The latter live at the repo root, outside any workspace, so the Turbo-based `api` aggregate alone would miss ruleset-only PRs and let a tightened rule merge without verifying the existing spec passes.'
