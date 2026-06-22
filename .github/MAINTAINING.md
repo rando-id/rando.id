@@ -176,6 +176,28 @@ Switching later is mostly an env-var move (from Vercel Project Settings
 into GitHub Environments) plus adding workflow YAML — the app code
 itself doesn't change.
 
+### Skipping deploys for docs-only changes
+
+Two seams filter out PRs / pushes that don't change deployable code:
+
+- **PR preview deploys** — `.github/workflows/deploy.yml` uses
+  `paths-ignore` so PRs touching only `.notes/**`, `**/*.md`, or
+  `LICENSE` don't trigger `rando deploy branch`. A PR mixing code +
+  docs still deploys because `paths-ignore` only matches when **every**
+  changed file is in the list.
+- **Prod / staging push deploys** — each app's `vercel.json` sets
+  `ignoreCommand: "npx -y turbo-ignore @rando/<app>"`. Turbo walks the
+  workspace dep graph and exits 1 (skip) when nothing the app
+  transitively depends on changed. A change inside `packages/ui` still
+  triggers `web` + `admin` (both depend on it); a change inside
+  `.notes/**` triggers none of them.
+
+To widen the filter, add patterns to the `paths-ignore` list and adjust
+`turbo.json`'s `inputs` if you need to exclude per-workspace docs from
+the cache key. Don't add patterns to one seam without the other — the
+two need to stay aligned or you'll get a deploy where you didn't expect
+one (or vice versa).
+
 ## Cloudflare
 
 ### DNS zones

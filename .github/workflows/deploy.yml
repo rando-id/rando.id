@@ -29,6 +29,17 @@ name: Deploy
 on:
   pull_request:
     types: [opened, synchronize, reopened, closed]
+    # Docs-only PRs don't need a preview environment. `paths-ignore` runs
+    # the workflow only when at least one changed file is OUTSIDE the
+    # listed patterns — a PR mixing code + docs still triggers a deploy.
+    # Safe to use here because this workflow isn't a required status
+    # check (gated on `vars.PREVIEW_ENABLED`); if that ever changes,
+    # switch to a path-filter step that no-ops gracefully so required
+    # checks still report success on skipped PRs.
+    paths-ignore:
+      - '.notes/**'
+      - '**/*.md'
+      - 'LICENSE'
 
 concurrency:
   # Serialize per-PR so a quick close-after-open doesn't race the deploy job.
