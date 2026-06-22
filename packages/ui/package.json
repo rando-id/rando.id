@@ -14,8 +14,8 @@
   },
   "dependencies": {
     "@rando/config": "workspace:*",
-    "@tamagui/config": "^1.121.6",
-    "tamagui": "^1.121.6"
+    "@tamagui/config": "^2.3.2",
+    "tamagui": "^2.3.2"
   },
   "devDependencies": {
     "@rando/tsconfig": "workspace:*",
