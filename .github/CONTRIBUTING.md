@@ -330,7 +330,7 @@ Two lints, by design:
 # with the rules in `.spectral.yaml`. No dev server, no network.
 # Enforces Rando-specific rules: every operation tagged + has a
 # summary, every 4xx/5xx response uses $ref to components.responses,
-# bearerAuth declared. Gated on the `api` aggregate in unit-tests.yml.
+# bearerAuth declared. Gated on the `api` aggregate in lint.yml.
 pnpm spec:lint:static
 
 # Live (against a running API) — runs `postman api lint` against the
