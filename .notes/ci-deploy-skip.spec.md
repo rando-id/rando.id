@@ -25,9 +25,11 @@ Use two complementary seams:
 
 2. **Prod / staging push deploys** (Vercel's native GitHub
    integration → `vercel build`) — each app's `vercel.json` sets
-   `ignoreCommand: "npx -y turbo-ignore @rando/<app>"`. Turbo walks
-   the workspace dep graph and exits 1 (skip) when the app and its
-   transitive deps haven't changed.
+   `ignoreCommand: "npx -y turbo-ignore@<exact-version> @rando/<app>"`.
+   Turbo walks the workspace dep graph and exits 1 (skip) when the
+   app and its transitive deps haven't changed. The pinned version
+   must match the installed `turbo` version exactly so they share
+   the same dep-graph schema; see "Bump policy" below.
 
 ## Why two seams
 
@@ -131,6 +133,59 @@ in the same PR — see `.github/actions/changes/action.yml`.
   available the same way GitHub Actions does. Two seams that share
   signals conceptually (via `.github/actions/changes` for one side,
   via turbo's dep graph for the other) is the closest we can get.
+
+## Why pin `turbo-ignore` in `npx`
+
+`ignoreCommand` runs **before** Vercel runs `installCommand` — the
+whole point of the step is to bail out before incurring install
+cost. So `node_modules` isn't populated yet and we can't use
+`pnpm exec turbo-ignore` (the standard lockfile-locked invocation
+pattern). We're stuck with `npx`, which means each Vercel build
+fetches the package fresh from the npm registry.
+
+Without a version pin, `npx -y turbo-ignore` resolves to the
+current `latest` tag at build time. That's a supply-chain
+execution surface — a compromised release on the npm registry
+would run arbitrary code in the Vercel build environment and
+affect deploy outcomes. Pinning to an exact version (no caret, no
+tilde, no tag) reduces the surface to "what we explicitly chose to
+trust" — npx still fetches each build, but always fetches the
+same artifact.
+
+This doesn't eliminate the risk entirely (the npm registry could
+in theory be compromised and serve a tampered tarball for the
+pinned version — npm's own integrity checks mitigate but don't
+fully prevent). The fully-mitigated alternatives are heavier:
+
+- Vendor the script into the repo (not trivial — turbo-ignore is
+  a TS project with its own dep tree).
+- Run install before the gate via a custom Vercel build script
+  (defeats the purpose of `ignoreCommand`).
+
+Pinning is the practical answer.
+
+## Bump policy for `turbo-ignore`
+
+The pinned version in each `vercel.json` MUST match the installed
+`turbo` version in the lockfile (`pnpm-lock.yaml`). turbo and
+turbo-ignore ship lockstep from the same Vercel/turborepo
+monorepo and share the same dep-graph schema — a version skew
+risks turbo-ignore misreading what's affected.
+
+To bump:
+
+1. Bump `turbo` in the root `package.json` and run `pnpm install`
+   to update the lockfile.
+2. Note the resolved `turbo` version in the lockfile (e.g.
+   `turbo@2.9.16`).
+3. Replace `turbo-ignore@<old>` with `turbo-ignore@<new>` in all
+   three `apps/*/vercel.json` files (currently api, web, admin).
+4. Open the PR with both changes in the same commit so they stay
+   in lockstep.
+
+Dependabot doesn't auto-cover this because the `vercel.json` files
+aren't a manifest format it understands. The bump must be manual
+when `turbo` itself is bumped.
 
 ## What we accept
 

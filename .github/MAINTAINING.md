@@ -192,11 +192,20 @@ Two seams filter out PRs / pushes that don't change deployable code:
   tears down its Vercel custom domains + Cloudflare CNAMEs — even if
   the final diff ended up docs-only.
 - **Prod / staging push deploys** — each app's `vercel.json` sets
-  `ignoreCommand: "npx -y turbo-ignore @rando/<app>"`. Turbo walks the
-  workspace dep graph and exits 1 (skip) when nothing the app
-  transitively depends on changed. A change inside `packages/ui` still
-  triggers `web` + `admin` (both depend on it); a change inside
-  `.notes/**` triggers none of them.
+  `ignoreCommand: "npx -y turbo-ignore@<version> @rando/<app>"`. Turbo
+  walks the workspace dep graph and exits 1 (skip) when nothing the
+  app transitively depends on changed. A change inside `packages/ui`
+  still triggers `web` + `admin` (both depend on it); a change
+  inside `.notes/**` triggers none of them.
+
+  The `turbo-ignore` version is **pinned to match the installed
+  `turbo` version** in `pnpm-lock.yaml` so the dep-graph schema
+  stays in sync. When you bump `turbo`, bump all three
+  `apps/*/vercel.json` files in the same PR. Pinning also limits
+  the supply-chain surface — `npx` runs before Vercel installs
+  `node_modules` (that's the whole point), so we can't use
+  `pnpm exec`. See `.notes/ci-deploy-skip.spec.md` → "Bump policy
+  for `turbo-ignore`".
 
 **Don't gate on `outputs.docs`.** `dorny/paths-filter` outputs that
 true when **any** changed file matches the docs pattern, not when
