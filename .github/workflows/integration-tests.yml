@@ -191,11 +191,25 @@ jobs:
               total = (xml.match(/<testcase /g) || []).length
             } catch {}
             const target = '${{ steps.target.outputs.url }}'
+            const mode = '${{ steps.target.outputs.mode }}'
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            // Help the author distinguish "your bump broke something"
+            // from "main / staging is broken and your PR ran against
+            // it." The body of the comment changes based on which
+            // target mode resolve-target picked.
+            const modeNote =
+              mode === 'staging'
+                ? `> _Tested against **staging** (Dependabot smoke test — no preview deploy fires for Dependabot PRs without the \`preview\` label). Failures may reflect main's state, not this PR's bump. Check the [nightly Postman cron run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/workflows/integration-tests.yml) and recent merges before assuming this PR broke it. To target the preview instead, add the \`preview\` label and re-push._`
+                : mode === 'staging-fallback'
+                  ? `> _Targeted this PR's preview but it never came up; **fell back to staging**. The real deploy failure lives in the [\`Deploy preview\`](${run}) workflow rollup and the \`Vercel – rando-api\` check — that's where to look before debugging Postman failures._`
+                  : mode === 'dispatch'
+                    ? `> _Workflow was dispatched manually against a custom URL._`
+                    : null // preview / staging (cron) — no extra note
             const body = [
               `## Integration tests failed`,
               ``,
               `**${failures} of ${total} assertion(s) failed** running the Postman collection against \`${target}\`.`,
+              ...(modeNote ? [``, modeNote] : []),
               ``,
               `Full output: ${run}`,
               ``,

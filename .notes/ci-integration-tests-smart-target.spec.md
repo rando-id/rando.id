@@ -116,6 +116,17 @@ tests result. Documented in MAINTAINING.md.
   via the `Vercel – rando-*` checks and the `Deploy preview`
   workflow check. Documented in MAINTAINING.md so reviewers
   know to look there.
+- **Integration-test failures may surface unrelated-to-the-PR
+  staging regressions.** When the staging-fallback / Dependabot-
+  smoke-test path is taken, a failure could mean either "this
+  PR broke something" or "staging is broken and your PR ran
+  against it." Mitigation: the failure-comment posted on the
+  PR is mode-aware — when running against staging or via
+  fallback, the comment includes an explicit hint pointing at
+  the nightly cron / Vercel checks before the author starts
+  debugging their own bump. The vanilla preview path keeps
+  the original (no extra hint) failure comment because
+  failures there reliably trace back to the PR.
 - **The gate logic duplicates deploy.yml's.** Both compute
   "should this PR have a preview" via the same three signals:
   `vars.PREVIEW_ENABLED != 'false'`, `github.actor != 'dependabot[bot]'`,
