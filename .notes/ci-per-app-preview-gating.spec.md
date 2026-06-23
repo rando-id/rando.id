@@ -121,11 +121,15 @@ applies — if the bump only affects `@rando/db` (which only
   string, `rando deploy branch`'s default is "all apps" which
   is the wrong behavior. The empty-list check makes that
   impossible.
-- **One additional output in the composite.** `admin` was
-  missing from `.github/actions/changes/action.yml`'s PKG map.
-  Adding it is a one-line change but worth flagging — other
-  workflows now have the `admin` signal available for any
-  future per-app gating they need.
+- **Two additional outputs in the composite.** `admin` was
+  missing from `.github/actions/changes/action.yml`'s PKG map
+  (the trigger for this PR). `brand` was also missing — caught
+  in review as a pre-existing gap, fixed in the same commit
+  since we were already in the area. `@rando/brand` has its
+  own tests but `unit-tests.yml` couldn't gate a separate
+  coverage upload for it without the per-workspace boolean.
+  Both outputs are now emitted; `unit-tests.yml` gained an
+  `Upload coverage — packages/brand` step.
 - **`code || shared` gate becomes redundant.** The
   per-workspace outputs already subsume both signals (Turbo
   treats `turbo.json` / root `package.json` changes as
