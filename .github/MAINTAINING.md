@@ -226,6 +226,41 @@ patterns in `.github/actions/changes/action.yml` (shared with
 `lint.yml`, `typecheck.yml`, `codeql.yml`). Adjust `turbo.json`'s
 `inputs` if you need to exclude per-workspace docs from the cache key.
 
+### Dependabot PRs are opt-in for previews
+
+Vercel's free tier caps deploys at **100 per day across the account**.
+Each PR's preview run produces 3 deploys (api + web + admin), so a
+queue of 70+ Dependabot PRs would burn through the quota on rebases
+alone — and we observed this on PR #182 (drizzle group).
+
+To keep quota for human-authored work, `deploy.yml`'s `branch-deploy`
+job is gated to **skip Dependabot PRs unless they carry the `preview`
+label**:
+
+```yaml
+github.actor != 'dependabot[bot]'
+|| contains(github.event.pull_request.labels.*.name, 'preview')
+```
+
+Behavior:
+
+- **Human-authored PR** → preview deploys as today, no change.
+- **Dependabot PR, no label** → `branch-deploy` skipped. Validation
+  comes from unit tests + the nightly `integration-tests.yml` run
+  against staging.
+- **Dependabot PR with `preview` label** → preview fires on the
+  next sync (rebase, force-push, or empty commit). Add the label
+  in the GitHub UI or via `gh pr edit <N> --add-label preview`.
+
+When to add the label: major bumps with a real UI / runtime change
+risk that unit tests can't catch alone. Tamagui, next, react,
+clerk majors are the usual suspects (see
+`.notes/ci-dependabot-triage.md`'s "Major bumps" table).
+
+`teardown` stays unconditional — closing a PR always cleans up
+infra, even one that never had a preview. Spec:
+`.notes/ci-preview-quota-strategy.spec.md`.
+
 ## Cloudflare
 
 ### DNS zones
