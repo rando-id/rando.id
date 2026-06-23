@@ -32,14 +32,22 @@ human-authored, OR (Dependabot AND has 'preview' label)
 Combined with the existing "skip when API workspace not affected"
 gate, the matrix becomes:
 
-| PR shape                                      | Action           | Target  |
-| --------------------------------------------- | ---------------- | ------- |
-| API not affected                              | skip             | n/a     |
-| API affected, human-authored                  | run              | preview |
-| API affected, Dependabot, no `preview` label  | run (smoke test) | staging |
-| API affected, Dependabot, has `preview` label | run              | preview |
-| Scheduled (nightly cron)                      | run              | staging |
-| `workflow_dispatch` with `inputs.baseUrl`     | run              | input   |
+| PR shape                                      | Action            | Target  | `mode` output      |
+| --------------------------------------------- | ----------------- | ------- | ------------------ |
+| API not affected                              | skip              | n/a     | n/a                |
+| API affected, `PREVIEW_ENABLED=false`         | run (kill-switch) | staging | `staging-disabled` |
+| API affected, human-authored                  | run               | preview | `preview`          |
+| API affected, Dependabot, no `preview` label  | run (smoke test)  | staging | `staging`          |
+| API affected, Dependabot, has `preview` label | run               | preview | `preview`          |
+| Preview never came up (any author)            | run (fallback)    | staging | `staging-fallback` |
+| Scheduled (nightly cron)                      | run               | staging | `staging`          |
+| `workflow_dispatch` with `inputs.baseUrl`     | run               | input   | `dispatch`         |
+| `workflow_dispatch` without `inputs.baseUrl`  | run               | staging | `staging`          |
+
+`mode` flows into the on-failure PR comment so the author sees
+the right hint for why their tests ran where they did (e.g. a
+`mode=staging-disabled` failure tells a human author to flip
+`PREVIEW_ENABLED` back on, not to add the `preview` label).
 
 The preview path keeps its 5-minute poll with a **staging
 fallback** if the preview never comes up (deploy failure, Vercel

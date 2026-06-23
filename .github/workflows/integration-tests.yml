@@ -93,10 +93,16 @@ jobs:
             echo "Target: ${{ inputs.baseUrl }} (workflow_dispatch input)"
             exit 0
           fi
-          if [ "${{ github.event_name }}" = "schedule" ]; then
+          # Non-PR events with no explicit URL → staging. Covers both
+          # the nightly cron AND `workflow_dispatch` triggered without
+          # a `baseUrl` input. Without this, dispatch-without-input
+          # would fall through to the PR path where `github.head_ref`
+          # is empty, producing an invalid `https://-api.rando-id.dev`
+          # URL that polls for 5 minutes before falling back.
+          if [ "${{ github.event_name }}" != "pull_request" ]; then
             echo "url=${STAGING}" >> "$GITHUB_OUTPUT"
             echo "mode=staging" >> "$GITHUB_OUTPUT"
-            echo "Target: ${STAGING} (nightly cron)"
+            echo "Target: ${STAGING} (${{ github.event_name }} without explicit URL)"
             exit 0
           fi
           # PR event with API workspace affected. Predict whether
@@ -108,10 +114,13 @@ jobs:
           # so flipping it to 'false' (used when the Vercel projects
           # don't exist yet — see deploy.yml header re: #75) routes
           # straight to staging instead of polling for a preview that
-          # won't be coming.
+          # won't be coming. Uses a distinct `mode=staging-disabled`
+          # so the failure-comment renders the right hint (the
+          # `mode=staging` Dependabot-smoke-test copy would be wrong
+          # for a human-authored PR that hit the kill switch).
           if [ "${{ vars.PREVIEW_ENABLED }}" = "false" ]; then
             echo "url=${STAGING}" >> "$GITHUB_OUTPUT"
-            echo "mode=staging" >> "$GITHUB_OUTPUT"
+            echo "mode=staging-disabled" >> "$GITHUB_OUTPUT"
             echo "Target: ${STAGING} (vars.PREVIEW_ENABLED=false; no preview will fire)"
             exit 0
           fi
@@ -200,11 +209,13 @@ jobs:
             const modeNote =
               mode === 'staging'
                 ? `> _Tested against **staging** (Dependabot smoke test — no preview deploy fires for Dependabot PRs without the \`preview\` label). Failures may reflect main's state, not this PR's bump. Check the [nightly Postman cron run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/workflows/integration-tests.yml) and recent merges before assuming this PR broke it. To target the preview instead, add the \`preview\` label and re-push._`
-                : mode === 'staging-fallback'
-                  ? `> _Targeted this PR's preview but it never came up; **fell back to staging**. The real deploy failure lives in the [\`Deploy preview\`](${run}) workflow rollup and the \`Vercel – rando-api\` check — that's where to look before debugging Postman failures._`
-                  : mode === 'dispatch'
-                    ? `> _Workflow was dispatched manually against a custom URL._`
-                    : null // preview / staging (cron) — no extra note
+                : mode === 'staging-disabled'
+                  ? `> _Tested against **staging** because \`vars.PREVIEW_ENABLED\` is set to \`false\` repo-wide (used when the Vercel projects don't exist yet — see deploy.yml's header re: #75). Failures may reflect staging's state, not this PR. Flip \`PREVIEW_ENABLED\` back on once the Vercel projects are wired up._`
+                  : mode === 'staging-fallback'
+                    ? `> _Targeted this PR's preview but it never came up; **fell back to staging**. The real deploy failure lives in the [\`Deploy preview\`](${run}) workflow rollup and the \`Vercel – rando-api\` check — that's where to look before debugging Postman failures._`
+                    : mode === 'dispatch'
+                      ? `> _Workflow was dispatched manually against a custom URL._`
+                      : null // preview / staging (cron) — no extra note
             const body = [
               `## Integration tests failed`,
               ``,
