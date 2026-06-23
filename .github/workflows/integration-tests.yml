@@ -21,9 +21,11 @@ name: Integration tests
 # workflow rollup — those are the sources of truth for deploy health,
 # not this workflow.
 #
-# Required: `POSTMAN_API_KEY` env var (auto-loaded from the staging
-# 1Password Environment via `op environment read`) — both
-# `collection run` and `api lint` need it to authenticate.
+# Items expected in the staging 1Password Environment (loaded by
+# `op-env` before resolve-target so the bypass header is available):
+#   - POSTMAN_API_KEY                — `collection run` + `api lint` auth
+#   - VERCEL_AUTOMATION_BYPASS_SECRET — passes Vercel Deployment
+#     Protection on preview URLs; see .notes/ci-vercel-protection-bypass.spec.md
 #
 # vars.POSTMAN_ENABLED=false disables the workflow without removing
 # it (matches the issues.yml + deploy.yml pattern).
@@ -74,6 +76,18 @@ jobs:
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
+
+      # Load the staging 1Password Environment BEFORE resolving the
+      # target URL so $VERCEL_AUTOMATION_BYPASS_SECRET is available to
+      # the /v1/health poll. The poll has to send the bypass header to
+      # get past Vercel's Deployment Protection on preview URLs (which
+      # would otherwise 302 to vercel.com/sso-api for every request).
+      # See .notes/ci-vercel-protection-bypass.spec.md.
+      - name: Load 1Password Environment
+        if: steps.gate.outputs.skip != 'true'
+        uses: ./.github/actions/op-env
+        with:
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       # Resolve the target URL: preview when a preview will exist
       # (human-authored, OR Dependabot + `preview` label — same gate as
@@ -142,8 +156,19 @@ jobs:
             | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
           PREVIEW="https://${SLUG}-api.rando-id.dev"
           echo "Polling preview ${PREVIEW} for up to 5 minutes…"
+          # x-vercel-protection-bypass lets us through Vercel's
+          # Deployment Protection (otherwise we'd 302 to vercel.com/
+          # sso-api on every probe). If the secret is unset locally
+          # or in a fork PR, the empty-value header is ignored by
+          # Vercel and we fall through to the staging-fallback path
+          # naturally — see .notes/ci-vercel-protection-bypass.spec.md.
+          if [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]; then
+            echo "::warning::VERCEL_AUTOMATION_BYPASS_SECRET unset — preview poll will hit Deployment Protection (302) and fall back to staging. See .notes/ci-vercel-protection-bypass.spec.md for the one-time setup."
+          fi
           for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${PREVIEW}/v1/health" || echo "000")
+            code=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET:-}" \
+              --max-time 5 "${PREVIEW}/v1/health" || echo "000")
             if [ "$code" = "200" ]; then
               echo "url=${PREVIEW}" >> "$GITHUB_OUTPUT"
               echo "mode=preview" >> "$GITHUB_OUTPUT"
@@ -156,12 +181,6 @@ jobs:
           echo "::warning::Preview ${PREVIEW} never responded 200 on /v1/health within 5 minutes — falling back to ${STAGING}. Check the 'Vercel – rando-api' check / 'Deploy preview' workflow for the underlying cause."
           echo "url=${STAGING}" >> "$GITHUB_OUTPUT"
           echo "mode=staging-fallback" >> "$GITHUB_OUTPUT"
-
-      - name: Load 1Password Environment
-        if: steps.gate.outputs.skip != 'true'
-        uses: ./.github/actions/op-env
-        with:
-          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       - name: Run Postman collection against target
         if: steps.gate.outputs.skip != 'true'

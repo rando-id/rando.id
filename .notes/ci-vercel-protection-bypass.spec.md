@@ -1,0 +1,150 @@
+---
+status: proposed # draft → proposed (issue filed) → approved (milestone attached)
+issue: 191
+---
+
+# Vercel Protection Bypass for integration tests
+
+Vercel Deployment Protection redirects all unauthenticated
+traffic on preview URLs to `vercel.com/sso-api`. That's the
+right default for preview deploys (WIP code shouldn't be
+publicly browseable), but it breaks `integration-tests.yml`'s
+`/v1/health` poll + the Postman collection runs — both get
+302s on every request and the smart-target falls back to
+staging.
+
+Discovered while debugging PR #187's CI: 30 consecutive 302s
+in the 5-minute poll, then a staging-fallback that also failed
+because staging is dead ([[#190]]). Surfaced because PR #189's
+smart-target replaced the previously-silent soft-skip with a
+real run.
+
+## Decision
+
+Keep Deployment Protection ON; wire Vercel's **Protection
+Bypass for Automation** into the integration-tests workflow.
+Every request from CI carries an `x-vercel-protection-bypass`
+header signed by a project-scoped secret; Vercel accepts
+those without redirecting.
+
+Concretely:
+
+1. **Vercel dashboard** (manual, one-time per project):
+   Settings → Deployment Protection → enable "Protection
+   Bypass for Automation". Vercel generates a secret;
+   anyone with the secret can bypass protection on that
+   project's deployments. We treat it like any other API
+   credential — store in 1Password, never commit.
+2. **1Password staging Environment** (manual, one-time):
+   add an item titled `VERCEL_AUTOMATION_BYPASS_SECRET`,
+   field `credential` (matches the existing convention from
+   the [[user_role]] / [[security-github-pat]] notes).
+3. **`.github/workflows/integration-tests.yml`**:
+   - Move the `op-env` step **before** `Resolve target URL`
+     so `$VERCEL_AUTOMATION_BYPASS_SECRET` is in
+     `$GITHUB_ENV` before the curl poll runs.
+   - Pass `-H "x-vercel-protection-bypass: $SECRET"` on the
+     curl poll.
+   - Pass the secret to Postman via `--env-var`.
+4. **`postman/rando-api.postman_collection.json`**: add a
+   collection-level pre-request script that reads the
+   `vercelBypass` Postman env var and adds the header on
+   every request.
+5. **Root `package.json`'s `test:api` script**: forward
+   `$VERCEL_AUTOMATION_BYPASS_SECRET` via `--env-var`.
+
+## Why bypass-header (not "disable protection")
+
+Deployment Protection serves a real purpose: a public WIP
+preview can leak credentials, surface unauthorized features,
+or get indexed by search engines. Disabling it would expose
+every PR's preview to the public web for the lifetime of the
+PR. The bypass mechanism lets CI through without compromising
+that posture.
+
+## Why a collection-level pre-request script (not per-request)
+
+The Postman collection currently has 25+ requests. Adding the
+header to each individually means 25+ identical edits and
+every new endpoint added later has to remember to set the
+header. A collection-level `prerequest` event runs before
+every request in the collection (and any subcollection), so
+the bypass is set once and stays correct as the collection
+grows.
+
+## Options considered
+
+- **Disable Deployment Protection entirely.** Simplest, but
+  leaks WIP previews to the public. Skip.
+- **Query-string bypass instead of header.**
+  `?x-vercel-protection-bypass=<secret>` works for GET but
+  not for POST/PUT/DELETE (Vercel's docs are clear on this).
+  The Postman collection has non-GET endpoints. Skip.
+- **Generate per-PR access tokens via the Vercel API.** More
+  granular (each PR gets its own short-lived token) but
+  requires a Vercel API integration we don't have today.
+  Skip; revisit if the long-lived bypass secret becomes a
+  concern.
+- **Skip integration tests on preview entirely, only run
+  against staging.** Loses the per-PR validation #189 was
+  built for. Skip.
+
+## What we accept
+
+- **One more secret in 1Password.** `VERCEL_AUTOMATION_BYPASS_SECRET`
+  joins the existing staging Environment. Rotation requires
+  generating a new value in Vercel and updating 1Password —
+  same procedure as any other credential rotation.
+- **The bypass secret has broad scope.** Anyone with it can
+  bypass Deployment Protection on every preview of the
+  `rando-api` project. Mitigations: store in 1P (not committed,
+  not in GitHub secrets directly), scope the 1P service
+  account to the staging Environment only, never log the
+  value (workflow uses `$SECRET` which GitHub Actions
+  redacts in logs).
+- **Order change in integration-tests.yml.** `op-env`
+  currently runs after the resolve-target step. Moving it
+  earlier means the staging environment loads on every run
+  (even ones that ultimately target staging-via-fallback
+  with no bypass needed). One extra `op environment read`
+  per run; negligible cost.
+- **Local dev unaffected.** Locally, `pnpm test:api` hits
+  `http://localhost:4000` which has no Deployment Protection.
+  `$VERCEL_AUTOMATION_BYPASS_SECRET` is unset locally, the
+  pre-request script reads an empty string, and Vercel's
+  header check is a no-op against localhost. No local
+  developer needs to configure anything.
+
+## What would make us reconsider
+
+- **The bypass secret leaks.** Rotate it (Vercel dashboard
+  generates a new one, invalidates the old). Update 1Password.
+  No code change.
+- **A per-deployment token system becomes viable.** Vercel
+  has been moving toward more granular per-deployment auth
+  (the SSO endpoint we saw the 302s redirecting to is part
+  of that). If they ship a CI-friendly per-deployment token
+  API, switch to that for better blast-radius control.
+- **We outgrow Vercel.** Bypass is Vercel-specific; if
+  preview deploys move to another platform, the mechanism
+  is different.
+
+## Touch points
+
+1. `.github/workflows/integration-tests.yml` — move op-env
+   before resolve-target; add the bypass header to the curl
+   poll; pass the secret to Postman via `--env-var`.
+2. `postman/rando-api.postman_collection.json` — add a
+   collection-level `prerequest` event with a script that
+   sets the `x-vercel-protection-bypass` header from the
+   `vercelBypass` Postman env var. Empty string → no-op.
+3. Root `package.json` `test:api` script — forward
+   `$VERCEL_AUTOMATION_BYPASS_SECRET` to Postman via
+   `--env-var`.
+4. `.github/MAINTAINING.md` — short callout under
+   "Continuous integration" naming the secret + the
+   one-time setup steps (Vercel dashboard + 1Password).
+
+Related: [[ci-integration-tests-smart-target]] (#188 —
+the smart-target that surfaced this), [[#190]] (the
+staging-dead issue debugging led to alongside this).
