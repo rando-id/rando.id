@@ -9,6 +9,7 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "test": "echo \"no tests yet — add a vitest.config.ts and src/__tests__/ to enable\"",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

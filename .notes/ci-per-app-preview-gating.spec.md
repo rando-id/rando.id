@@ -131,6 +131,20 @@ applies — if the bump only affects `@rando/db` (which only
   treats `turbo.json` / root `package.json` changes as
   touching every workspace). Removing the now-redundant
   `code || shared` check from deploy.yml is part of this PR.
+- **The composite's affected-detection task switched from
+  `test` to `typecheck`.** Caught in PR review: `turbo run
+test --dry-run` only emits workspaces that have a `test`
+  script, so adding `admin` (which has no tests) to the PKG
+  map would silently always return false. Six workspaces are
+  test-less today (admin, native, observability, sync,
+  testing, ui); every workspace has typecheck. Switched the
+  detection task to fix admin and prevent the same trap for
+  any future test-less workspace added to the PKG map. As
+  belt-and-suspenders, those six workspaces also gained
+  no-op `test` scripts (`echo "no tests yet — add a
+vitest.config.ts and src/__tests__/ to enable"`) so
+  `pnpm --filter @rando/<x> test` no longer errors with
+  "no script."
 
 ## What would make us reconsider
 
