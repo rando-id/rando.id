@@ -183,6 +183,30 @@ grows.
   IDN homograph, IPv6 literals) that the allowlist alone might
   miss.
 
+  **Tab/CR/LF in input is rejected, not stripped.** The WHATWG
+  URL parser silently strips ASCII tab and newline characters
+  from input before parsing (per spec step 3 of the URL parsing
+  algorithm). That means `https://a.rando-id.dev\n.evil.example`
+  parses to hostname `a.rando-id.dev.evil.example` — the
+  newline disappears and the segments merge. Our suffix
+  allowlist would still correctly reject that specific example
+  (it ends in `evil.example`, not `rando-id.dev`), but we never
+  want the parser's strip-and-parse behavior masking what the
+  dispatcher actually typed. The parser step rejects any input
+  containing `[\t\n\r]` before constructing the URL. This also
+  closes the door on output-file injection into `GITHUB_OUTPUT`
+  via a newline-embedded URL.
+
+  **Plaintext `http://` only for loopback (CWE-319).** A
+  maintainer could dispatch `http://staging-api.rando-id.dev`
+  — that hostname matches the allowlist, so the bypass secret
+  would be retained, and the `/v1/health` poll + Postman runs
+  - spec-lint fetch would all send `x-vercel-protection-bypass`
+    in plaintext over the network. The parser step rejects
+    `http:` URLs unless the hostname is `localhost` or `127.0.0.1`
+    (where loopback HTTP is the actual local debug case). Remote
+    hosts MUST use HTTPS.
+
 - **Fork PRs don't have access to the secret.** GitHub
   Actions withholds secrets from `pull_request` runs
   originating in forks (`OP_SERVICE_ACCOUNT_TOKEN` is

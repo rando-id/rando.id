@@ -149,7 +149,22 @@ jobs:
             # malformed inputs fail fast instead of silently degrading.
             HOST=$(URL="$DISPATCH_URL" node -e '
               try {
-                const u = new URL(process.env.URL);
+                const input = process.env.URL;
+                // WHATWG URL parser SILENTLY STRIPS tab/CR/LF from
+                // input before parsing (per spec). That means an input
+                // like "https://a.rando-id.dev\n.evil.example" parses
+                // to hostname "a.rando-id.dev.evil.example" (the
+                // newline disappears, the segments merge). Our suffix
+                // allowlist would correctly reject that example, but
+                // we never want stripping behavior masking what the
+                // dispatcher actually typed — reject any URL that
+                // contained a tab/CR/LF and force the dispatcher to
+                // submit a clean string.
+                if (/[\t\n\r]/.test(input)) {
+                  console.error("URL contains tab/CR/LF; refusing to apply WHATWG strip-and-parse behavior");
+                  process.exit(2);
+                }
+                const u = new URL(input);
                 if (u.username || u.password) {
                   console.error("userinfo (username/password) is not permitted in workflow_dispatch baseUrl");
                   process.exit(2);
@@ -160,6 +175,19 @@ jobs:
                 }
                 if (!u.hostname) {
                   console.error("URL has no hostname");
+                  process.exit(2);
+                }
+                // Plaintext HTTP would expose VERCEL_AUTOMATION_BYPASS_SECRET
+                // to network observers if the dispatch URL points at a
+                // remote allowlisted host. Only permit `http:` for
+                // loopback debugging (localhost / 127.0.0.1) — every
+                // other allowlisted host MUST use HTTPS (CWE-319).
+                if (
+                  u.protocol === "http:" &&
+                  u.hostname !== "localhost" &&
+                  u.hostname !== "127.0.0.1"
+                ) {
+                  console.error("plaintext http:// is only permitted for localhost/127.0.0.1; remote hosts must use https://");
                   process.exit(2);
                 }
                 process.stdout.write(u.hostname);
@@ -189,13 +217,16 @@ jobs:
                 echo "VERCEL_AUTOMATION_BYPASS_SECRET=" >> "$GITHUB_ENV"
                 ;;
             esac
-            # url= writes to GITHUB_OUTPUT. The DISPATCH_URL value has
-            # been validated by node's URL parser (rejected userinfo,
-            # non-http(s) schemes, malformed) so a passed-through value
-            # is known-safe for downstream consumers — but we still
-            # guard against newline injection into GITHUB_OUTPUT by
-            # using printf instead of echo (defense in depth; the URL
-            # parser already rejects URLs containing newlines).
+            # url= writes to GITHUB_OUTPUT. By this point DISPATCH_URL
+            # has been validated by the node block above: userinfo /
+            # non-http(s) / plaintext-http-to-remote-host / tab-CR-LF
+            # all rejected, so the value is safe to forward verbatim.
+            # The tab-CR-LF reject in particular guarantees no embedded
+            # newlines can land in GITHUB_OUTPUT here (the WHATWG URL
+            # parser strips them silently — we don't rely on that, we
+            # reject before parsing). printf '%s\n' over echo is
+            # defense-in-depth: explicit format string, no backslash
+            # interpretation regardless of the shell.
             printf 'url=%s\n' "$DISPATCH_URL" >> "$GITHUB_OUTPUT"
             echo "mode=dispatch" >> "$GITHUB_OUTPUT"
             exit 0
