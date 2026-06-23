@@ -102,9 +102,31 @@ jobs:
           set -e
           STAGING="https://staging-api.rando-id.dev"
           if [ -n "${{ inputs.baseUrl }}" ]; then
-            echo "url=${{ inputs.baseUrl }}" >> "$GITHUB_OUTPUT"
+            DISPATCH_URL='${{ inputs.baseUrl }}'
+            # workflow_dispatch accepts an arbitrary baseUrl. Validate
+            # the host against an allowlist of trusted Vercel-bound
+            # domains (and localhost for local debug). For anything
+            # else, scrub VERCEL_AUTOMATION_BYPASS_SECRET from
+            # GITHUB_ENV so downstream steps (curl poll, Postman run,
+            # spec-lint fetch) can't leak the bypass to a third-party
+            # host — even if a maintainer dispatches with a malicious
+            # baseUrl.
+            HOST=$(echo "$DISPATCH_URL" | sed -E 's|^https?://([^/:]+).*|\1|')
+            case "$HOST" in
+              *.rando-id.dev|*.rando.id|localhost|127.0.0.1)
+                echo "Target: ${DISPATCH_URL} (workflow_dispatch input; host ${HOST} in trusted allowlist — bypass header retained)"
+                ;;
+              *)
+                echo "::warning::Dispatch target host '${HOST}' is NOT in the trusted allowlist (*.rando-id.dev, *.rando.id, localhost). Stripping VERCEL_AUTOMATION_BYPASS_SECRET to prevent credential leakage; tests will run without the bypass header."
+                # Empty the var in GITHUB_ENV so subsequent steps
+                # (curl / Postman / spec-lint) read an empty value
+                # and skip the header. This overrides the value
+                # loaded by op-env above.
+                echo "VERCEL_AUTOMATION_BYPASS_SECRET=" >> "$GITHUB_ENV"
+                ;;
+            esac
+            echo "url=${DISPATCH_URL}" >> "$GITHUB_OUTPUT"
             echo "mode=dispatch" >> "$GITHUB_OUTPUT"
-            echo "Target: ${{ inputs.baseUrl }} (workflow_dispatch input)"
             exit 0
           fi
           # Non-PR events with no explicit URL → staging. Covers both

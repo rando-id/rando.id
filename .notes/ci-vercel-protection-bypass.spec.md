@@ -133,7 +133,12 @@ grows.
 
 1. `.github/workflows/integration-tests.yml` — move op-env
    before resolve-target; add the bypass header to the curl
-   poll; pass the secret to Postman via `--env-var`.
+   poll; pass the secret to Postman via `--env-var`. Also
+   validate `workflow_dispatch` input URL against a trusted
+   host allowlist (`*.rando-id.dev`, `*.rando.id`,
+   `localhost`); strip `VERCEL_AUTOMATION_BYPASS_SECRET`
+   from `GITHUB_ENV` when the dispatch target is outside the
+   allowlist so the bypass can't leak to third-party hosts.
 2. `postman/rando-api.postman_collection.json` — add a
    collection-level `prerequest` event with a script that
    sets the `x-vercel-protection-bypass` header from the
@@ -141,9 +146,39 @@ grows.
 3. Root `package.json` `test:api` script — forward
    `$VERCEL_AUTOMATION_BYPASS_SECRET` to Postman via
    `--env-var`.
-4. `.github/MAINTAINING.md` — short callout under
+4. `scripts/spec-lint.mjs` — read
+   `process.env.VERCEL_AUTOMATION_BYPASS_SECRET` and pass
+   it as `x-vercel-protection-bypass` on the spec fetch.
+   Without this, fetching `/v1/openapi.json` from a preview
+   URL gets 302'd to vercel.com/sso-api and the response
+   body is HTML, not the spec.
+5. `.github/MAINTAINING.md` — short callout under
    "Continuous integration" naming the secret + the
    one-time setup steps (Vercel dashboard + 1Password).
+
+## Security considerations
+
+- **`workflow_dispatch` trust allowlist.** Without validation
+  the dispatch input would let a maintainer (or a compromised
+  account with `workflow.write`) point the run at an arbitrary
+  URL — and the curl poll + Postman header + spec-lint fetch
+  would all send the bypass secret to that host. The
+  `resolve-target` step matches the dispatch URL's hostname
+  against `*.rando-id.dev`, `*.rando.id`, and `localhost`.
+  Non-trusted targets get the secret scrubbed from
+  `GITHUB_ENV` before any downstream step runs, AND a
+  workflow `::warning::` so the run is marked.
+- **Fork PRs don't have access to the secret.** GitHub
+  Actions withholds secrets from `pull_request` runs
+  originating in forks (`OP_SERVICE_ACCOUNT_TOKEN` is
+  unset, so `op-env` produces no values), so a malicious
+  PR can't exfiltrate the bypass even before our trust
+  check fires. The allowlist is defense-in-depth, not the
+  primary control.
+- **Bypass secret never echoed.** Workflow steps reference
+  the value via `$VAR` expansion or env-var injection, never
+  `echo`-ing it. GitHub Actions also masks any value
+  matching a secret in logs.
 
 Related: [[ci-integration-tests-smart-target]] (#188 —
 the smart-target that surfaced this), [[#190]] (the

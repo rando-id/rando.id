@@ -50,7 +50,16 @@ async function resolveSpec() {
   if (SPEC_PATH) {
     return { path: SPEC_PATH, cleanup: () => {} }
   }
-  const res = await fetch(SPEC_URL)
+  // Pass Vercel's Protection Bypass header when the env var is set
+  // (CI flow loads it from the staging 1Password Environment). Without
+  // this, fetching from a preview URL gets 302'd to vercel.com/sso-api
+  // and the spec content is the SSO HTML page, not JSON.
+  // .notes/ci-vercel-protection-bypass.spec.md.
+  const headers = {}
+  if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET) {
+    headers['x-vercel-protection-bypass'] = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+  }
+  const res = await fetch(SPEC_URL, { headers })
   if (!res.ok) {
     throw new Error(`Failed to fetch ${SPEC_URL}: ${res.status} ${res.statusText}`)
   }
