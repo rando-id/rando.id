@@ -212,7 +212,7 @@ jobs:
                 : mode === 'staging-disabled'
                   ? `> _Tested against **staging** because \`vars.PREVIEW_ENABLED\` is set to \`false\` repo-wide (used when the Vercel projects don't exist yet — see deploy.yml's header re: #75). Failures may reflect staging's state, not this PR. Flip \`PREVIEW_ENABLED\` back on once the Vercel projects are wired up._`
                   : mode === 'staging-fallback'
-                    ? `> _Targeted this PR's preview but it never came up; **fell back to staging**. The real deploy failure lives in the [\`Deploy preview\`](${run}) workflow rollup and the \`Vercel – rando-api\` check — that's where to look before debugging Postman failures._`
+                    ? `> _Targeted this PR's preview but it never came up; **fell back to staging**. The real deploy failure lives in the [\`Deploy preview\`](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/workflows/deploy.yml) workflow rollup (filter by this PR's branch) and the \`Vercel – rando-api\` check — that's where to look before debugging Postman failures._`
                     : mode === 'dispatch'
                       ? `> _Workflow was dispatched manually against a custom URL._`
                       : null // preview / staging (cron) — no extra note
