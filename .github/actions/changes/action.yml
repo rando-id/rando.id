@@ -31,6 +31,9 @@ outputs:
   web:
     description: '@rando/web affected (own files OR a runtime dep)'
     value: ${{ steps.affected.outputs.web }}
+  admin:
+    description: '@rando/admin affected (own files OR a runtime dep)'
+    value: ${{ steps.affected.outputs.admin }}
 
   # --- aggregates (from dorny/paths-filter) ---
   # File-pattern signals Turbo can't easily express. Used to skip
@@ -100,6 +103,7 @@ runs:
           [apiClient]="@rando/api-client"
           [api]="@rando/api"
           [web]="@rando/web"
+          [admin]="@rando/admin"
         )
 
         case "${{ github.event_name }}" in

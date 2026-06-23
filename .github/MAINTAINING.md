@@ -200,21 +200,28 @@ own preview succeeded.** When reviewing:
 The redundancy is intentional — deploy success and contract
 validity are independent signals and we want to surface both.
 
-### Skipping deploys when no code changed
+### Skipping deploys when no app changed
 
 Two seams filter out PRs / pushes that don't change deployable code:
 
 - **PR preview deploys** — `.github/workflows/deploy.yml`'s
-  `branch-deploy` job runs `.github/actions/changes` first and gates
-  the substantive deploy steps on
-  `outputs.code == 'true' || outputs.shared == 'true'`. `code` covers
-  TS/JS source + tsconfig + lockfile; `shared` covers
-  `turbo.json` + root `package.json`. Together they catch every
-  deploy-worthy change pattern this repo has today. A PR with
-  **only** docs / `.notes/**` / `LICENSE` skips with a notice.
-  **The teardown job stays unconditional** so closing a PR always
-  tears down its Vercel custom domains + Cloudflare CNAMEs — even if
-  the final diff ended up docs-only.
+  `branch-deploy` job runs `.github/actions/changes`, then computes
+  the affected-apps list from the composite's per-workspace outputs
+  (`api`, `web`, `admin` — true when that app's own files OR a
+  runtime dep changed, per Turbo's dep-graph traversal). The list
+  is passed to `rando deploy branch --apps <list>` so only the
+  affected apps get a preview. A PR that touches no app workspace
+  (docs-only, CLI-only, etc.) skips the deploy entirely with a
+  notice. **The teardown job stays unconditional** so closing a PR
+  always tears down its Vercel custom domains + Cloudflare CNAMEs,
+  even if it never had a preview.
+
+  Examples of the per-app dep graph:
+  - `packages/db` change → only `api` (admin/web don't depend on db)
+  - `packages/maps` or `packages/ui` change → only `web`
+  - `packages/api-client` / `auth` / `config` change → all three
+  - `apps/admin/...` change → only `admin`
+
 - **Prod / staging push deploys** — each app's `vercel.json` sets
   `ignoreCommand: "npx -y turbo-ignore@<version> @rando/<app>"`. Turbo
   walks the workspace dep graph and exits **0** when nothing the app
@@ -232,12 +239,24 @@ Two seams filter out PRs / pushes that don't change deployable code:
   `pnpm exec`. See `.notes/ci-deploy-skip.spec.md` → "Bump policy
   for `turbo-ignore`".
 
+**Adding a new app workspace?** Two edits keep gating coherent:
+
+1. Add an entry to the `PKG` map in `.github/actions/changes/action.yml`
+   so the composite emits a per-workspace boolean for it.
+2. Extend the "Compute affected apps" step in
+   `.github/workflows/deploy.yml` to include the new app in the
+   affected-list logic.
+
+Skipping step 1 means the workspace's coverage never gets uploaded;
+skipping step 2 means the new app's preview never fires.
+
 **Don't gate on `outputs.docs`.** `dorny/paths-filter` outputs that
 true when **any** changed file matches the docs pattern, not when
 **every** file is docs. A PR with a `.ts` change AND a `README.md`
 update has both `docs=true` and `code=true` — a `docs != 'true'` gate
-would incorrectly skip it. Always use the positive `code || shared`
-signal.
+would incorrectly skip it. Use the per-workspace outputs (or
+`code || shared`) for positive deploy decisions; reserve `docs` for
+explicit "did docs change" questions, not "should we deploy".
 
 **Don't use `paths-ignore` at the workflow `on:` level for deploy.yml.**
 It applies to every `pull_request` event type, so a PR amended to
@@ -245,10 +264,10 @@ remove all deploy-worthy changes before close would skip the workflow
 entirely and orphan infra. The job-level gate above keeps teardown
 safe.
 
-To widen the deploy-worthy signal, edit the `code:` or `shared:`
-patterns in `.github/actions/changes/action.yml` (shared with
-`lint.yml`, `typecheck.yml`, `codeql.yml`). Adjust `turbo.json`'s
-`inputs` if you need to exclude per-workspace docs from the cache key.
+Spec: `.notes/ci-per-app-preview-gating.spec.md`. Other workflows
+(`lint.yml`, `typecheck.yml`, `codeql.yml`) continue to gate on the
+broader `code` aggregate — they don't deploy per-app, so per-workspace
+specificity isn't useful there.
 
 ### Dependabot PRs are opt-in for previews
 
