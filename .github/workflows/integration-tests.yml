@@ -111,7 +111,41 @@ jobs:
             # spec-lint fetch) can't leak the bypass to a third-party
             # host — even if a maintainer dispatches with a malicious
             # baseUrl.
-            HOST=$(echo "$DISPATCH_URL" | sed -E 's|^https?://([^/:]+).*|\1|')
+            #
+            # IMPORTANT: parse with node's URL implementation, NOT a
+            # regex. A regex like `s|^https?://([^/:]+).*|\1|` extracts
+            # everything up to the first `:` or `/`, which a userinfo
+            # URL like `https://trusted.rando-id.dev:443@evil.example`
+            # can bypass — the regex returns the trusted-looking
+            # userinfo, but curl/Postman actually connect to
+            # `evil.example`. node's WHATWG URL parser puts the host
+            # in `u.hostname` regardless of userinfo, and we
+            # explicitly reject any userinfo / non-http(s) scheme so
+            # malformed inputs fail fast instead of silently degrading.
+            HOST=$(URL="$DISPATCH_URL" node -e '
+              try {
+                const u = new URL(process.env.URL);
+                if (u.username || u.password) {
+                  console.error("userinfo (username/password) is not permitted in workflow_dispatch baseUrl");
+                  process.exit(2);
+                }
+                if (u.protocol !== "http:" && u.protocol !== "https:") {
+                  console.error("only http(s) schemes are permitted; got " + u.protocol);
+                  process.exit(2);
+                }
+                if (!u.hostname) {
+                  console.error("URL has no hostname");
+                  process.exit(2);
+                }
+                process.stdout.write(u.hostname);
+              } catch (e) {
+                console.error("not a valid URL: " + e.message);
+                process.exit(2);
+              }
+            ') || {
+              echo "::error::workflow_dispatch baseUrl rejected: ${DISPATCH_URL} — see the error above. Refusing to proceed (avoids credential leak via malformed URLs)."
+              exit 1
+            }
             case "$HOST" in
               *.rando-id.dev|*.rando.id|localhost|127.0.0.1)
                 echo "Target: ${DISPATCH_URL} (workflow_dispatch input; host ${HOST} in trusted allowlist — bypass header retained)"

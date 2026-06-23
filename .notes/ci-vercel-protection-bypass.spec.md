@@ -168,6 +168,21 @@ grows.
   Non-trusted targets get the secret scrubbed from
   `GITHUB_ENV` before any downstream step runs, AND a
   workflow `::warning::` so the run is marked.
+
+  **Host extraction uses node's WHATWG URL parser, not a regex.**
+  A naive regex like `s|^https?://([^/:]+).*|\1|` can be defeated
+  by userinfo URLs: `https://trusted.rando-id.dev:443@evil.example`
+  extracts `trusted.rando-id.dev` (the userinfo, not the actual
+  host), passes the allowlist, and downstream curl/Postman/spec-lint
+  connect to `evil.example` with the bypass header. node's URL
+  parser puts the real host in `u.hostname` regardless of
+  userinfo. The parser step ALSO explicitly rejects any URL
+  with userinfo (`u.username || u.password`) and any non-http(s)
+  scheme, failing the workflow before downstream steps see the
+  secret — defense in depth against future bypass tricks (e.g.
+  IDN homograph, IPv6 literals) that the allowlist alone might
+  miss.
+
 - **Fork PRs don't have access to the secret.** GitHub
   Actions withholds secrets from `pull_request` runs
   originating in forks (`OP_SERVICE_ACCOUNT_TOKEN` is
