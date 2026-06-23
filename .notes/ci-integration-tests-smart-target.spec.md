@@ -117,10 +117,17 @@ tests result. Documented in MAINTAINING.md.
   workflow check. Documented in MAINTAINING.md so reviewers
   know to look there.
 - **The gate logic duplicates deploy.yml's.** Both compute
-  "should this PR have a preview" via the same author + label
-  check. If deploy.yml's gate ever changes, integration-tests
-  has to follow. Acceptable for two workflows; if a third
-  needs the same signal, extract into a composite.
+  "should this PR have a preview" via the same three signals:
+  `vars.PREVIEW_ENABLED != 'false'`, `github.actor != 'dependabot[bot]'`,
+  and `contains(labels, 'preview')`. If deploy.yml's gate ever
+  changes, integration-tests has to follow. Acceptable for two
+  workflows; if a third needs the same signal, extract into a
+  composite. The `PREVIEW_ENABLED` toggle is particularly
+  important to mirror — without it, flipping the var to `false`
+  (the documented kill switch used until the Vercel projects
+  exist; see deploy.yml header re: #75) would route deploy.yml
+  off but leave integration-tests polling for previews that will
+  never come up.
 
 ## What would make us reconsider
 
