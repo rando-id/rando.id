@@ -106,7 +106,7 @@ export const TOKENS: EnvTokenSpec[] = [
      * config switches kind to something else (Bruno, Insomnia) this
      * row would just be noise.
      */
-    appliesWhen: (env) => readApiTestingKind() === 'postman' || hasAny(env, ['POSTMAN_API_KEY']),
+    appliesWhen: (env) => (readApiTestingKind() ?? 'postman') === 'postman' || hasAny(env, ['POSTMAN_API_KEY']),
   },
 ]
 
