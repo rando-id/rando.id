@@ -44,7 +44,22 @@ concurrency:
 
 jobs:
   branch-deploy:
-    if: ${{ vars.PREVIEW_ENABLED != 'false' && github.event.action != 'closed' }}
+    # Dependabot PRs are opt-in for previews: skip unless the PR has
+    # the `preview` label. Human-authored PRs always preview by
+    # default. Vercel's free tier caps deploys at 100/day across the
+    # account, and 70+ open Dependabot PRs would burn through that on
+    # rebases alone — see .notes/ci-preview-quota-strategy.spec.md.
+    # Teardown stays unconditional below so closing always cleans up,
+    # even if the PR never had a preview.
+    if: >-
+      ${{
+        vars.PREVIEW_ENABLED != 'false'
+        && github.event.action != 'closed'
+        && (
+          github.actor != 'dependabot[bot]'
+          || contains(github.event.pull_request.labels.*.name, 'preview')
+        )
+      }}
     name: Deploy preview
     runs-on: ubuntu-latest
     timeout-minutes: 15

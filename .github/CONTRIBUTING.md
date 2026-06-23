@@ -367,7 +367,25 @@ Once Docker is up, DB seeded, and Clerk keys in place:
 
 - **Bugs / feature requests:** use the [issue templates](./ISSUE_TEMPLATE/). For security-sensitive reports, follow [SECURITY.md](./SECURITY.md) instead — do not file a public issue.
 - **PRs:** the [PR template](./PULL_REQUEST_TEMPLATE.md) prompts for the summary, test plan, and ticket reference. Reference the ticket as `Closes #N` / `Refs #N` in the description.
-- **CI:** typecheck + lint run on every push. PRs to `staging` get a Vercel preview URL automatically.
+- **CI:** typecheck + lint run on every push. Human-authored PRs get a Vercel preview URL automatically.
+
+### Previews for Dependabot PRs (opt-in)
+
+To preserve Vercel's free-tier quota (100 deploys/day) for human work,
+**Dependabot PRs skip the preview deploy by default**. Validation comes
+from unit tests + the nightly `integration-tests.yml` run against
+staging. If you're reviewing a Dependabot PR that genuinely needs a
+preview — typically tamagui / next / react / clerk majors where unit
+tests can't tell the whole story — add the `preview` label:
+
+```bash
+gh pr edit <N> --add-label preview
+```
+
+The next sync (push to the branch, comment-rebase, or an empty commit
+trigger) fires the deploy. The `preview` label persists across
+rebases, so subsequent syncs continue to deploy until you remove it
+or the PR closes. Spec: [`.notes/ci-preview-quota-strategy.spec.md`](../.notes/ci-preview-quota-strategy.spec.md).
 
 ## Code of Conduct
 
