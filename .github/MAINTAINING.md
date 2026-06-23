@@ -123,7 +123,7 @@ push to a branch cancels the previous run.
 | [`workflows/lint.yml`](./workflows/lint.yml)                           | `pnpm lint` across all workspaces.                                                                                                                                                                                                                                                                                                               |
 | [`workflows/typecheck.yml`](./workflows/typecheck.yml)                 | `pnpm typecheck` across all workspaces (Turbo-parallelized).                                                                                                                                                                                                                                                                                     |
 | [`workflows/unit-tests.yml`](./workflows/unit-tests.yml)               | `pnpm test:coverage` — vitest + Cobertura/LCOV. Uploads coverage as a run artifact and to GitHub Code Quality (public preview; GA July 2026) for per-PR coverage comments. Requires **Settings → Code security → Code quality** enabled at the repo level + the workflow's `code-quality: write` permission; without both, the upload step 403s. |
-| [`workflows/integration-tests.yml`](./workflows/integration-tests.yml) | Postman collection + spec lint against the PR's preview URL on every PR, and nightly against staging.                                                                                                                                                                                                                                            |
+| [`workflows/integration-tests.yml`](./workflows/integration-tests.yml) | Postman collection + spec lint against a deployed API. Smart-targets the PR's preview when one is expected, falls back to staging for Dependabot-without-`preview`-label PRs and on preview-fetch timeout. Nightly cron always runs against staging. See `.notes/ci-integration-tests-smart-target.spec.md`.                                     |
 | [`workflows/deploy.yml`](./workflows/deploy.yml)                       | Spins up the per-PR branch-deploy (`<slug>-<app>.rando-id.dev`) and tears it down on close.                                                                                                                                                                                                                                                      |
 | [`workflows/issues.yml`](./workflows/issues.yml)                       | Transitions tickets referenced in commits as the PR moves through its lifecycle.                                                                                                                                                                                                                                                                 |
 
@@ -175,6 +175,27 @@ Vercel's GitHub integration (rare; usually org-policy-driven).
 Switching later is mostly an env-var move (from Vercel Project Settings
 into GitHub Environments) plus adding workflow YAML — the app code
 itself doesn't change.
+
+### Reading the deploy / integration-tests interaction
+
+`integration-tests.yml` falls back to staging when a preview never
+comes up (Vercel quota, deploy failure, etc.) — see
+`.notes/ci-integration-tests-smart-target.spec.md`. **This means a
+green `Postman collection + spec lint` check doesn't prove the PR's
+own preview succeeded.** When reviewing:
+
+- `Postman collection + spec lint` green = the deployed API
+  (preview OR staging fallback) still serves a valid contract.
+- `Vercel – rando-api` / `rando-web` / `rando-admin` red = the
+  preview deploy itself failed; integration tests likely ran
+  against staging fallback. Investigate the Vercel check, not
+  the integration tests.
+- `Deploy preview` (deploy.yml job) red = something broke before
+  the preview was created. Same story: don't trust integration
+  tests as a proxy.
+
+The redundancy is intentional — deploy success and contract
+validity are independent signals and we want to surface both.
 
 ### Skipping deploys when no code changed
 
