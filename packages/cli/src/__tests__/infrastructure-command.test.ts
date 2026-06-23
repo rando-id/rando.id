@@ -38,6 +38,7 @@ function fakeAdapters(): Adapters {
     deploy: () => never('deploy'),
     dns: () => never('dns'),
     tracker: () => never('tracker'),
+    apiTesting: () => never('apiTesting'),
     postman: () => never('postman'),
     secrets: () => never('secrets'),
     gh: () => never('gh'),

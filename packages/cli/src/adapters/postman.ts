@@ -33,6 +33,12 @@
 
 import { PostmanPlanLimitError, ProviderApiError } from '../domain/errors'
 import type {
+  ApiCollectionProvider,
+  ApiTestingIdentity,
+  SyncCollectionInput,
+  SyncCollectionResult,
+} from '../domain/api-testing'
+import type {
   PostmanApi,
   PostmanCollection,
   PostmanEnvironment,
@@ -52,7 +58,7 @@ export interface PostmanAdapterOptions {
   baseUrl?: string
 }
 
-export class PostmanRestProvider implements PostmanProvider {
+export class PostmanRestProvider implements PostmanProvider, ApiCollectionProvider {
   private readonly fetch: typeof fetch
   private readonly baseUrl: string
   private readonly apiKey: string
@@ -67,6 +73,42 @@ export class PostmanRestProvider implements PostmanProvider {
     const raw = await this.request<{ user: RawUser }>('GET', '/me')
     return mapUser(raw.user)
   }
+
+  // ── ApiCollectionProvider (vendor-neutral surface) ──────────────────
+  //
+  // These delegate to the fine-grained PostmanProvider methods below.
+  // Commands that don't care about Postman-specific surface (workspaces,
+  // Spec Hub, API Builder) consume these via `Adapters.apiTesting()`.
+
+  async verifyAuth(): Promise<ApiTestingIdentity> {
+    const me = await this.getMyself()
+    return { display: `${me.fullName} (@${me.username})` }
+  }
+
+  async syncCollectionFromSpec(input: SyncCollectionInput): Promise<SyncCollectionResult> {
+    // `target` is the Postman workspace id (opaque per the
+    // ApiCollectionProvider contract). The orchestration mirrors the
+    // previous logic in `commands/api.ts`: find→delete→import. Moving
+    // it here keeps the command vendor-agnostic.
+    const workspaceId = input.target
+    const existing = await this.findCollectionByName({ workspaceId, name: input.name })
+    if (existing) {
+      await this.deleteCollection(existing.id)
+    }
+    const created = await this.importOpenApi({ workspaceId, spec: input.spec })
+    return {
+      replaced: existing !== null,
+      // Surface the name Postman actually assigned, NOT input.name —
+      // Postman's import endpoint reads `info.title` from the spec and
+      // can end up with a different value than the caller requested.
+      // JSON consumers downstream need to know what's actually live.
+      name: created.name,
+      url: `https://web.postman.co/workspace/${workspaceId}/collection/${created.uid}`,
+      ref: created.uid,
+    }
+  }
+
+  // ── PostmanProvider (vendor-specific surface) ───────────────────────
 
   async listWorkspaces(): Promise<PostmanWorkspace[]> {
     const raw = await this.request<{ workspaces: RawWorkspace[] }>('GET', '/workspaces')

@@ -5,8 +5,10 @@
 // 5xx or network blip is reported as a warn so doctor doesn't fail
 // noisily during a vendor outage.
 
+import { resolve } from 'node:path'
 import type { Adapters } from '../../config'
 import { MissingConfigError } from '../../domain/errors'
+import { loadSetupConfig } from '../../setup-config'
 import type { Check, CheckResult } from '../types'
 
 interface EnvTokenSpec {
@@ -21,6 +23,12 @@ interface EnvTokenSpec {
   probe: (adapters: Adapters) => Promise<void>
   /** When true, missing is a warn (the var is optional). */
   optional?: boolean
+  /**
+   * Skip this check when the predicate returns false. Used to hide rows
+   * that don't apply to the active project config (e.g. POSTMAN_API_KEY
+   * when `testing.api.kind` isn't `'postman'`).
+   */
+  appliesWhen?: (env: NodeJS.ProcessEnv) => boolean
 }
 
 export const TOKENS: EnvTokenSpec[] = [
@@ -86,14 +94,42 @@ export const TOKENS: EnvTokenSpec[] = [
     name: 'POSTMAN_API_KEY',
     label: 'POSTMAN_API_KEY (rando api postman sync)',
     probe: async (a) => {
-      await a.postman().getMyself()
+      // Routes through the kind-dispatching factory — verifies the
+      // currently-active api-testing adapter is reachable. For Postman
+      // this calls GET /me; for future adapters (Bruno, Insomnia) it's
+      // whatever their `verifyAuth` does.
+      await a.apiTesting().verifyAuth()
     },
     optional: true,
+    /**
+     * Only relevant when the project actually uses Postman. When the
+     * config switches kind to something else (Bruno, Insomnia) this
+     * row would just be noise.
+     */
+    appliesWhen: (env) => (readApiTestingKind() ?? 'postman') === 'postman' || hasAny(env, ['POSTMAN_API_KEY']),
   },
 ]
 
+/**
+ * Best-effort read of `testing.api.kind` from rando.config.json. Returns
+ * undefined when the file is unreadable so callers can fall through to
+ * "show the row anyway" rather than silently hiding it on a config typo.
+ */
+function readApiTestingKind(): 'postman' | undefined {
+  try {
+    const cfg = loadSetupConfig(resolve(process.cwd(), 'rando.config.json'))
+    return cfg.testing?.api?.kind
+  } catch {
+    return undefined
+  }
+}
+
+function hasAny(env: NodeJS.ProcessEnv, names: string[]): boolean {
+  return names.some((n) => (env[n] ?? '').trim().length > 0)
+}
+
 export function envChecks(adapters: Adapters, env: NodeJS.ProcessEnv = process.env): Check[] {
-  return TOKENS.map((spec) => ({
+  return TOKENS.filter((spec) => spec.appliesWhen?.(env) ?? true).map((spec) => ({
     section: 'Env',
     name: spec.name,
     async run(): Promise<CheckResult> {

@@ -43,7 +43,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
     )
     .option(
       '--workspace <id>',
-      'Postman workspace id (overrides postman.workspaceId in rando.config.json)',
+      'Postman workspace id (overrides testing.api.workspaceId in rando.config.json)',
     )
     .option(
       '--name <name>',
@@ -61,21 +61,28 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
         json: boolean
       }) => {
         const { colors } = io
-        const provider = adapters.postman()
+        // Two adapters:
+        //   - apiTesting() dispatches on testing.api.kind for the
+        //     vendor-neutral collection push.
+        //   - postman() for the Spec Hub mirror, which is Postman-only.
+        // Both factories check kind so a misconfigured project errors
+        // before any I/O.
+        const apiTesting = adapters.apiTesting({ configPath: opts.config })
+        const postman = adapters.postman({ configPath: opts.config })
 
-        // Resolve workspace id: --workspace > config postman.workspaceId.
+        // Resolve workspace id: --workspace > config testing.api.workspaceId.
         let workspaceId = opts.workspace
         if (!workspaceId) {
           try {
             const cfg = loadSetupConfig(resolve(process.cwd(), opts.config))
-            workspaceId = cfg.postman?.workspaceId
+            workspaceId = cfg.testing?.api?.workspaceId
           } catch {
             // Config load is best-effort; the explicit-flag path still works.
           }
         }
         if (!workspaceId) {
           throw new Error(
-            'No Postman workspace — pass --workspace, or set postman.workspaceId in rando.config.json (run `rando init` to set up).',
+            'No Postman workspace — pass --workspace, or set testing.api.workspaceId in rando.config.json (run `rando init` to set up).',
           )
         }
 
@@ -90,27 +97,21 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
           throw e
         }
 
-        // Find + delete any previous collection with the same name so
-        // the sync stays a clean replace (Postman has no in-place
-        // OpenAPI-update endpoint we can rely on).
-        const existing = await provider.findCollectionByName({
-          workspaceId,
-          name: opts.name,
-        })
-        if (existing) {
-          io.stdout(
-            `${colors.hint(`removing previous collection ${existing.id} (${existing.name})`)}`,
-          )
-          await provider.deleteCollection(existing.id)
-        }
-
-        const importSp = io.spinner(`Importing into workspace ${colors.resource(workspaceId)}…`)
-        let created
+        // Sync the collection through the vendor-neutral high-level
+        // surface. The adapter owns find→delete→import orchestration.
+        const syncSp = io.spinner(`Syncing collection to ${colors.resource(workspaceId)}…`)
+        let synced
         try {
-          created = await provider.importOpenApi({ workspaceId, spec })
-          importSp.succeed(`Imported as ${colors.resource(created.name)}`)
+          synced = await apiTesting.syncCollectionFromSpec({
+            target: workspaceId,
+            name: opts.name,
+            spec,
+          })
+          syncSp.succeed(
+            `${synced.replaced ? 'Replaced' : 'Created'} ${colors.resource(synced.name)}`,
+          )
         } catch (e) {
-          importSp.fail('Import failed')
+          syncSp.fail('Sync failed')
           throw e
         }
 
@@ -123,7 +124,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
         let specCreated = false
         let specSkipReason: string | null = null
         try {
-          const result = await pushSpecHub(provider, io, {
+          const result = await pushSpecHub(postman, io, {
             workspaceId,
             name: opts.name,
             fileContent: typeof spec === 'string' ? spec : JSON.stringify(spec),
@@ -134,25 +135,24 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
           specSkipReason = e instanceof Error ? e.message : String(e)
         }
 
-        const url = collectionUrl(created.uid, workspaceId)
         emit(
           io,
           opts.json,
           {
             ok: true,
-            replaced: existing != null,
-            collection: created,
+            replaced: synced.replaced,
+            collection: { uid: synced.ref, name: synced.name },
             spec: spec_,
             specSkipped: specSkipReason !== null,
             ...(specSkipReason !== null ? { specSkipReason } : {}),
-            url,
+            url: synced.url,
           },
           () => {
             const lines = [
-              `${colors.success('✓')} ${existing ? 'replaced' : 'created'} ${colors.resource(created.name)}`,
-              `  ${colors.hint('uid:')}  ${created.uid}`,
-              `  ${colors.hint('open:')} ${url}`,
+              `${colors.success('✓')} ${synced.replaced ? 'replaced' : 'created'} ${colors.resource(synced.name)}`,
+              `  ${colors.hint('uid:')}  ${synced.ref}`,
             ]
+            if (synced.url) lines.push(`  ${colors.hint('open:')} ${synced.url}`)
             if (spec_) {
               lines.push(
                 `${colors.success('✓')} ${specCreated ? 'created' : 'updated'} Spec Hub spec ${colors.resource(spec_.name)} (id ${spec_.id})`,
@@ -187,7 +187,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
     )
     .option(
       '--workspace <id>',
-      'Postman workspace id (overrides postman.workspaceId in rando.config.json)',
+      'Postman workspace id (overrides testing.api.workspaceId in rando.config.json)',
     )
     .option(
       '--name <name>',
@@ -218,7 +218,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
         json: boolean
       }) => {
         const { colors } = io
-        const provider = adapters.postman()
+        const provider = adapters.postman({ configPath: opts.config })
         const target = opts.target as PushTarget
         if (target !== 'spec' && target !== 'api') {
           throw new Error(`Unknown --target "${opts.target}" — must be "spec" or "api".`)
@@ -359,7 +359,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
     .option('--no-envs', 'Skip pushing environments')
     .option(
       '--workspace <id>',
-      'Postman workspace id (overrides postman.workspaceId in rando.config.json)',
+      'Postman workspace id (overrides testing.api.workspaceId in rando.config.json)',
     )
     .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
     .option('--json', 'Emit raw JSON', false)
@@ -373,7 +373,7 @@ export function apiCommand(adapters: Adapters, io: Io): Command {
         json: boolean
       }) => {
         const { colors } = io
-        const provider = adapters.postman()
+        const provider = adapters.postman({ configPath: opts.config })
         const workspaceId = resolveWorkspaceId(opts.workspace, opts.config)
 
         // 1. Collection — load file, find by name, PUT or POST.
@@ -547,20 +547,20 @@ async function pushApiEntity(
 
 /**
  * Resolve a Postman workspace id from a CLI flag, falling back to
- * rando.config.json's `postman.workspaceId`. Throws when neither is set
- * — every command in this group needs a workspace.
+ * rando.config.json's `testing.api.workspaceId`. Throws when neither
+ * is set — every command in this group needs a workspace.
  */
 function resolveWorkspaceId(flag: string | undefined, configPath: string): string {
   if (flag) return flag
   try {
     const cfg = loadSetupConfig(resolve(process.cwd(), configPath))
-    const id = cfg.postman?.workspaceId
+    const id = cfg.testing?.api?.workspaceId
     if (id) return id
   } catch {
     // Config load is best-effort; the explicit-flag path still works.
   }
   throw new Error(
-    'No Postman workspace — pass --workspace, or set postman.workspaceId in rando.config.json (run `rando init` to set up).',
+    'No Postman workspace — pass --workspace, or set testing.api.workspaceId in rando.config.json (run `rando init` to set up).',
   )
 }
 

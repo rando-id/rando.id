@@ -270,8 +270,8 @@ commands; everything else works.
    validates it for you by calling `GET /me`.
 
 `rando init` will also offer to pick a default workspace and write the id
-into `rando.config.json` (`postman.workspaceId`) so `rando api postman sync`
-runs with no flags by default.
+into `rando.config.json` (`testing.api.workspaceId`, with `kind: "postman"`)
+so `rando api postman sync` runs with no flags by default.
 
 #### `VERCEL_TEAM_ID` (only if your projects live in a team)
 
@@ -614,7 +614,7 @@ Defaults:
 - `--spec` is `http://localhost:4000/v1/openapi.json`. Point it at a
   deployed env or a local file when needed.
 - `--out` (generate only) is `postman/rando-api.postman_collection.json`.
-- `--workspace` (sync only) reads from `postman.workspaceId` in
+- `--workspace` (sync only) reads from `testing.api.workspaceId` in
   `rando.config.json` when omitted. `rando init` will help you pick
   one and write it.
 - `--name` defaults to the spec's `info.title` (generate) or `"Rando API"`

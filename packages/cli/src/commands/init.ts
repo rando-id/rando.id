@@ -80,32 +80,37 @@ async function tryOpLookup(
 }
 
 /**
- * Read `postman.workspaceId` from rando.config.json. Returns undefined
- * when the field, the postman block, or the whole file is missing —
+ * Read `testing.api.workspaceId` from rando.config.json. Returns
+ * undefined when the field, the block, or the whole file is missing —
  * each is a "user hasn't set this up yet" signal, not an error.
  */
 function readPostmanWorkspaceId(configPath: string): string | undefined {
   try {
     const raw = readFileSync(resolve(process.cwd(), configPath), 'utf-8')
-    const parsed = JSON.parse(raw) as { postman?: { workspaceId?: string } }
-    return parsed.postman?.workspaceId
+    const parsed = JSON.parse(raw) as {
+      testing?: { api?: { workspaceId?: string } }
+    }
+    return parsed.testing?.api?.workspaceId
   } catch {
     return undefined
   }
 }
 
 /**
- * Write `postman.workspaceId` into rando.config.json, preserving
- * everything else. Reads → mutates → writes back with 2-space indent
- * + a trailing newline to match the existing file style.
+ * Write `testing.api.workspaceId` into rando.config.json, preserving
+ * everything else. Stamps `kind: "postman"` alongside so the
+ * discriminator is always present. Reads → mutates → writes back with
+ * 2-space indent + a trailing newline to match the existing file style.
  */
 function writePostmanWorkspaceId(configPath: string, workspaceId: string): void {
   const path = resolve(process.cwd(), configPath)
   const raw = readFileSync(path, 'utf-8')
   const parsed = JSON.parse(raw) as Record<string, unknown> & {
-    postman?: { workspaceId?: string }
+    testing?: { api?: { kind?: string; workspaceId?: string } }
   }
-  parsed.postman = { ...(parsed.postman ?? {}), workspaceId }
+  const testing = parsed.testing ?? {}
+  testing.api = { ...(testing.api ?? {}), kind: 'postman', workspaceId }
+  parsed.testing = testing
   writeFileSync(path, JSON.stringify(parsed, null, 2) + '\n', 'utf-8')
 }
 
@@ -293,7 +298,7 @@ export function initCommand(adapters: Adapters, io: Io): Command {
       //    workspaces, let them pick, write to rando.config.json.
       if (process.env.POSTMAN_API_KEY) {
         try {
-          const postman = adapters.postman()
+          const postman = adapters.postman({ configPath: opts.config })
           const existingWsId = readPostmanWorkspaceId(opts.config)
           if (!existingWsId) {
             io.stdout('')
@@ -317,14 +322,14 @@ export function initCommand(adapters: Adapters, io: Io): Command {
               try {
                 writePostmanWorkspaceId(opts.config, chosen)
                 io.stdout(
-                  `  ${colors.success('✓')} postman.workspaceId = ${colors.resource(chosen)} → ${opts.config}`,
+                  `  ${colors.success('✓')} testing.api.workspaceId = ${colors.resource(chosen)} → ${opts.config}`,
                 )
               } catch (e) {
                 io.stdout(
                   `  ${colors.warn("couldn't write to rando.config.json:")} ${e instanceof Error ? e.message : String(e)}`,
                 )
                 io.stdout(
-                  `  ${colors.hint(`add { "postman": { "workspaceId": "${chosen}" } } to rando.config.json manually`)}`,
+                  `  ${colors.hint(`add { "testing": { "api": { "kind": "postman", "workspaceId": "${chosen}" } } } to rando.config.json manually`)}`,
                 )
               }
             }
