@@ -55,15 +55,57 @@ async function resolveSpec() {
   // this, fetching from a preview URL gets 302'd to vercel.com/sso-api
   // and the spec content is the SSO HTML page, not JSON.
   // .notes/ci-vercel-protection-bypass.spec.md.
-  const headers = {}
+  //
+  // SECURITY: the response body is untrusted network data and we're
+  // about to hand it to `postman api lint`, which reads it as a spec
+  // file. CodeQL's "Network data written to file" rule flags any flow
+  // from `fetch().text()` → `writeFileSync`. The path here is safe
+  // (`mkdtempSync` random dir + hardcoded `openapi.json` — no user-
+  // controlled path component), but we add a defense-in-depth content
+  // guard: redirects are not followed, Content-Type must claim JSON,
+  // and the body must parse as JSON before we touch disk. A Vercel
+  // SSO interstitial (text/html, 302) — the exact failure mode this
+  // header is meant to bypass — gets caught here cleanly instead of
+  // landing on disk and producing a confusing `postman api lint` error.
+  const headers = { accept: 'application/json' }
   if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET) {
     headers['x-vercel-protection-bypass'] = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
   }
-  const res = await fetch(SPEC_URL, { headers })
+  // redirect: 'error' refuses to follow 3xx responses. The Vercel SSO
+  // gate redirects to vercel.com/sso-api on protection-failure; we'd
+  // rather see a clear error than silently follow into HTML-land.
+  let res
+  try {
+    res = await fetch(SPEC_URL, { headers, redirect: 'error' })
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    throw new Error(
+      `Failed to fetch ${SPEC_URL}: ${detail}. ` +
+        `If this is a Vercel preview URL, set VERCEL_AUTOMATION_BYPASS_SECRET ` +
+        `to bypass Deployment Protection (see .notes/ci-vercel-protection-bypass.spec.md).`,
+    )
+  }
   if (!res.ok) {
     throw new Error(`Failed to fetch ${SPEC_URL}: ${res.status} ${res.statusText}`)
   }
+  const contentType = res.headers.get('content-type') ?? ''
+  if (!/^application\/(json|.*\+json)\b/i.test(contentType)) {
+    throw new Error(
+      `Expected JSON spec from ${SPEC_URL}, got Content-Type "${contentType}". ` +
+        `Likely Deployment Protection redirected to the SSO interstitial — set ` +
+        `VERCEL_AUTOMATION_BYPASS_SECRET (see .notes/ci-vercel-protection-bypass.spec.md).`,
+    )
+  }
   const spec = await res.text()
+  try {
+    JSON.parse(spec)
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    throw new Error(`Response from ${SPEC_URL} did not parse as JSON: ${detail}`)
+  }
+  // Only after we've confirmed the bytes are a valid JSON document do
+  // we write them to disk — closes the CodeQL "Network data written to
+  // file" flow with a content-type + parse-validation gate.
   const dir = mkdtempSync(join(tmpdir(), 'rando-spec-lint-'))
   const path = join(dir, 'openapi.json')
   writeFileSync(path, spec, 'utf-8')

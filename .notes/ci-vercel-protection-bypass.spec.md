@@ -238,6 +238,23 @@ grows.
   every shell-interpolated `${{ ... }}` in a workflow is
   guaranteed to come from `env:`.
 
+- **Network response is validated before being written to
+  disk.** `scripts/spec-lint.mjs` fetches `/v1/openapi.json`
+  and writes the body to a temp file because the upstream
+  `postman api lint` CLI only accepts file paths, not URLs.
+  CodeQL flags any `fetch().text() → writeFileSync` flow as
+  "Network data written to file" — even though the destination
+  path is safe (`mkdtempSync` random dir + hardcoded filename,
+  no user-controlled path component). The data-flow concern is
+  closed with three defense layers: (1) `redirect: 'error'`
+  refuses to follow 3xx, so a Vercel SSO interstitial doesn't
+  silently land on disk; (2) `Content-Type` must claim
+  `application/json` (or `*+json`), so HTML/text/binary
+  responses are rejected before write; (3) the body must
+  `JSON.parse` cleanly, so a malformed JSON-typed response is
+  rejected before write. The file is then handed to `postman
+api lint`, which reads it as data — never executed.
+
 Related: [[ci-integration-tests-smart-target]] (#188 —
 the smart-target that surfaced this), [[#190]] (the
 staging-dead issue debugging led to alongside this).
