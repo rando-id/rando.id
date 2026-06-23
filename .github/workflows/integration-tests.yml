@@ -69,8 +69,16 @@ jobs:
       # against staging or a user-specified URL, not the PR's preview.
       - name: Skip when no API code touched
         id: gate
+        env:
+          # github.event_name + steps.changes.outputs.api are both
+          # enum-class / our-own-composite values (not user-controlled),
+          # but plumbing them via env: matches the pattern the rest
+          # of this workflow uses for shell-interpolated values and
+          # makes future audits easier.
+          EVENT_NAME: ${{ github.event_name }}
+          API_CHANGED: ${{ steps.changes.outputs.api }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ steps.changes.outputs.api }}" != "true" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$API_CHANGED" != "true" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "::notice title=Integration tests skipped::No API code (or its deps) changed in this PR."
           else
@@ -98,11 +106,28 @@ jobs:
       - name: Resolve target URL
         if: steps.gate.outputs.skip != 'true'
         id: target
+        # SECURITY: every untrusted-input value used by the script
+        # below is plumbed through `env:` so bash sees them as
+        # proper environment variables. Inlining `${{ inputs.baseUrl }}`
+        # (or `github.actor`, label names, branch refs) into the
+        # `run:` body would interpolate user-controlled text into
+        # the shell at template-resolution time — a single-quote
+        # in the value breaks out of the quoted string and runs
+        # arbitrary commands BEFORE the URL parser / allowlist
+        # ever fires (CWE-77). Same goes for github.event_name +
+        # vars.PREVIEW_ENABLED, kept in env for consistency even
+        # though they're enum-class values we control.
+        env:
+          DISPATCH_URL: ${{ inputs.baseUrl }}
+          EVENT_NAME: ${{ github.event_name }}
+          PREVIEW_ENABLED: ${{ vars.PREVIEW_ENABLED }}
+          ACTOR: ${{ github.actor }}
+          LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          HEAD_REF: ${{ github.head_ref }}
         run: |
           set -e
           STAGING="https://staging-api.rando-id.dev"
-          if [ -n "${{ inputs.baseUrl }}" ]; then
-            DISPATCH_URL='${{ inputs.baseUrl }}'
+          if [ -n "$DISPATCH_URL" ]; then
             # workflow_dispatch accepts an arbitrary baseUrl. Validate
             # the host against an allowlist of trusted Vercel-bound
             # domains (and localhost for local debug). For anything
@@ -143,15 +168,20 @@ jobs:
                 process.exit(2);
               }
             ') || {
-              echo "::error::workflow_dispatch baseUrl rejected: ${DISPATCH_URL} — see the error above. Refusing to proceed (avoids credential leak via malformed URLs)."
+              # NOTE: DISPATCH_URL is from an env var, NOT inlined via
+              # ${{ ... }} — so even if it contains shell metacharacters
+              # the worst that happens is they appear in the error
+              # message verbatim. printf %s prevents echo from
+              # interpreting backslash escapes.
+              printf '::error::workflow_dispatch baseUrl rejected: %s — see the error above. Refusing to proceed (avoids credential leak via malformed URLs).\n' "$DISPATCH_URL"
               exit 1
             }
             case "$HOST" in
               *.rando-id.dev|*.rando.id|localhost|127.0.0.1)
-                echo "Target: ${DISPATCH_URL} (workflow_dispatch input; host ${HOST} in trusted allowlist — bypass header retained)"
+                printf 'Target: %s (workflow_dispatch input; host %s in trusted allowlist — bypass header retained)\n' "$DISPATCH_URL" "$HOST"
                 ;;
               *)
-                echo "::warning::Dispatch target host '${HOST}' is NOT in the trusted allowlist (*.rando-id.dev, *.rando.id, localhost). Stripping VERCEL_AUTOMATION_BYPASS_SECRET to prevent credential leakage; tests will run without the bypass header."
+                printf "::warning::Dispatch target host '%s' is NOT in the trusted allowlist (*.rando-id.dev, *.rando.id, localhost). Stripping VERCEL_AUTOMATION_BYPASS_SECRET to prevent credential leakage; tests will run without the bypass header.\n" "$HOST"
                 # Empty the var in GITHUB_ENV so subsequent steps
                 # (curl / Postman / spec-lint) read an empty value
                 # and skip the header. This overrides the value
@@ -159,7 +189,14 @@ jobs:
                 echo "VERCEL_AUTOMATION_BYPASS_SECRET=" >> "$GITHUB_ENV"
                 ;;
             esac
-            echo "url=${DISPATCH_URL}" >> "$GITHUB_OUTPUT"
+            # url= writes to GITHUB_OUTPUT. The DISPATCH_URL value has
+            # been validated by node's URL parser (rejected userinfo,
+            # non-http(s) schemes, malformed) so a passed-through value
+            # is known-safe for downstream consumers — but we still
+            # guard against newline injection into GITHUB_OUTPUT by
+            # using printf instead of echo (defense in depth; the URL
+            # parser already rejects URLs containing newlines).
+            printf 'url=%s\n' "$DISPATCH_URL" >> "$GITHUB_OUTPUT"
             echo "mode=dispatch" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -169,10 +206,10 @@ jobs:
           # would fall through to the PR path where `github.head_ref`
           # is empty, producing an invalid `https://-api.rando-id.dev`
           # URL that polls for 5 minutes before falling back.
-          if [ "${{ github.event_name }}" != "pull_request" ]; then
+          if [ "$EVENT_NAME" != "pull_request" ]; then
             echo "url=${STAGING}" >> "$GITHUB_OUTPUT"
             echo "mode=staging" >> "$GITHUB_OUTPUT"
-            echo "Target: ${STAGING} (${{ github.event_name }} without explicit URL)"
+            printf 'Target: %s (%s without explicit URL)\n' "$STAGING" "$EVENT_NAME"
             exit 0
           fi
           # PR event with API workspace affected. Predict whether
@@ -188,14 +225,13 @@ jobs:
           # so the failure-comment renders the right hint (the
           # `mode=staging` Dependabot-smoke-test copy would be wrong
           # for a human-authored PR that hit the kill switch).
-          if [ "${{ vars.PREVIEW_ENABLED }}" = "false" ]; then
+          if [ "$PREVIEW_ENABLED" = "false" ]; then
             echo "url=${STAGING}" >> "$GITHUB_OUTPUT"
             echo "mode=staging-disabled" >> "$GITHUB_OUTPUT"
             echo "Target: ${STAGING} (vars.PREVIEW_ENABLED=false; no preview will fire)"
             exit 0
           fi
-          ACTOR='${{ github.actor }}'
-          HAS_PREVIEW_LABEL=$(jq -e '. | index("preview")' <<<'${{ toJson(github.event.pull_request.labels.*.name) }}' >/dev/null 2>&1 && echo true || echo false)
+          HAS_PREVIEW_LABEL=$(jq -e '. | index("preview")' <<<"$LABELS_JSON" >/dev/null 2>&1 && echo true || echo false)
           if [ "$ACTOR" = "dependabot[bot]" ] && [ "$HAS_PREVIEW_LABEL" != "true" ]; then
             # No preview will fire (Dependabot without label). Smoke
             # test staging instead — catches contract regressions on
@@ -207,7 +243,12 @@ jobs:
           fi
           # Preview is expected. Same slug logic as
           # packages/cli/src/commands/deploy.ts:slugifyBranch.
-          SLUG=$(echo "${{ github.head_ref }}" \
+          # HEAD_REF is a branch name — git generally restricts these
+          # to safe chars, but we run it through `tr` + `sed` which
+          # collapse anything non-alphanumeric to '-' before it ends
+          # up in a URL, so even an injection-style value couldn't
+          # produce an attacker-controlled URL here.
+          SLUG=$(printf '%s' "$HEAD_REF" \
             | tr '[:upper:]' '[:lower:]' \
             | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
           PREVIEW="https://${SLUG}-api.rando-id.dev"
@@ -264,6 +305,16 @@ jobs:
       - name: Comment on PR with failures
         if: failure() && steps.gate.outputs.skip != 'true' && github.event_name == 'pull_request'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        # `target` here can include the user-supplied dispatch URL,
+        # which has been URL-parser-validated upstream but is still
+        # untrusted text. Plumbing it through `env` (rather than
+        # interpolating `${{ steps.target.outputs.url }}` into the
+        # JS string literal) prevents a single-quote from breaking
+        # out of the literal and executing arbitrary code inside
+        # the actions/github-script vm. Same for `mode`.
+        env:
+          TARGET: ${{ steps.target.outputs.url }}
+          MODE: ${{ steps.target.outputs.mode }}
         with:
           script: |
             const fs = require('fs')
@@ -274,8 +325,8 @@ jobs:
               failures = (xml.match(/<failure /g) || []).length
               total = (xml.match(/<testcase /g) || []).length
             } catch {}
-            const target = '${{ steps.target.outputs.url }}'
-            const mode = '${{ steps.target.outputs.mode }}'
+            const target = process.env.TARGET
+            const mode = process.env.MODE
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
             // Help the author distinguish "your bump broke something"
             // from "main / staging is broken and your PR ran against

@@ -195,6 +195,25 @@ grows.
   `echo`-ing it. GitHub Actions also masks any value
   matching a secret in logs.
 
+- **No user-controlled input is template-interpolated into
+  shell or JS.** GitHub Actions resolves `${{ ... }}` at
+  template-rendering time, BEFORE the shell sees the script.
+  An input like `'; malicious; #` would break out of any
+  quoted string and execute arbitrary commands inside the
+  runner — with access to `$VERCEL_AUTOMATION_BYPASS_SECRET`
+  (loaded by `op-env` earlier in the job). To prevent this
+  (CWE-77), every untrusted value used by `resolve-target`
+  and the failure-comment github-script is plumbed through
+  step-level `env:` blocks and read as `$VAR` (or
+  `process.env.VAR` in JS): `inputs.baseUrl`, `github.actor`,
+  `github.head_ref`, `github.event.pull_request.labels.*.name`,
+  and the resolved `steps.target.outputs.url`. Even values
+  that look enum-class (`github.event_name`, our composite-
+  action outputs) get the same treatment for consistency —
+  the cost is zero and the audit story is much simpler when
+  every shell-interpolated `${{ ... }}` in a workflow is
+  guaranteed to come from `env:`.
+
 Related: [[ci-integration-tests-smart-target]] (#188 —
 the smart-target that surfaced this), [[#190]] (the
 staging-dead issue debugging led to alongside this).
