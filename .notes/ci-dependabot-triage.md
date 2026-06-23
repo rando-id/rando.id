@@ -75,3 +75,68 @@ work.
 
 If we'd rather just close all 49 and start fresh, that's an alternate
 plan we can pick up any time.
+
+## Session log
+
+Append a dated entry each Monday triage. Captures what got closed /
+merged / deferred so future-us can compare against the previous
+state instead of re-deriving the dupe pairings every week.
+
+### 2026-06-22 — first Monday after the anchor landed
+
+**Queue at start:** 72 open Dependabot PRs (counted with
+`gh pr list --state open --author "app/dependabot" --limit 100`).
+Much higher than the original 49 because Dependabot kept opening
+new singles for each per-workspace entry over the week, and the
+YAML anchor didn't retroactively dedupe what was already open.
+
+**Merged** (you clicked Merge in the UI — PAT lacks
+`mergePullRequest` scope today, see `.notes/security-github-pat.md`):
+
+| #    | Bump                            | Risk                   |
+| ---- | ------------------------------- | ---------------------- |
+| #114 | actions-org group (3 SHA bumps) | low — SHA-only refresh |
+| #179 | github/codeql-action SHA bump   | low — same             |
+
+**Closed as stale** (root-level singles superseded by root grouped
+PRs):
+
+| Closed | Why                                                                 | Kept                                        |
+| ------ | ------------------------------------------------------------------- | ------------------------------------------- |
+| #156   | vitest 2→3.2.6 root single (group goes to 4.1.9)                    | #154 vitest group                           |
+| #157   | drizzle-orm root single                                             | #159 drizzle group (also bumps drizzle-kit) |
+| #138   | mixed `npm_and_yarn` group in /packages/db (vitest + drizzle)       | #154 + #159                                 |
+| #142   | expo single in /apps/native (was also failing every required check) | #161 expo group                             |
+
+**Deferred — per-workspace singles (~36 PRs)**: not closed today.
+The new YAML-anchor config attaches `groups:` to every
+per-workspace entry, so the next Dependabot run should produce
+per-workspace grouped PRs that subsume these. They won't
+auto-close on their own (different head refs) but closing them
+now would just queue up another ~10–15 grouped replacements.
+Leaving them so next Monday's session can confirm-then-close.
+
+**Major bumps — deferred** (no progress this week, all still
+listed in the reference snapshot above): vitest 2→4, typescript
+5→6, zod 3→4, eslint 9→10, next 15→16, drizzle 0.38→0.45,
+clerk 6→7, react/tamagui majors. Pick one per session to actually
+attempt.
+
+**Queue at end:** 68 open. Net: −4 closed, +2 merged-and-deleted,
++0 opened. Expect ~10–15 new grouped PRs after next Dependabot
+run; net at next session likely ~50–55 if we close the deferred
+per-workspace singles then.
+
+**For next Monday:**
+
+1. Recount the queue. Compare against 68.
+2. Identify per-workspace grouped PRs that landed (titles
+   containing `the <pkg> group across 1 directory`). For each,
+   close the matching per-workspace singles in favor of the
+   group.
+3. Pick **one** major batch to actually attempt. Suggested order
+   (lowest-blast-radius first): typescript 5→6 (per-workspace
+   tsc strictness tweaks) → vitest 2→4 (already grouped in #154,
+   real test) → next 15→16 (app-router migration) → drizzle
+   0.38→0.45 (SQL builder changes) → zod 3→4 / clerk 6→7
+   (breaking).
