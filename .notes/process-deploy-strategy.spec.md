@@ -205,11 +205,15 @@ already; command in `packages/cli/src/commands/deploy.ts`.
   the alternative (auto-deploy on main) was the explicit goal to
   remove. If it becomes friction → add the reminder follow-up
   above.
-- **Vercel native is a manual checklist item.** Each new Vercel
-  project added in the future has to disable native deploys in
-  the dashboard. Documented in MAINTAINING.md to mitigate. If
-  this becomes a frequent pattern, look into Vercel's project-
-  config-as-code (vercel.json `git.deploymentEnabled` block).
+- **New projects need an onboarding step, but it's automated.** A
+  newly added app workspace gets its Vercel-native deploys
+  disabled the first time `rando infra setup` runs against it —
+  same orchestrator step that handled the original three. The
+  human work is "add the app to `rando.config.json` and commit a
+  `vercel.json` with the `git.deploymentEnabled` block"; no
+  dashboard clicks. Documented in MAINTAINING.md under "Adding a
+  new app" so the orchestrator and `vercel.json` halves don't
+  fall out of sync.
 - **Single CLI failure = no deploy.** With Vercel native off,
   `rando deploy` outages mean nothing deploys at all. Acceptable
   since `rando deploy` is just a thin wrapper around the Vercel
