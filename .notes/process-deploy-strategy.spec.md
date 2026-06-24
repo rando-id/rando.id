@@ -50,15 +50,35 @@ Single source of truth, gated however we want at the workflow level.
 
 ### D1. Disable Vercel native deploys entirely (#204 → Option A)
 
-For each of `rando-api`, `rando-web`, `rando-admin` in the Vercel
-dashboard: **Settings → Git → uncheck "Automatic Preview Deployments"
-AND uncheck "Production Deployments"**. After this, Vercel deploys
-nothing on push — only what `rando deploy …` (via Vercel REST API)
-asks it to.
+After cutover, Vercel deploys nothing on push — every deploy runs
+through `rando deploy …` (via Vercel REST API). Two layers control
+this and **both are automated** via the existing `rando infra setup`
+orchestrator (no manual dashboard flips):
 
-This is a **manual one-time op**, not code. Documented as a
-checklist in `.github/MAINTAINING.md` → "Initial Vercel setup" so a
-fresh project setup gets it right. Tracked as the resolution to #204.
+| Surface                                 | What it controls                                             | Mechanism                                                                                                          |
+| --------------------------------------- | ------------------------------------------------------------ | ------------------------------------------------------------------------------------------------------------------ |
+| **Vercel project-level**                | All push-triggered preview deploys (every branch, every PR)  | `PATCH /v9/projects/{id}` with `previewDeploymentsDisabled: true` — single field, documented in Vercel's REST API. |
+| **`apps/<name>/vercel.json` (in repo)** | Production / staging branch push deploys (`main`, `staging`) | `git.deploymentEnabled: { "main": false, "staging": false }` — declarative, version-controlled, no API call.       |
+
+A new orchestrator step in `packages/cli/src/orchestrate.ts` does both:
+
+1. PATCHes each project (`adapters.deploy().updateProject({ projectId, previewDeploymentsDisabled: true })`).
+2. Writes (or verifies) the `git.deploymentEnabled` block in each `apps/<name>/vercel.json`.
+
+Idempotent — re-running `rando infra setup` is a no-op if the
+project is already in the target state.
+
+**Implementation note — undocumented field check.** Vercel's docs
+expose `previewDeploymentsDisabled` only. A sibling
+`productionDeploymentsDisabled` may exist in practice; first
+implementation step is `GET /v10/projects/{id}` against a live
+project and inspecting the response body. If it exists, the
+`vercel.json` half can drop entirely. If not, the two-layer
+approach above is the documented path.
+
+Tracked as #212 (sub-issue of #210) — see "Touch points" below.
+The original scope of #204 (turn off Vercel native) closes when
+this step is implemented and run against the three projects.
 
 ### D2. Staging auto-deploys via our workflow
 
@@ -206,9 +226,11 @@ already; command in `packages/cli/src/commands/deploy.ts`.
 The four changes can land independently with feature flags
 gating the cutover. Recommended order:
 
-1. **D1 (Vercel dashboard flip)** — instant, no PR. Reversible by
-   re-checking the boxes if anything goes wrong. Do this first
-   so steps 2-4 are working in the target state.
+1. **D1 (Vercel native off via `rando infra setup`)** — needs the
+   new orchestrator step + `updateProject()` adapter method.
+   Reversible by setting `previewDeploymentsDisabled: false` and
+   re-running setup. Do this first so steps 2-4 are working in
+   the target state. Tracked as a separate sub-issue under #210.
 2. **D2 (staging auto-deploy via workflow)** — needs
    `rando deploy env staging` CLI work + new workflow file.
    Highest-risk change; do early so the day's testing exercises
@@ -245,36 +267,48 @@ via `Refs #<umbrella>`.
 
 ## Touch points
 
-1. **Vercel dashboard** (manual): disable Automatic Preview
-   Deployments AND Production Deployments for `rando-api`,
-   `rando-web`, `rando-admin`. Add checklist to
-   `.github/MAINTAINING.md` → "Initial Vercel setup".
-2. **`.github/workflows/deploy.yml` → rename to
+1. **`packages/cli/src/adapters/vercel.ts`** — new
+   `updateProject({ projectId, previewDeploymentsDisabled })`
+   method (PATCH `/v9/projects/{id}`). Step 1 of impl: GET an
+   existing project and inspect the response body for any
+   undocumented `productionDeploymentsDisabled` sibling — if
+   present, the API alone covers the whole D1 cutover.
+2. **`packages/cli/src/orchestrate.ts`** — new setup step:
+   `syncVercelProjectSettings(apps, deploy)` that PATCHes each
+   project to `previewDeploymentsDisabled: true` and ensures
+   `apps/<name>/vercel.json` has the right `git.deploymentEnabled`
+   block. Idempotent.
+3. **`apps/<name>/vercel.json` × 3** — add
+   `git.deploymentEnabled: { "main": false, "staging": false }`
+   block (or whichever subset survives the undocumented-field
+   check in step 1). May be obviated entirely if Vercel's API
+   has a production-side toggle.
+4. **`.github/workflows/deploy.yml` → rename to
    `deploy-preview.yml`** — flip the Dependabot-only label gate
    to all-authors label gate (D3). Otherwise unchanged.
-3. **`.github/workflows/deploy-staging.yml`** (new) — push
+5. **`.github/workflows/deploy-staging.yml`** (new) — push
    trigger on `staging`, runs `rando deploy env staging`.
-4. **`.github/workflows/deploy-production.yml`** (new) —
+6. **`.github/workflows/deploy-production.yml`** (new) —
    `workflow_dispatch` only, references GitHub Environment
-   `production` with required reviewers. Runs `rando deploy env
-production`.
-5. **GitHub Environment "production"** (new, repo settings):
+   `production` with required reviewers. Runs `rando deploy env production`.
+7. **GitHub Environment "production"** (new, repo settings):
    required reviewers, no other restrictions.
-6. **`packages/cli/src/commands/deploy.ts`** — new `env`
+8. **`packages/cli/src/commands/deploy.ts`** — new `env`
    subcommand. Tests in `__tests__/deploy.test.ts`.
-7. **`packages/cli/src/adapters/vercel.ts`** — if the existing
+9. **`packages/cli/src/adapters/vercel.ts`** — if the existing
    adapter doesn't already cover environment-target deploys,
-   add the method.
-8. **`.github/CONTRIBUTING.md`** — document the
-   `deploy-preview` label is now required for previews on
-   _all_ PRs.
-9. **`.github/PULL_REQUEST_TEMPLATE.md`** (create if not
-   present) — checkbox reminder for the `deploy-preview`
-   label.
-10. **`.github/MAINTAINING.md`** — "Deploy strategy" section
-    rewritten to describe the new four-mode shape; Vercel
-    dashboard checklist; prod-deploy SOP (Actions → Deploy
-    production → Run workflow → enter SHA → approve).
+   add the method (alongside `updateProject` from touch point 1).
+10. **`.github/CONTRIBUTING.md`** — document the
+    `deploy-preview` label is now required for previews on
+    _all_ PRs.
+11. **`.github/PULL_REQUEST_TEMPLATE.md`** (create if not
+    present) — checkbox reminder for the `deploy-preview`
+    label.
+12. **`.github/MAINTAINING.md`** — "Deploy strategy" section
+    rewritten to describe the new four-mode shape; the D1
+    cutover is now `rando infra setup` (no manual checklist);
+    prod-deploy SOP (Actions → Deploy production → Run
+    workflow → enter SHA → approve).
 
 Closes #204 once D1 + D2 + D3 + D4 land. (D1 alone resolves
 the original #204 scope; D2-D4 are the broader strategy this
