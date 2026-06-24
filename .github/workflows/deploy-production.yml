@@ -75,9 +75,14 @@ jobs:
         with:
           install-cli: 'true'
 
+      # Use the production 1Password environment, NOT op-env's default
+      # (which is the staging env). Production-scoped VERCEL_TOKEN /
+      # CLOUDFLARE_API_TOKEN / etc. live there. Value mirrors
+      # rando.config.json → secrets.environments.prod.
       - uses: ./.github/actions/op-env
         with:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          environment-id: ma4jp2piap7otpnnpvqmc4cgkq
 
       - name: Trigger production deploys
         # `inputs.ref` is the user-supplied SHA/branch/tag to deploy.
