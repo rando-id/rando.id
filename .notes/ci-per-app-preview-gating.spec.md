@@ -65,7 +65,7 @@ Vercel's REST API and bypasses `vercel.json`. The decision has to
 live in deploy.yml.
 
 The `.github/actions/changes` composite already does the
-dep-graph traversal we need (via `turbo run test --filter`),
+dep-graph traversal we need (via `turbo run typecheck --filter`),
 shared with `lint.yml` / `typecheck.yml` / `codeql.yml`. Reusing
 its outputs is cheaper and more consistent than introducing a
 parallel signal.
@@ -75,12 +75,12 @@ parallel signal.
 Two filters now apply in series to the PR preview path:
 
 1. **Author gate** (from [[ci-preview-quota-strategy]]):
-   Dependabot PRs skip unless they carry the `preview` label.
+   Dependabot PRs skip unless they carry the `deploy-preview` label.
 2. **Per-app affected gate** (this PR): even for
    human-authored or label-tagged PRs, only deploy the apps
    whose workspaces actually changed.
 
-For a Dependabot PR that gets the `preview` label, this still
+For a Dependabot PR that gets the `deploy-preview` label, this still
 applies — if the bump only affects `@rando/db` (which only
 `@rando/api` depends on), we deploy api but skip web + admin.
 
