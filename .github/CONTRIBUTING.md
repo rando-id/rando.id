@@ -388,14 +388,14 @@ To preserve Vercel's free-tier quota (100 deploys/day) for human work,
 from unit tests + the nightly `integration-tests.yml` run against
 staging. If you're reviewing a Dependabot PR that genuinely needs a
 preview — typically tamagui / next / react / clerk majors where unit
-tests can't tell the whole story — add the `preview` label:
+tests can't tell the whole story — add the `deploy-preview` label:
 
 ```bash
-gh pr edit <N> --add-label preview
+gh pr edit <N> --add-label deploy-preview
 ```
 
 The next sync (push to the branch, comment-rebase, or an empty commit
-trigger) fires the deploy. The `preview` label persists across
+trigger) fires the deploy. The `deploy-preview` label persists across
 rebases, so subsequent syncs continue to deploy until you remove it
 or the PR closes. Spec: [`.notes/ci-preview-quota-strategy.spec.md`](../.notes/ci-preview-quota-strategy.spec.md).
 

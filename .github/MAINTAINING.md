@@ -126,7 +126,7 @@ push to a branch cancels the previous run.
 | [`workflows/lint.yml`](./workflows/lint.yml)                           | `pnpm lint` across all workspaces.                                                                                                                                                                                                                                                                                                               |
 | [`workflows/typecheck.yml`](./workflows/typecheck.yml)                 | `pnpm typecheck` across all workspaces (Turbo-parallelized).                                                                                                                                                                                                                                                                                     |
 | [`workflows/unit-tests.yml`](./workflows/unit-tests.yml)               | `pnpm test:coverage` — vitest + Cobertura/LCOV. Uploads coverage as a run artifact and to GitHub Code Quality (public preview; GA July 2026) for per-PR coverage comments. Requires **Settings → Code security → Code quality** enabled at the repo level + the workflow's `code-quality: write` permission; without both, the upload step 403s. |
-| [`workflows/integration-tests.yml`](./workflows/integration-tests.yml) | Postman collection + spec lint against a deployed API. Smart-targets the PR's preview when one is expected, falls back to staging for Dependabot-without-`preview`-label PRs and on preview-fetch timeout. Nightly cron always runs against staging. See `.notes/ci-integration-tests-smart-target.spec.md`.                                     |
+| [`workflows/integration-tests.yml`](./workflows/integration-tests.yml) | Postman collection + spec lint against a deployed API. Smart-targets the PR's preview when one is expected, falls back to staging for Dependabot-without-`deploy-preview`-label PRs and on preview-fetch timeout. Nightly cron always runs against staging. See `.notes/ci-integration-tests-smart-target.spec.md`.                              |
 | [`workflows/deploy.yml`](./workflows/deploy.yml)                       | Spins up the per-PR branch-deploy (`<slug>-<app>.rando-id.dev`) and tears it down on close.                                                                                                                                                                                                                                                      |
 | [`workflows/issues.yml`](./workflows/issues.yml)                       | Transitions tickets referenced in commits as the PR moves through its lifecycle.                                                                                                                                                                                                                                                                 |
 
@@ -258,12 +258,12 @@ queue of 70+ Dependabot PRs would burn through the quota on rebases
 alone — and we observed this on PR #182 (drizzle group).
 
 To keep quota for human-authored work, `deploy.yml`'s `branch-deploy`
-job is gated to **skip Dependabot PRs unless they carry the `preview`
-label**:
+job is gated to **skip Dependabot PRs unless they carry the
+`deploy-preview` label**:
 
 ```yaml
 github.actor != 'dependabot[bot]'
-|| contains(github.event.pull_request.labels.*.name, 'preview')
+|| contains(github.event.pull_request.labels.*.name, 'deploy-preview')
 ```
 
 Behavior:
@@ -272,9 +272,9 @@ Behavior:
 - **Dependabot PR, no label** → `branch-deploy` skipped. Validation
   comes from unit tests + the nightly `integration-tests.yml` run
   against staging.
-- **Dependabot PR with `preview` label** → preview fires on the
+- **Dependabot PR with `deploy-preview` label** → preview fires on the
   next sync (rebase, force-push, or empty commit). Add the label
-  in the GitHub UI or via `gh pr edit <N> --add-label preview`.
+  in the GitHub UI or via `gh pr edit <N> --add-label deploy-preview`.
 
 When to add the label: major bumps with a real UI / runtime change
 risk that unit tests can't catch alone. Tamagui, next, react,

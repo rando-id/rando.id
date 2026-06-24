@@ -23,11 +23,12 @@ bump can land without its real validation gate running.
 
 ## Decision
 
-**Make preview deploys opt-in for Dependabot PRs via a `preview`
-label.** Non-Dependabot PRs continue to auto-deploy on every
-sync as today. A reviewer who wants to see a preview for a given
-Dependabot bump adds the `preview` label and the next sync (or a
-re-run) fires the deploy.
+**Make preview deploys opt-in for Dependabot PRs via a
+`deploy-preview` label.** Non-Dependabot PRs continue to
+auto-deploy on every sync as today. A reviewer who wants to
+see a preview for a given Dependabot bump adds the
+`deploy-preview` label and the next sync (or a re-run) fires
+the deploy.
 
 Concretely, `branch-deploy`'s job-level `if:` becomes:
 
@@ -37,7 +38,7 @@ if: ${{
   && github.event.action != 'closed'
   && (
     github.actor != 'dependabot[bot]'
-    || contains(github.event.pull_request.labels.*.name, 'preview')
+    || contains(github.event.pull_request.labels.*.name, 'deploy-preview')
   )
 }}
 ```
@@ -126,15 +127,15 @@ Label wins on simplicity + persistence.
 
 ## Touch points
 
-1. `.github/workflows/deploy.yml` — add the `preview` label gate
+1. `.github/workflows/deploy.yml` — add the `deploy-preview` label gate
    to `branch-deploy`'s `if:`. `teardown` unchanged.
-2. **New label `preview`** (created via `gh label create`) with a
+2. **New label `deploy-preview`** (created via `gh label create`) with a
    description like "Force a preview deploy on a Dependabot PR".
 3. `.github/MAINTAINING.md` → "Skipping deploys when no code
    changed" section: add subsection on the Dependabot opt-in.
 4. `.github/CONTRIBUTING.md` — add a brief note: "If you're
    reviewing a Dependabot PR and want to see a preview, add the
-   `preview` label."
+   `deploy-preview` label."
 5. `.github/PULL_REQUEST_TEMPLATE.md` — no change; humans aren't
    gated.
 
