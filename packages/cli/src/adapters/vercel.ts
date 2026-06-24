@@ -8,6 +8,7 @@ import type {
   DeployEnvScope,
   DeployEnvVar,
   DeployProject,
+  DeployProjectSettings,
   DeployProvider,
 } from '../domain/deploy'
 
@@ -116,6 +117,25 @@ export class VercelDeployProvider implements DeployProvider {
 
   async deleteProject(input: { projectId: string }): Promise<void> {
     await this.request('DELETE', `/v9/projects/${encodeURIComponent(input.projectId)}`)
+  }
+
+  async updateProjectSettings(input: {
+    projectId: string
+    settings: DeployProjectSettings
+  }): Promise<DeployProject> {
+    const body: Record<string, unknown> = {}
+    if (input.settings.previewDeploymentsDisabled !== undefined) {
+      body.previewDeploymentsDisabled = input.settings.previewDeploymentsDisabled
+    }
+    if (input.settings.gitProviderCreateDeployments !== undefined) {
+      body.gitProviderOptions = { createDeployments: input.settings.gitProviderCreateDeployments }
+    }
+    const result = await this.request<VercelProjectShape>(
+      'PATCH',
+      `/v9/projects/${encodeURIComponent(input.projectId)}`,
+      body,
+    )
+    return mapProject(result)
   }
 
   async triggerDeployment(input: { projectId: string; branch: string }): Promise<Deployment> {
