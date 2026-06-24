@@ -387,7 +387,8 @@ export function deployCommand(adapters: Adapters, io: Io): Command {
             return { projectName: t.projectName, deployment: final }
           }),
         )
-        const anyFailed = results.some((r) => r.deployment.state !== 'ready')
+        const failed = results.filter((r) => r.deployment.state !== 'ready')
+        const anyFailed = failed.length > 0
         if (anyFailed) waitSp.fail(`Finished — some deployments failed`)
         else waitSp.succeed(`All ${triggered.length} deployments ready`)
 
@@ -400,6 +401,13 @@ export function deployCommand(adapters: Adapters, io: Io): Command {
 
         io.stdout('')
         emitBranchResults(io, results, opts.json, 'ready', stableUrls)
+
+        // Throw so callers (CI workflow steps, scripts) see exit code 1
+        // when any deploy didn't reach `ready`. Without this, `deploy.yml`'s
+        // `Trigger preview deploys` step appeared green on partial failures.
+        if (anyFailed) {
+          throw new Error(`${failed.length}/${results.length} deployments failed`)
+        }
       },
     )
 
@@ -492,12 +500,21 @@ export function deployCommand(adapters: Adapters, io: Io): Command {
             return { projectName: t.projectName, deployment: final }
           }),
         )
-        const anyFailed = results.some((r) => r.deployment.state !== 'ready')
+        const failed = results.filter((r) => r.deployment.state !== 'ready')
+        const anyFailed = failed.length > 0
         if (anyFailed) waitSp.fail(`Finished — some deployments failed`)
         else waitSp.succeed(`All ${triggered.length} ${target} deployments ready`)
 
         io.stdout('')
         emitBranchResults(io, results, opts.json, 'ready')
+
+        // Throw so the calling workflow step (deploy-staging.yml /
+        // deploy-production.yml) sees exit code 1 on partial failure.
+        // Without this, staging deploys could silently leave one app in
+        // the error state while CI reports green.
+        if (anyFailed) {
+          throw new Error(`${failed.length}/${results.length} ${target} deployments failed`)
+        }
       },
     )
 

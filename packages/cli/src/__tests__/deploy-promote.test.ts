@@ -234,4 +234,41 @@ describe('deploy promote', () => {
     expect(deploy.getDeployment).toHaveBeenCalledWith({ deploymentId: 'dpl_p_rando-api' })
     expect(io.stdout.join('\n')).toContain('https://p_rando-api.vercel.app')
   })
+
+  it('exits non-zero when any deployment ends in a non-ready state', async () => {
+    // Critical for CI: deploy-staging.yml relies on exit code to surface
+    // partial failure. Pre-fix behavior was silent exit 0 → staging
+    // deploys could leave one app errored while CI reported green.
+    const deploy: Partial<DeployProvider> = {
+      getProjectByName: vi.fn(async ({ name }) => ({ id: `p_${name}`, name, rootDirectory: null })),
+      triggerDeployment: vi.fn(async (input) => ({
+        id: `dpl_${input.projectId}`,
+        url: `${input.projectId}.vercel.app`,
+        branch: input.branch,
+        state: 'queued' as const,
+      })),
+      getDeployment: vi.fn(async ({ deploymentId }) => ({
+        id: deploymentId,
+        url: `${deploymentId}.vercel.app`,
+        branch: 'staging',
+        // Both apps fail.
+        state: 'error' as const,
+      })),
+    }
+    const { path, cwd } = writeConfig()
+    const io = captureIo()
+    const exit = vi.fn() as unknown as (code: number) => never
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
+    try {
+      await run(['deploy', 'promote', 'staging', '--config', path], {
+        adapters: adaptersWithDeploy(deploy as DeployProvider),
+        io: io.io,
+        exit,
+      })
+    } finally {
+      cwdSpy.mockRestore()
+    }
+    expect(exit).toHaveBeenCalledWith(1)
+    expect(io.stderr.join('\n')).toMatch(/2\/2 staging deployments failed/)
+  })
 })
