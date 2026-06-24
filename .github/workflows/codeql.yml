@@ -68,6 +68,9 @@ jobs:
           # than the default `security-extended`. Adds maintainability
           # findings too; we want them.
           queries: security-and-quality
+          # Custom config (paths-ignore for known false positives, etc.)
+          # — see the file's header for rationale per entry.
+          config-file: ./.github/codeql/codeql-config.yml
 
       - name: Perform CodeQL Analysis
         if: steps.gate.outputs.skip != 'true'

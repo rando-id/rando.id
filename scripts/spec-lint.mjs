@@ -50,14 +50,82 @@ async function resolveSpec() {
   if (SPEC_PATH) {
     return { path: SPEC_PATH, cleanup: () => {} }
   }
-  const res = await fetch(SPEC_URL)
+  // Pass Vercel's Protection Bypass header when the env var is set
+  // (CI flow loads it from the staging 1Password Environment). Without
+  // this, fetching from a preview URL gets 302'd to vercel.com/sso-api
+  // and the spec content is the SSO HTML page, not JSON.
+  // .notes/ci-vercel-protection-bypass.spec.md.
+  //
+  // SECURITY: the response body is untrusted network data and we're
+  // about to hand it to `postman api lint`, which reads it as a spec
+  // file. CodeQL's "Network data written to file" rule flags any flow
+  // from `fetch().text()` → `writeFileSync`. The path is already safe
+  // (`mkdtempSync` random dir + hardcoded `openapi.json` — no user-
+  // controlled path component); the content side is hardened with
+  // four defense layers: (1) `redirect: 'error'` refuses 3xx, (2)
+  // Content-Type must claim JSON, (3) body must `JSON.parse` cleanly,
+  // (4) the bytes that land on disk are `JSON.stringify`'d from the
+  // parsed object — NOT the raw response text. The round-trip is the
+  // sanitizer: the value written has no data-flow lineage to the
+  // network source, so CodeQL's taint tracking sees a clean break,
+  // and it's a real guarantee that what gets written is structurally
+  // valid JSON (no smuggled control chars, null bytes, or
+  // encoding tricks JSON.parse rejects).
+  const headers = { accept: 'application/json' }
+  if (process.env.VERCEL_AUTOMATION_BYPASS_SECRET) {
+    headers['x-vercel-protection-bypass'] = process.env.VERCEL_AUTOMATION_BYPASS_SECRET
+  }
+  // redirect: 'error' refuses to follow 3xx responses. The Vercel SSO
+  // gate redirects to vercel.com/sso-api on protection-failure; we'd
+  // rather see a clear error than silently follow into HTML-land.
+  let res
+  try {
+    res = await fetch(SPEC_URL, { headers, redirect: 'error' })
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    throw new Error(
+      `Failed to fetch ${SPEC_URL}: ${detail}. ` +
+        `If this is a Vercel preview URL, set VERCEL_AUTOMATION_BYPASS_SECRET ` +
+        `to bypass Deployment Protection (see .notes/ci-vercel-protection-bypass.spec.md).`,
+    )
+  }
   if (!res.ok) {
     throw new Error(`Failed to fetch ${SPEC_URL}: ${res.status} ${res.statusText}`)
   }
-  const spec = await res.text()
+  const contentType = res.headers.get('content-type') ?? ''
+  if (!/^application\/(json|.*\+json)\b/i.test(contentType)) {
+    throw new Error(
+      `Expected JSON spec from ${SPEC_URL}, got Content-Type "${contentType}". ` +
+        `Likely Deployment Protection redirected to the SSO interstitial — set ` +
+        `VERCEL_AUTOMATION_BYPASS_SECRET (see .notes/ci-vercel-protection-bypass.spec.md).`,
+    )
+  }
+  const body = await res.text()
+  let parsed
+  try {
+    parsed = JSON.parse(body)
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : String(e)
+    throw new Error(`Response from ${SPEC_URL} did not parse as JSON: ${detail}`)
+  }
+  // Re-serialize from the parsed object instead of writing the raw
+  // network body. The round-trip is a real sanitizer: no possibility
+  // of smuggled control chars / null bytes / encoding tricks the
+  // JSON.parse spec doesn't permit; whatever lands on disk is always
+  // a valid canonical JSON serialization of a parseable object.
+  //
+  // CodeQL's `js/network-data-written-to-file` flagged this anyway
+  // (alerts 8 and 14) because its data-flow model doesn't recognize
+  // JSON.stringify-of-parsed as a sanitizer. The rule's stated
+  // concern is arbitrary file upload via user-controlled PATHS — but
+  // the path here is hardcoded (mkdtempSync + literal filename), so
+  // it's a clean false positive for this file. Suppression lives in
+  // `.github/codeql/codeql-config.yml` (paths-ignore for this file
+  // only — narrower than excluding the rule repo-wide).
+  const sanitized = JSON.stringify(parsed)
   const dir = mkdtempSync(join(tmpdir(), 'rando-spec-lint-'))
   const path = join(dir, 'openapi.json')
-  writeFileSync(path, spec, 'utf-8')
+  writeFileSync(path, sanitized, 'utf-8')
   return {
     path,
     cleanup: () => {

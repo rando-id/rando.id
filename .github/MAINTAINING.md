@@ -44,13 +44,14 @@ Required env vars — **stored in 1Password**, populated into the root
 `.env` by `rando secrets sync` (see
 [CONTRIBUTING.md → 1Password integration](./CONTRIBUTING.md#1password-integration-required-path)):
 
-| Variable                | Used by                     |
-| ----------------------- | --------------------------- |
-| `NEON_API_KEY`          | `rando db ...`              |
-| `CLOUDFLARE_API_TOKEN`  | `rando tunnel`, `rando dns` |
-| `CLOUDFLARE_ACCOUNT_ID` | `rando tunnel`              |
-| `VERCEL_TOKEN`          | `rando deploy`              |
-| `VERCEL_TEAM_ID`        | `rando deploy` (optional)   |
+| Variable                          | Used by                                                                                                                                                         |
+| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEON_API_KEY`                    | `rando db ...`                                                                                                                                                  |
+| `CLOUDFLARE_API_TOKEN`            | `rando tunnel`, `rando dns`                                                                                                                                     |
+| `CLOUDFLARE_ACCOUNT_ID`           | `rando tunnel`                                                                                                                                                  |
+| `VERCEL_TOKEN`                    | `rando deploy`                                                                                                                                                  |
+| `VERCEL_TEAM_ID`                  | `rando deploy` (optional)                                                                                                                                       |
+| `VERCEL_AUTOMATION_BYPASS_SECRET` | `integration-tests.yml` — bypass Deployment Protection on preview URLs (staging env only). See `.notes/ci-vercel-protection-bypass.spec.md` for one-time setup. |
 
 Manual step → `rando` equivalent:
 
