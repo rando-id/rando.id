@@ -68,13 +68,24 @@ A new orchestrator step in `packages/cli/src/orchestrate.ts` does both:
 Idempotent — re-running `rando infra setup` is a no-op if the
 project is already in the target state.
 
-**Implementation note — undocumented field check.** Vercel's docs
-expose `previewDeploymentsDisabled` only. A sibling
-`productionDeploymentsDisabled` may exist in practice; first
-implementation step is `GET /v10/projects/{id}` against a live
-project and inspecting the response body. If it exists, the
-`vercel.json` half can drop entirely. If not, the two-layer
-approach above is the documented path.
+**Implementation note — probe results (#212 step 1, done).** Live
+`GET /v10/projects/rando-api` returned no
+`productionDeploymentsDisabled` field. The two-layer approach
+(API + `vercel.json`) is required.
+
+One interesting undocumented field surfaced:
+`gitProviderOptions.createDeployments: "enabled"`. This looks like
+Vercel's master switch for git-triggered deploys; setting it to
+`"disabled"` would likely cover preview AND production push in a
+single field. **Not chosen as primary** because it's undocumented
+(silent breakage if Vercel renames). Set as a belt-and-suspenders
+field in the same PATCH — the documented
+`previewDeploymentsDisabled: true` is what we depend on; the
+undocumented one is bonus coverage.
+
+Also confirmed during probe: Vercel native auto-deployed our
+spec-only PR branch (`docs/deploy-strategy-specs`) — exactly the
+#204 quota burn. The fix landing here genuinely closes that.
 
 Tracked as #212 (sub-issue of #210) — see "Touch points" below.
 The original scope of #204 (turn off Vercel native) closes when
