@@ -367,7 +367,7 @@ jobs:
             // target mode resolve-target picked.
             const modeNote =
               mode === 'staging'
-                ? `> _Tested against **staging** (Dependabot smoke test — no preview deploy fires for Dependabot PRs without the \`preview\` label). Failures may reflect main's state, not this PR's bump. Check the [nightly Postman cron run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/workflows/integration-tests.yml) and recent merges before assuming this PR broke it. To target the preview instead, add the \`preview\` label and re-push._`
+                ? `> _Tested against **staging** (Dependabot smoke test — no preview deploy fires for Dependabot PRs without the \`deploy-preview\` label). Failures may reflect main's state, not this PR's bump. Check the [nightly Postman cron run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/workflows/integration-tests.yml) and recent merges before assuming this PR broke it. To target the preview instead, add the \`deploy-preview\` label and re-push._`
                 : mode === 'staging-disabled'
                   ? `> _Tested against **staging** because \`vars.DEPLOY_PREVIEW_ENABLED\` is set to \`false\` repo-wide (used when the Vercel projects don't exist yet — see deploy.yml's header re: #75 — or during a daily-deploy-quota incident). Failures may reflect staging's state, not this PR. Flip \`DEPLOY_PREVIEW_ENABLED\` back on once the situation clears._`
                   : mode === 'staging-fallback'

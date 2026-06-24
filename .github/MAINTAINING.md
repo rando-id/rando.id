@@ -274,7 +274,7 @@ Behavior:
   against staging.
 - **Dependabot PR with `deploy-preview` label** → preview fires on the
   next sync (rebase, force-push, or empty commit). Add the label
-  in the GitHub UI or via `gh pr edit <N> --add-label preview`.
+  in the GitHub UI or via `gh pr edit <N> --add-label deploy-preview`.
 
 When to add the label: major bumps with a real UI / runtime change
 risk that unit tests can't catch alone. Tamagui, next, react,
