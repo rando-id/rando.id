@@ -1,0 +1,89 @@
+name: Deploy production
+
+# Production deploys are explicitly gated: this workflow has NO push
+# trigger. The only entry point is `workflow_dispatch` (Actions → Deploy
+# production → Run workflow), which requires the operator to pick a
+# commit SHA and confirm. Vercel native push-to-deploy on `main` is
+# disabled by `rando infra setup` (D1) + `apps/<name>/vercel.json`'s
+# `git.deploymentEnabled.main: false`. See
+# .notes/process-deploy-strategy.spec.md (D4).
+#
+# Beyond `workflow_dispatch`, the GitHub Environment `production`
+# (configured in repo settings) requires reviewer approval before the
+# deploy step runs. That's a second pair of eyes — even if the operator
+# triggering the workflow has write access, the deploy pauses until a
+# reviewer clicks approve in the GitHub UI.
+#
+# Operator playbook:
+#   1. Confirm staging looks healthy on the same SHA you want to ship.
+#   2. Go to Actions → Deploy production → Run workflow.
+#   3. Enter the commit SHA (typically the tip of main, or whatever
+#      survived a staging soak).
+#   4. Wait for the Environment reviewer to approve.
+#   5. Watch the deploy step; `rando deploy promote production --ref
+#      <sha>` polls until all apps reach `ready` or one errors. Errored
+#      deploys exit non-zero (#214 fix); rerun after fixing.
+#
+# Secrets are resolved from a 1Password Environment at job start. The
+# only GitHub repo secret needed is `OP_SERVICE_ACCOUNT_TOKEN`.
+
+on:
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Commit SHA (or branch / tag) to deploy. Required.'
+        required: true
+        type: string
+
+concurrency:
+  # Serialize prod deploys absolutely. Two concurrent prod deploys would
+  # race for Vercel's promoted-deployment slot per app — one would win
+  # silently. cancel-in-progress=false: the running deploy must complete
+  # before a new one starts. If multiple dispatches stack up, GitHub
+  # drops all but the newest pending (deliberate: the latest dispatch
+  # represents the operator's most current intent).
+  group: deploy-production
+  cancel-in-progress: false
+
+# Least-privilege GITHUB_TOKEN. This workflow doesn't push or comment;
+# everything that hits GitHub-the-platform goes through the operator's
+# UI clicks (workflow_dispatch + reviewer approval), not the bot.
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ vars.DEPLOY_PRODUCTION_ENABLED != 'false' }}
+    name: Deploy production
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # GitHub Environment "production" — required reviewers configured
+    # in repo settings (Settings → Environments → production). The job
+    # pauses here for approval before any subsequent step runs.
+    environment: production
+    steps:
+      # Check out `main`, not `inputs.ref`. The CLI binary and
+      # rando.config.json should always come from the latest known-good
+      # main; `inputs.ref` is the *Vercel deploy ref* (passed to
+      # `rando deploy promote --ref`), not the checkout. Same pattern
+      # as deploy-staging.yml pinning `ref: staging`.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: main
+
+      - uses: ./.github/actions/setup
+        with:
+          install-cli: 'true'
+
+      - uses: ./.github/actions/op-env
+        with:
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - name: Trigger production deploys
+        # `inputs.ref` is the user-supplied SHA/branch/tag to deploy.
+        # Plumbed via env (not template interpolation) for CWE-77
+        # hardening — same pattern as deploy.yml / deploy-staging.yml.
+        env:
+          REF: ${{ inputs.ref }}
+          FORCE_COLOR: '1'
+        run: rando deploy promote production --ref "$REF"
