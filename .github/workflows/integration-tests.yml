@@ -6,10 +6,10 @@ name: Integration tests
 # otherwise — see .notes/ci-integration-tests-smart-target.spec.md.
 #
 # Target matrix (pull_request events):
-#   - API workspace NOT affected             → skip (existing gate)
-#   - API affected, human-authored           → preview URL (poll, fallback to staging)
-#   - API affected, Dependabot, no label     → staging (smoke test; no polling)
-#   - API affected, Dependabot, `preview`    → preview URL (poll, fallback to staging)
+#   - API workspace NOT affected                  → skip (existing gate)
+#   - API affected, human-authored                → preview URL (poll, fallback to staging)
+#   - API affected, Dependabot, no label          → staging (smoke test; no polling)
+#   - API affected, Dependabot, `deploy-preview`  → preview URL (poll, fallback to staging)
 #
 # Other events:
 #   - schedule (nightly cron)                → staging
@@ -98,10 +98,11 @@ jobs:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       # Resolve the target URL: preview when a preview will exist
-      # (human-authored, OR Dependabot + `preview` label — same gate as
-      # deploy.yml). Falls back to staging if the preview never comes
-      # up (deploy failure, Vercel quota hit) so we still get a smoke
-      # test instead of a misleading SUCCESS-with-skip. Spec:
+      # (human-authored, OR Dependabot + `deploy-preview` label —
+      # same gate as deploy.yml). Falls back to staging if the
+      # preview never comes up (deploy failure, Vercel quota hit) so
+      # we still get a smoke test instead of a misleading
+      # SUCCESS-with-skip. Spec:
       # .notes/ci-integration-tests-smart-target.spec.md
       - name: Resolve target URL
         if: steps.gate.outputs.skip != 'true'
@@ -263,14 +264,14 @@ jobs:
             echo "Target: ${STAGING} (vars.DEPLOY_PREVIEW_ENABLED=false; no preview will fire)"
             exit 0
           fi
-          HAS_PREVIEW_LABEL=$(jq -e '. | index("preview")' <<<"$LABELS_JSON" >/dev/null 2>&1 && echo true || echo false)
-          if [ "$ACTOR" = "dependabot[bot]" ] && [ "$HAS_PREVIEW_LABEL" != "true" ]; then
+          HAS_DEPLOY_PREVIEW_LABEL=$(jq -e '. | index("deploy-preview")' <<<"$LABELS_JSON" >/dev/null 2>&1 && echo true || echo false)
+          if [ "$ACTOR" = "dependabot[bot]" ] && [ "$HAS_DEPLOY_PREVIEW_LABEL" != "true" ]; then
             # No preview will fire (Dependabot without label). Smoke
             # test staging instead — catches contract regressions on
             # merged main without burning 5 min of polling.
             echo "url=${STAGING}" >> "$GITHUB_OUTPUT"
             echo "mode=staging" >> "$GITHUB_OUTPUT"
-            echo "Target: ${STAGING} (Dependabot PR without 'preview' label — smoke test)"
+            echo "Target: ${STAGING} (Dependabot PR without 'deploy-preview' label — smoke test)"
             exit 0
           fi
           # Preview is expected. Same slug logic as

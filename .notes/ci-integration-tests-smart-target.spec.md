@@ -11,8 +11,9 @@ unconditionally on every `pull_request` event, polls
 never came up. With the upcoming Dependabot opt-in
 ([[ci-preview-quota-strategy]] / #184) and per-app preview gating
 ([[ci-per-app-preview-gating]] / #186), the preview will routinely
-not exist for valid reasons — Dependabot PRs without the `preview`
-label, PRs that don't affect the API workspace, etc. — and the
+not exist for valid reasons — Dependabot PRs without the
+`deploy-preview` label, PRs that don't affect the API workspace,
+etc. — and the
 5-minute poll burns Actions minutes for nothing.
 
 Reviewer feedback on #185 flagged this directly: "70+ Dependabot
@@ -26,28 +27,28 @@ switch to the preview URL only when the PR is expected to have one.**
 "Expected" matches deploy.yml's gate post-#185:
 
 ```text
-human-authored, OR (Dependabot AND has 'preview' label)
+human-authored, OR (Dependabot AND has 'deploy-preview' label)
 ```
 
 Combined with the existing "skip when API workspace not affected"
 gate, the matrix becomes:
 
-| PR shape                                      | Action            | Target  | `mode` output      |
-| --------------------------------------------- | ----------------- | ------- | ------------------ |
-| API not affected                              | skip              | n/a     | n/a                |
-| API affected, `DEPLOY_PREVIEW_ENABLED=false`  | run (kill-switch) | staging | `staging-disabled` |
-| API affected, human-authored                  | run               | preview | `preview`          |
-| API affected, Dependabot, no `preview` label  | run (smoke test)  | staging | `staging`          |
-| API affected, Dependabot, has `preview` label | run               | preview | `preview`          |
-| Preview never came up (any author)            | run (fallback)    | staging | `staging-fallback` |
-| Scheduled (nightly cron)                      | run               | staging | `staging`          |
-| `workflow_dispatch` with `inputs.baseUrl`     | run               | input   | `dispatch`         |
-| `workflow_dispatch` without `inputs.baseUrl`  | run               | staging | `staging`          |
+| PR shape                                             | Action            | Target  | `mode` output      |
+| ---------------------------------------------------- | ----------------- | ------- | ------------------ |
+| API not affected                                     | skip              | n/a     | n/a                |
+| API affected, `DEPLOY_PREVIEW_ENABLED=false`         | run (kill-switch) | staging | `staging-disabled` |
+| API affected, human-authored                         | run               | preview | `preview`          |
+| API affected, Dependabot, no `deploy-preview` label  | run (smoke test)  | staging | `staging`          |
+| API affected, Dependabot, has `deploy-preview` label | run               | preview | `preview`          |
+| Preview never came up (any author)                   | run (fallback)    | staging | `staging-fallback` |
+| Scheduled (nightly cron)                             | run               | staging | `staging`          |
+| `workflow_dispatch` with `inputs.baseUrl`            | run               | input   | `dispatch`         |
+| `workflow_dispatch` without `inputs.baseUrl`         | run               | staging | `staging`          |
 
 `mode` flows into the on-failure PR comment so the author sees
 the right hint for why their tests ran where they did (e.g. a
 `mode=staging-disabled` failure tells a human author to flip
-`DEPLOY_PREVIEW_ENABLED` back on, not to add the `preview` label).
+`DEPLOY_PREVIEW_ENABLED` back on, not to add the `deploy-preview` label).
 
 The preview path keeps its 5-minute poll with a **staging
 fallback** if the preview never comes up (deploy failure, Vercel
@@ -138,7 +139,7 @@ tests result. Documented in MAINTAINING.md.
 - **The gate logic duplicates deploy.yml's.** Both compute
   "should this PR have a preview" via the same three signals:
   `vars.DEPLOY_PREVIEW_ENABLED != 'false'`, `github.actor != 'dependabot[bot]'`,
-  and `contains(labels, 'preview')`. If deploy.yml's gate ever
+  and `contains(labels, 'deploy-preview')`. If deploy.yml's gate ever
   changes, integration-tests has to follow. Acceptable for two
   workflows; if a third needs the same signal, extract into a
   composite. The `DEPLOY_PREVIEW_ENABLED` toggle is particularly
