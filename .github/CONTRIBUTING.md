@@ -391,7 +391,7 @@ preview — typically tamagui / next / react / clerk majors where unit
 tests can't tell the whole story — add the `deploy-preview` label:
 
 ```bash
-gh pr edit <N> --add-label preview
+gh pr edit <N> --add-label deploy-preview
 ```
 
 The next sync (push to the branch, comment-rebase, or an empty commit
