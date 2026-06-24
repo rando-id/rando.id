@@ -95,7 +95,7 @@ this step is implemented and run against the three projects.
 
 Add a `push: branches: [staging]` trigger to `deploy.yml` (or a new
 sibling `deploy-staging.yml` — see "Workflow layout" below) that
-runs `rando deploy <env=staging>`. `sync-staging.yml` already
+runs `rando deploy promote staging`. `sync-staging.yml` already
 fast-forwards staging from main on every push, so this means: merge
 to main → staging fast-forwards → our workflow deploys to the
 staging Vercel environment.
@@ -103,7 +103,7 @@ staging Vercel environment.
 **Requires:** `rando deploy` to support a non-branch, non-preview
 mode targeting a specific Vercel environment. Today only
 `rando deploy branch` and `rando deploy teardown` exist; we'd add
-`rando deploy env <staging|production>`. Implementation lives in
+`rando deploy promote <staging|production>`. Implementation lives in
 `packages/cli/src/commands/deploy.ts` next to `branchDeploy`.
 
 ### D3. Feature-branch previews are opt-in for **every** author
@@ -144,7 +144,7 @@ points become:
   Run workflow, picks the commit, and confirms.
 - **GitHub Environment "production"** with **required reviewers**
   = the repo's CODEOWNERS. The workflow_dispatch run pauses for
-  approval before the `rando deploy env production` step.
+  approval before the `rando deploy promote production` step.
 
 The environment gate matters because `workflow_dispatch` alone can
 be triggered by anyone with write access — adding a required
@@ -181,7 +181,7 @@ staging gets `concurrency: deploy-staging`; prod gets
 
 ## CLI additions
 
-`rando deploy env <staging|production>` — deploys the current
+`rando deploy promote <staging|production>` — deploys the current
 checkout to the named Vercel environment. Internally calls the
 same Vercel API surface as `rando deploy branch` but with
 `target=production` (or the staging-equivalent project setting),
@@ -247,7 +247,7 @@ gating the cutover. Recommended order:
    re-running setup. Do this first so steps 2-4 are working in
    the target state. Tracked as a separate sub-issue under #210.
 2. **D2 (staging auto-deploy via workflow)** — needs
-   `rando deploy env staging` CLI work + new workflow file.
+   `rando deploy promote staging` CLI work + new workflow file.
    Highest-risk change; do early so the day's testing exercises
    it.
 3. **D4 (prod gate)** — workflow file + Environment protection
@@ -302,14 +302,14 @@ via `Refs #<umbrella>`.
    `deploy-preview.yml`** — flip the Dependabot-only label gate
    to all-authors label gate (D3). Otherwise unchanged.
 5. **`.github/workflows/deploy-staging.yml`** (new) — push
-   trigger on `staging`, runs `rando deploy env staging`.
+   trigger on `staging`, runs `rando deploy promote staging`.
 6. **`.github/workflows/deploy-production.yml`** (new) —
    `workflow_dispatch` only, references GitHub Environment
-   `production` with required reviewers. Runs `rando deploy env production`.
+   `production` with required reviewers. Runs `rando deploy promote production`.
 7. **GitHub Environment "production"** (new, repo settings):
    required reviewers, no other restrictions.
-8. **`packages/cli/src/commands/deploy.ts`** — new `env`
-   subcommand. Tests in `__tests__/deploy.test.ts`.
+8. **`packages/cli/src/commands/deploy.ts`** — new `promote`
+   subcommand. Tests in `__tests__/deploy-promote.test.ts`.
 9. **`packages/cli/src/adapters/vercel.ts`** — if the existing
    adapter doesn't already cover environment-target deploys,
    add the method (alongside `updateProject` from touch point 1).

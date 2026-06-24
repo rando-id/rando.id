@@ -1,0 +1,83 @@
+name: Deploy staging
+
+# Deploys each configured app to the staging Vercel environment on every
+# push to the `staging` branch. `sync-staging.yml` fast-forwards staging
+# from main on every merge to main, so the practical effect is:
+# merge to main → staging fast-forwards → this workflow deploys.
+#
+# This workflow replaces Vercel's native push-to-deploy for the staging
+# branch. Vercel native is disabled per app via
+# `apps/<name>/vercel.json`'s `git.deploymentEnabled.staging: false`
+# AND project-level `previewDeploymentsDisabled` set by
+# `rando infra setup`. See .notes/process-deploy-strategy.spec.md (D1, D2).
+#
+# Secrets are resolved from a 1Password Environment at job start. The only
+# GitHub repo secret you need is `OP_SERVICE_ACCOUNT_TOKEN`.
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to deploy (default: tip of staging)'
+        required: false
+        type: string
+        default: ''
+
+concurrency:
+  # Serialize staging deploys so back-to-back syncs from main don't race.
+  # cancel-in-progress=false: the running deploy always finishes; a third
+  # push arriving while one is running and another is pending makes GitHub
+  # drop the pending — the newest sync is a superset.
+  group: deploy-staging
+  cancel-in-progress: false
+
+# Least-privilege GITHUB_TOKEN. This workflow checks out the repo and
+# calls Vercel/Cloudflare/1P via secrets — none of which need write
+# access to GitHub itself. Explicit `contents: read` overrides whatever
+# the repo-default permissions are.
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    if: ${{ vars.DEPLOY_STAGING_ENABLED != 'false' }}
+    name: Deploy staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      # Pin the checkout to `staging` so the CLI binary, rando.config.json,
+      # and any composite actions are read from the staging branch
+      # consistently — regardless of which branch a workflow_dispatch was
+      # triggered from. `sync-staging.yml` keeps staging fast-forwarded
+      # from main, so in steady state this is identical to main; the pin
+      # only matters during the brief window before a sync runs.
+      # Note: `inputs.ref` controls the *Vercel deploy ref* (passed to
+      # `rando deploy promote --ref`), NOT the checkout ref. To run a
+      # newer CLI version, land it on staging via the normal sync flow.
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: staging
+
+      - uses: ./.github/actions/setup
+        with:
+          install-cli: 'true'
+
+      - uses: ./.github/actions/op-env
+        with:
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - name: Trigger staging deploys
+        # `inputs.ref` is only set via workflow_dispatch. On the push
+        # trigger, it's empty and `rando deploy promote` defaults branch
+        # to `staging`. Either path goes through env (CWE-77 prevention).
+        env:
+          REF: ${{ inputs.ref }}
+          FORCE_COLOR: '1'
+        run: |
+          if [ -n "$REF" ]; then
+            rando deploy promote staging --ref "$REF"
+          else
+            rando deploy promote staging
+          fi

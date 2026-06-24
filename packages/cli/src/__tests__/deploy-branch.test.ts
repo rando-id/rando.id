@@ -315,6 +315,44 @@ describe('deploy branch', () => {
     expect(dns.removeRecord).not.toHaveBeenCalled()
   })
 
+  it('exits non-zero when any deployment ends in a non-ready state', async () => {
+    // One app succeeds, the other ends in `error` — `rando deploy branch`
+    // must propagate a non-zero exit so the calling workflow step fails.
+    // Pre-fix behavior: silent exit 0; deploy.yml's "Trigger preview
+    // deploys" step appeared green on partial failure.
+    const deploy: Partial<DeployProvider> = {
+      getProjectByName: vi.fn(async ({ name }) => ({ id: `p_${name}`, name, rootDirectory: null })),
+      triggerDeployment: vi.fn(async ({ projectId, branch }) => ({
+        id: `dpl_${projectId}`,
+        url: `${projectId}.vercel.app`,
+        branch,
+        state: 'queued' as const,
+      })),
+      getDeployment: vi.fn(async ({ deploymentId }) => ({
+        id: deploymentId,
+        url: `${deploymentId}.vercel.app`,
+        branch: 'main',
+        // api → ready, web → error.
+        state: deploymentId === 'dpl_p_rando-api' ? ('ready' as const) : ('error' as const),
+      })),
+    }
+    const { path, cwd } = writeConfig()
+    const io = captureIo()
+    const exit = vi.fn() as unknown as (code: number) => never
+    const cwdSpy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
+    try {
+      await run(['deploy', 'branch', 'main', '--config', path], {
+        adapters: adaptersWithDeploy(deploy as DeployProvider),
+        io: io.io,
+        exit,
+      })
+    } finally {
+      cwdSpy.mockRestore()
+    }
+    expect(exit).toHaveBeenCalledWith(1)
+    expect(io.stderr.join('\n')).toMatch(/1\/2 deployments failed/)
+  })
+
   it('errors when --apps names something that is not in the config', async () => {
     const { path, cwd } = writeConfig()
     const io = captureIo()
