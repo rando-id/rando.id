@@ -165,17 +165,20 @@ export const SetupConfigSchema = z.object({
    * through the configured 1Password **Environment** before/instead
    * of touching `.env`.
    *
-   * Convention: item title === env var name (e.g. NEON_API_KEY →
-   * `op://<environment-id>/NEON_API_KEY/<field>` for user-account
-   * access, or `op environment read <environment-id>` for service
-   * accounts in CI). Adding a new env var means adding an item with
-   * that name to whichever Environment(s) need it.
+   * Convention: each variable inside an Environment is named exactly
+   * as the env var name (NEON_API_KEY, VERCEL_TOKEN, etc.) with the
+   * value stored directly. Environments are flat KEY=VALUE stores —
+   * no items, no titles, no field structures. `op environment read
+   * <env-id>` dumps every variable as KEY=VALUE lines. Adding a new
+   * env var means adding a new variable with that name to whichever
+   * Environment(s) need it, via the 1Password desktop app or
+   * `rando secrets set <name>`.
    *
    * Note: these are 1Password **Environments**, not Vaults — distinct
-   * 1Password features. Vault-based references (`op read op://...`)
-   * work only for user accounts; CI service accounts use
-   * `op environment read` to stream the whole Environment as
-   * KEY=VALUE pairs.
+   * 1Password features. Vault `op://<vault>/<item>/<field>` references
+   * do NOT work against Environment IDs (the op CLI rejects with
+   * "This operation cannot be performed on 1Password Environments").
+   * The only access path is `op environment read <env-id>`.
    */
   secrets: z
     .object({
@@ -187,7 +190,16 @@ export const SetupConfigSchema = z.object({
        * `op account list --format=json`.
        */
       account: z.string().min(1).optional(),
-      /** Field on each item that holds the credential value. */
+      /**
+       * Legacy: the field name on vault-based items, for any code
+       * paths that still build `op://<vault>/<item>/<field>`
+       * references against a Vault (not an Environment — those
+       * don't have fields). Currently defaults to `credential` to
+       * match the convention used by `OP_SERVICE_ACCOUNT_TOKEN` in
+       * the Personal vault. Most callers should be using
+       * `op environment read` instead; this knob is a holdover
+       * worth auditing (see #195).
+       */
       field: z.string().min(1).default('credential'),
       /**
        * 1Password Environment IDs per deploy environment. `local` is
