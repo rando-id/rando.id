@@ -23,9 +23,10 @@ on:
 
 concurrency:
   # Serialize so back-to-back merges to main don't race each other.
-  # cancel-in-progress=false: every merge's sync must complete; we
-  # never want a queued sync to be skipped because the next one is
-  # already pending.
+  # cancel-in-progress=false: the running sync always finishes
+  # (staging is never left mid-push). If a third merge arrives while
+  # one is running and another is pending, GitHub drops the pending
+  # one — that's fine because the newest sync is a superset.
   group: sync-staging
   cancel-in-progress: false
 
