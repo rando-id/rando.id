@@ -97,10 +97,12 @@ not changing scripts.
 
 After the first CI run passes:
 
-- **Settings → Branches → Add rule** for `main` and `staging`:
+- **Settings → Branches → Add rule** for `main` ONLY:
   - Require a pull request before merging
   - Require status checks to pass — pick `Lint`, `Typecheck`, and `Unit tests`
   - Require branches to be up to date before merging
+
+**Do NOT add a protection rule for `staging`.** The `sync-staging.yml` workflow needs to push directly to `staging` via the default `GITHUB_TOKEN`, and PR-required rules block that path (`GITHUB_TOKEN` cannot satisfy "require a pull request before merging" — it can't open a PR to itself). Staging is a deploy trigger, NOT a review boundary. If it ever needs protection (e.g. to lock down direct human pushes), the rule must explicitly bypass for `github-actions[bot]` or use a deploy key with the protection-bypass list — but until then, leave `staging` unprotected. See [`.notes/ci-staging-auto-sync.spec.md`](../.notes/ci-staging-auto-sync.spec.md) for the design rationale.
 
 ### Repo secrets
 
