@@ -308,8 +308,8 @@ via `Refs #<umbrella>`.
    `production` with required reviewers. Runs `rando deploy promote production`.
 7. **GitHub Environment "production"** (new, repo settings):
    required reviewers, no other restrictions.
-8. **`packages/cli/src/commands/deploy.ts`** — new `env`
-   subcommand. Tests in `__tests__/deploy.test.ts`.
+8. **`packages/cli/src/commands/deploy.ts`** — new `promote`
+   subcommand. Tests in `__tests__/deploy-promote.test.ts`.
 9. **`packages/cli/src/adapters/vercel.ts`** — if the existing
    adapter doesn't already cover environment-target deploys,
    add the method (alongside `updateProject` from touch point 1).
