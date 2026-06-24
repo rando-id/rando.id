@@ -238,22 +238,38 @@ grows.
   every shell-interpolated `${{ ... }}` in a workflow is
   guaranteed to come from `env:`.
 
-- **Network response is validated before being written to
+- **Network response is sanitized before being written to
   disk.** `scripts/spec-lint.mjs` fetches `/v1/openapi.json`
   and writes the body to a temp file because the upstream
   `postman api lint` CLI only accepts file paths, not URLs.
   CodeQL flags any `fetch().text() → writeFileSync` flow as
   "Network data written to file" — even though the destination
   path is safe (`mkdtempSync` random dir + hardcoded filename,
-  no user-controlled path component). The data-flow concern is
-  closed with three defense layers: (1) `redirect: 'error'`
-  refuses to follow 3xx, so a Vercel SSO interstitial doesn't
-  silently land on disk; (2) `Content-Type` must claim
-  `application/json` (or `*+json`), so HTML/text/binary
-  responses are rejected before write; (3) the body must
-  `JSON.parse` cleanly, so a malformed JSON-typed response is
-  rejected before write. The file is then handed to `postman
-api lint`, which reads it as data — never executed.
+  no user-controlled path component). The concern is closed
+  with four defense layers, applied in order:
+  1. `redirect: 'error'` refuses to follow 3xx, so a Vercel
+     SSO interstitial doesn't silently land on disk;
+  2. `Content-Type` must claim `application/json` (or `*+json`),
+     so HTML/text/binary responses are rejected before any
+     downstream processing;
+  3. the body must `JSON.parse` cleanly into an object;
+  4. **the bytes written to disk are `JSON.stringify`'d from
+     the parsed object** — NOT the raw response text. This
+     round-trip is the actual sanitizer: it produces a new
+     string with no data-flow lineage to the network source
+     (CodeQL's taint tracking sees a clean break, since
+     `JSON.stringify(JSON.parse(x))` is structurally
+     guaranteed to yield safe canonical JSON regardless of
+     what `x` was).
+
+  Without step 4 the earlier layers are only validation —
+  `JSON.parse(spec)` confirms the input is well-formed but
+  doesn't transform the variable that gets written, so CodeQL's
+  data-flow analysis still sees the unbroken
+  `fetch().text() → writeFileSync` path. Re-serializing through
+  the parsed object is both the real security guarantee and
+  what satisfies the linter (alert
+  https://github.com/rando-id/rando.id/security/code-scanning/8).
 
 Related: [[ci-integration-tests-smart-target]] (#188 —
 the smart-target that surfaced this), [[#190]] (the
