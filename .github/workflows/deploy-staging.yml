@@ -47,7 +47,18 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
+      # Pin the checkout to `staging` so the CLI binary, rando.config.json,
+      # and any composite actions are read from the staging branch
+      # consistently — regardless of which branch a workflow_dispatch was
+      # triggered from. `sync-staging.yml` keeps staging fast-forwarded
+      # from main, so in steady state this is identical to main; the pin
+      # only matters during the brief window before a sync runs.
+      # Note: `inputs.ref` controls the *Vercel deploy ref* (passed to
+      # `rando deploy promote --ref`), NOT the checkout ref. To run a
+      # newer CLI version, land it on staging via the normal sync flow.
       - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          ref: staging
 
       - uses: ./.github/actions/setup
         with:
