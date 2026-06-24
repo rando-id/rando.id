@@ -135,6 +135,7 @@ describe('runSetup — staging env', () => {
       deleteProject: vi.fn(),
       triggerDeployment: vi.fn(),
       getDeployment: vi.fn(),
+      updateProjectSettings: vi.fn(),
     }
     const dns: DnsProvider = {
       addRecord: vi.fn(async (input) => ({
@@ -205,6 +206,7 @@ describe('runSetup — staging env', () => {
       deleteProject: vi.fn(),
       triggerDeployment: vi.fn(),
       getDeployment: vi.fn(),
+      updateProjectSettings: vi.fn(),
     }
     const dns: DnsProvider = {
       addRecord: vi.fn(),
@@ -218,6 +220,115 @@ describe('runSetup — staging env', () => {
     expect(messages(events)).toContainEqual(
       'step-skip: vercel domain staging-api.rando-id.dev already configured',
     )
+  })
+})
+
+describe('runSetup — Vercel native-deploy settings', () => {
+  it('pins previewDeploymentsDisabled + gitProviderCreateDeployments on every project (D1)', async () => {
+    const db: DbProvider = {
+      createProject: vi.fn(),
+      listProjects: vi.fn(async () => [{ id: 'p1', name: 'rando' }]),
+      createBranch: vi.fn(),
+      listBranches: vi.fn(async () => [
+        { id: 'br_main', name: 'main', parentId: null, createdAt: 'x' },
+        { id: 'br_staging', name: 'staging', parentId: 'br_main', createdAt: 'x' },
+      ]),
+      getConnectionString: vi.fn(),
+      enableExtension: vi.fn(async () => undefined),
+      deleteBranch: vi.fn(),
+      deleteProject: vi.fn(),
+      resetBranch: vi.fn(),
+    }
+    const deploy: DeployProvider = {
+      createProject: vi.fn(),
+      listProjects: vi.fn(),
+      getProjectByName: vi.fn(async ({ name }) => ({ id: `p_${name}`, name, rootDirectory: null })),
+      setEnv: vi.fn(),
+      listEnv: vi.fn(),
+      addDomain: vi.fn(async () => ({ name: 'x', branch: null })),
+      removeDomain: vi.fn(),
+      deleteProject: vi.fn(),
+      triggerDeployment: vi.fn(),
+      getDeployment: vi.fn(),
+      updateProjectSettings: vi.fn(async ({ projectId }) => ({
+        id: projectId,
+        name: 'rando-api',
+        rootDirectory: 'apps/api',
+      })),
+    }
+    const dns: DnsProvider = {
+      addRecord: vi.fn(),
+      listRecords: vi.fn(async () => []),
+      removeRecord: vi.fn(),
+    }
+    const { events, emit } = captureEvents()
+    await runSetup(stubAll({ db, deploy, dns }), {
+      config,
+      envs: ['staging'],
+      apps: ['api'],
+      emit,
+    })
+    expect(deploy.updateProjectSettings).toHaveBeenCalledWith({
+      projectId: 'p_rando-api',
+      settings: {
+        previewDeploymentsDisabled: true,
+        gitProviderCreateDeployments: 'disabled',
+      },
+    })
+    expect(messages(events)).toContainEqual(
+      'step-done: vercel "rando-api": native preview + push deploys disabled',
+    )
+  })
+
+  it('soft-fails when updateProjectSettings throws, surfacing a note', async () => {
+    const db: DbProvider = {
+      createProject: vi.fn(),
+      listProjects: vi.fn(async () => [{ id: 'p1', name: 'rando' }]),
+      createBranch: vi.fn(),
+      listBranches: vi.fn(async () => [
+        { id: 'br_main', name: 'main', parentId: null, createdAt: 'x' },
+        { id: 'br_staging', name: 'staging', parentId: 'br_main', createdAt: 'x' },
+      ]),
+      getConnectionString: vi.fn(),
+      enableExtension: vi.fn(async () => undefined),
+      deleteBranch: vi.fn(),
+      deleteProject: vi.fn(),
+      resetBranch: vi.fn(),
+    }
+    const deploy: DeployProvider = {
+      createProject: vi.fn(),
+      listProjects: vi.fn(),
+      getProjectByName: vi.fn(async ({ name }) => ({ id: `p_${name}`, name, rootDirectory: null })),
+      setEnv: vi.fn(),
+      listEnv: vi.fn(),
+      addDomain: vi.fn(async () => ({ name: 'x', branch: null })),
+      removeDomain: vi.fn(),
+      deleteProject: vi.fn(),
+      triggerDeployment: vi.fn(),
+      getDeployment: vi.fn(),
+      updateProjectSettings: vi.fn(async () => {
+        throw new ProviderApiError('vercel', 403, 'forbidden')
+      }),
+    }
+    const dns: DnsProvider = {
+      addRecord: vi.fn(),
+      listRecords: vi.fn(async () => []),
+      removeRecord: vi.fn(),
+    }
+    const { events, emit } = captureEvents()
+    await runSetup(stubAll({ db, deploy, dns }), {
+      config,
+      envs: ['staging'],
+      apps: ['api'],
+      emit,
+    })
+    expect(
+      messages(events).some((m) =>
+        m.startsWith('note: vercel "rando-api": could not pin deploy settings'),
+      ),
+    ).toBe(true)
+    // Setup continues despite the soft-fail — DNS step still runs.
+    expect(dns.addRecord).toHaveBeenCalled()
   })
 })
 
@@ -253,6 +364,7 @@ describe('runSetup — push 1P → Vercel env vars', () => {
         deleteProject: vi.fn(),
         triggerDeployment: vi.fn(),
         getDeployment: vi.fn(),
+        updateProjectSettings: vi.fn(),
       }
       const db: DbProvider = {
         createProject: vi.fn(),
@@ -342,6 +454,7 @@ describe('runSetup — push 1P → Vercel env vars', () => {
       deleteProject: vi.fn(),
       triggerDeployment: vi.fn(),
       getDeployment: vi.fn(),
+      updateProjectSettings: vi.fn(),
     }
     const db: DbProvider = {
       createProject: vi.fn(),
@@ -442,6 +555,7 @@ describe('runSetup — Vercel-managed Neon', () => {
       deleteProject: vi.fn(),
       triggerDeployment: vi.fn(),
       getDeployment: vi.fn(),
+      updateProjectSettings: vi.fn(),
     }
     const dns: DnsProvider = {
       addRecord: vi.fn(async (input) => ({
@@ -535,6 +649,7 @@ describe('runSetup — production env', () => {
       deleteProject: vi.fn(),
       triggerDeployment: vi.fn(),
       getDeployment: vi.fn(),
+      updateProjectSettings: vi.fn(),
     }
     const dns: DnsProvider = {
       addRecord: vi.fn(async (input) => ({
@@ -651,6 +766,7 @@ describe('runDestroy', () => {
       deleteProject: vi.fn(),
       triggerDeployment: vi.fn(),
       getDeployment: vi.fn(),
+      updateProjectSettings: vi.fn(),
     }
     const dns: DnsProvider = {
       addRecord: vi.fn(),
@@ -709,6 +825,7 @@ describe('runDestroy', () => {
       deleteProject: vi.fn(),
       triggerDeployment: vi.fn(),
       getDeployment: vi.fn(),
+      updateProjectSettings: vi.fn(),
     }
     const dns: DnsProvider = {
       addRecord: vi.fn(),
