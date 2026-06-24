@@ -33,7 +33,7 @@ Concretely, `branch-deploy`'s job-level `if:` becomes:
 
 ```yaml
 if: ${{
-  vars.PREVIEW_ENABLED != 'false'
+  vars.DEPLOY_PREVIEW_ENABLED != 'false'
   && github.event.action != 'closed'
   && (
     github.actor != 'dependabot[bot]'

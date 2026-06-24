@@ -115,12 +115,12 @@ jobs:
         # in the value breaks out of the quoted string and runs
         # arbitrary commands BEFORE the URL parser / allowlist
         # ever fires (CWE-77). Same goes for github.event_name +
-        # vars.PREVIEW_ENABLED, kept in env for consistency even
-        # though they're enum-class values we control.
+        # vars.DEPLOY_PREVIEW_ENABLED, kept in env for consistency
+        # even though they're enum-class values we control.
         env:
           DISPATCH_URL: ${{ inputs.baseUrl }}
           EVENT_NAME: ${{ github.event_name }}
-          PREVIEW_ENABLED: ${{ vars.PREVIEW_ENABLED }}
+          DEPLOY_PREVIEW_ENABLED: ${{ vars.DEPLOY_PREVIEW_ENABLED }}
           ACTOR: ${{ github.actor }}
           LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
           HEAD_REF: ${{ github.head_ref }}
@@ -248,18 +248,19 @@ jobs:
           # label gate, then poll if so; fall back to staging on
           # timeout. The staging path skips polling entirely.
           #
-          # Parity with deploy.yml: include the PREVIEW_ENABLED toggle
-          # so flipping it to 'false' (used when the Vercel projects
-          # don't exist yet — see deploy.yml header re: #75) routes
-          # straight to staging instead of polling for a preview that
-          # won't be coming. Uses a distinct `mode=staging-disabled`
-          # so the failure-comment renders the right hint (the
+          # Parity with deploy.yml: include the DEPLOY_PREVIEW_ENABLED
+          # toggle so flipping it to 'false' (used when the Vercel
+          # projects don't exist yet — see deploy.yml header re: #75,
+          # or during a Vercel daily-quota incident) routes straight
+          # to staging instead of polling for a preview that won't
+          # be coming. Uses a distinct `mode=staging-disabled` so
+          # the failure-comment renders the right hint (the
           # `mode=staging` Dependabot-smoke-test copy would be wrong
           # for a human-authored PR that hit the kill switch).
-          if [ "$PREVIEW_ENABLED" = "false" ]; then
+          if [ "$DEPLOY_PREVIEW_ENABLED" = "false" ]; then
             echo "url=${STAGING}" >> "$GITHUB_OUTPUT"
             echo "mode=staging-disabled" >> "$GITHUB_OUTPUT"
-            echo "Target: ${STAGING} (vars.PREVIEW_ENABLED=false; no preview will fire)"
+            echo "Target: ${STAGING} (vars.DEPLOY_PREVIEW_ENABLED=false; no preview will fire)"
             exit 0
           fi
           HAS_PREVIEW_LABEL=$(jq -e '. | index("preview")' <<<"$LABELS_JSON" >/dev/null 2>&1 && echo true || echo false)
@@ -367,7 +368,7 @@ jobs:
               mode === 'staging'
                 ? `> _Tested against **staging** (Dependabot smoke test — no preview deploy fires for Dependabot PRs without the \`preview\` label). Failures may reflect main's state, not this PR's bump. Check the [nightly Postman cron run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/workflows/integration-tests.yml) and recent merges before assuming this PR broke it. To target the preview instead, add the \`preview\` label and re-push._`
                 : mode === 'staging-disabled'
-                  ? `> _Tested against **staging** because \`vars.PREVIEW_ENABLED\` is set to \`false\` repo-wide (used when the Vercel projects don't exist yet — see deploy.yml's header re: #75). Failures may reflect staging's state, not this PR. Flip \`PREVIEW_ENABLED\` back on once the Vercel projects are wired up._`
+                  ? `> _Tested against **staging** because \`vars.DEPLOY_PREVIEW_ENABLED\` is set to \`false\` repo-wide (used when the Vercel projects don't exist yet — see deploy.yml's header re: #75 — or during a daily-deploy-quota incident). Failures may reflect staging's state, not this PR. Flip \`DEPLOY_PREVIEW_ENABLED\` back on once the situation clears._`
                   : mode === 'staging-fallback'
                     ? `> _Targeted this PR's preview but it never came up; **fell back to staging**. The real deploy failure lives in the [\`Deploy preview\`](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/workflows/deploy.yml) workflow rollup (filter by this PR's branch) and the \`Vercel – rando-api\` check — that's where to look before debugging Postman failures._`
                     : mode === 'dispatch'
