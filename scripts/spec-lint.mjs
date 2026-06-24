@@ -109,13 +109,19 @@ async function resolveSpec() {
     throw new Error(`Response from ${SPEC_URL} did not parse as JSON: ${detail}`)
   }
   // Re-serialize from the parsed object instead of writing the raw
-  // network body. The round-trip is a real sanitizer (no possibility
+  // network body. The round-trip is a real sanitizer: no possibility
   // of smuggled control chars / null bytes / encoding tricks the
-  // JSON.parse spec doesn't permit) AND it breaks CodeQL's
-  // taint-tracking from `fetch().text()` → `writeFileSync` — the
-  // serialized string is a new value with no data-flow lineage to
-  // the network source. CodeQL alert
-  // https://github.com/rando-id/rando.id/security/code-scanning/8.
+  // JSON.parse spec doesn't permit; whatever lands on disk is always
+  // a valid canonical JSON serialization of a parseable object.
+  //
+  // CodeQL's `js/network-data-written-to-file` flagged this anyway
+  // (alerts 8 and 14) because its data-flow model doesn't recognize
+  // JSON.stringify-of-parsed as a sanitizer. The rule's stated
+  // concern is arbitrary file upload via user-controlled PATHS — but
+  // the path here is hardcoded (mkdtempSync + literal filename), so
+  // it's a clean false positive for this file. Suppression lives in
+  // `.github/codeql/codeql-config.yml` (paths-ignore for this file
+  // only — narrower than excluding the rule repo-wide).
   const sanitized = JSON.stringify(parsed)
   const dir = mkdtempSync(join(tmpdir(), 'rando-spec-lint-'))
   const path = join(dir, 'openapi.json')

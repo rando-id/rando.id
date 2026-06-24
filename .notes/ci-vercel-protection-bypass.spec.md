@@ -265,11 +265,23 @@ grows.
   Without step 4 the earlier layers are only validation —
   `JSON.parse(spec)` confirms the input is well-formed but
   doesn't transform the variable that gets written, so CodeQL's
-  data-flow analysis still sees the unbroken
+  data-flow analysis still sees an unbroken
   `fetch().text() → writeFileSync` path. Re-serializing through
-  the parsed object is both the real security guarantee and
-  what satisfies the linter (alert
-  https://github.com/rando-id/rando.id/security/code-scanning/8).
+  the parsed object is the real security guarantee — every byte
+  on disk is a canonical JSON serialization of a parseable
+  object.
+
+  **CodeQL alert suppression**: the rule's stated concern is
+  arbitrary file upload via user-controlled PATHS, but the
+  path here is hardcoded (`mkdtempSync` + literal `'openapi.json'`).
+  CodeQL's default JS model doesn't recognize the round-trip
+  as a sanitizer either way, so alerts 8 and 14 stayed open
+  even after the sanitization landed. Resolved with a
+  file-scoped `paths-ignore: scripts/spec-lint.mjs` in
+  `.github/codeql/codeql-config.yml` (narrower than excluding
+  `js/network-data-written-to-file` repo-wide — the rule still
+  fires on `apps/` and `packages/` where untrusted-data-to-FS
+  flows would be real concerns).
 
 Related: [[ci-integration-tests-smart-target]] (#188 —
 the smart-target that surfaced this), [[#190]] (the
