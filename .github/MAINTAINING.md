@@ -500,7 +500,8 @@ rando.id (prod)                          staging-*.rando-id.dev
 The `Sync staging` workflow refuses to overwrite divergent commits — if it fails, that's the workflow telling you `staging` has commits `main` doesn't. To investigate + recover:
 
 1. `git fetch origin main staging && git log --oneline origin/main..origin/staging` — shows what's on staging that isn't on main. If empty, the workflow's wrong (file a bug). If non-empty, decide what to do with each commit.
-2. **If the divergent commits are stale and should be dropped**: Actions → `Sync staging` → Run workflow → set `force` to `true`. This is the same `--force-with-lease` operation done manually. Use sparingly — it's the data-loss path.
+2. **If the divergent commits are stale and should be dropped**: Actions → `Sync staging` → Run workflow → set `force` to `true`. This is a hard `--force` push (not `--force-with-lease`). Use sparingly — it's the data-loss path.
+
 3. **If the divergent commits are real work**: rebase them onto `main` via the normal PR flow, merge through `main`, then the next push auto-syncs staging cleanly.
 
 ## Native (EAS)
