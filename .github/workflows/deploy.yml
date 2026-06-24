@@ -20,11 +20,12 @@ name: Deploy
 #   - JIRA_BASE_URL / JIRA_EMAIL / JIRA_API_TOKEN  (only when tracker.kind=jira)
 #
 # Optional repo variables (Settings → Secrets and variables → Actions → Variables):
-#   RANDO_NEON_PROJECT_ID   — needed only by the optional per-PR Neon branch steps
-#   TRACKER_ENABLED=false   — disables the issue-tracker sync step
-#   PREVIEW_ENABLED=false   — disables this whole workflow (use until the
-#                             Vercel projects exist; see #75). Both branch-deploy
-#                             AND teardown skip when set.
+#   RANDO_NEON_PROJECT_ID         — needed only by the optional per-PR Neon branch steps
+#   TRACKER_ENABLED=false         — disables the issue-tracker sync step
+#   DEPLOY_PREVIEW_ENABLED=false  — disables this whole workflow (use until the
+#                                   Vercel projects exist; see #75, or during a
+#                                   Vercel daily-deploy-quota incident). Both
+#                                   branch-deploy AND teardown skip when set.
 
 on:
   pull_request:
@@ -53,7 +54,7 @@ jobs:
     # even if the PR never had a preview.
     if: >-
       ${{
-        vars.PREVIEW_ENABLED != 'false'
+        vars.DEPLOY_PREVIEW_ENABLED != 'false'
         && github.event.action != 'closed'
         && (
           github.actor != 'dependabot[bot]'
@@ -146,7 +147,7 @@ jobs:
           done
 
   teardown:
-    if: ${{ vars.PREVIEW_ENABLED != 'false' && github.event.action == 'closed' }}
+    if: ${{ vars.DEPLOY_PREVIEW_ENABLED != 'false' && github.event.action == 'closed' }}
     name: Teardown preview
     runs-on: ubuntu-latest
     timeout-minutes: 10

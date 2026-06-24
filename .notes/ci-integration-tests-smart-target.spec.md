@@ -35,7 +35,7 @@ gate, the matrix becomes:
 | PR shape                                      | Action            | Target  | `mode` output      |
 | --------------------------------------------- | ----------------- | ------- | ------------------ |
 | API not affected                              | skip              | n/a     | n/a                |
-| API affected, `PREVIEW_ENABLED=false`         | run (kill-switch) | staging | `staging-disabled` |
+| API affected, `DEPLOY_PREVIEW_ENABLED=false`  | run (kill-switch) | staging | `staging-disabled` |
 | API affected, human-authored                  | run               | preview | `preview`          |
 | API affected, Dependabot, no `preview` label  | run (smoke test)  | staging | `staging`          |
 | API affected, Dependabot, has `preview` label | run               | preview | `preview`          |
@@ -47,7 +47,7 @@ gate, the matrix becomes:
 `mode` flows into the on-failure PR comment so the author sees
 the right hint for why their tests ran where they did (e.g. a
 `mode=staging-disabled` failure tells a human author to flip
-`PREVIEW_ENABLED` back on, not to add the `preview` label).
+`DEPLOY_PREVIEW_ENABLED` back on, not to add the `preview` label).
 
 The preview path keeps its 5-minute poll with a **staging
 fallback** if the preview never comes up (deploy failure, Vercel
@@ -137,11 +137,11 @@ tests result. Documented in MAINTAINING.md.
   failures there reliably trace back to the PR.
 - **The gate logic duplicates deploy.yml's.** Both compute
   "should this PR have a preview" via the same three signals:
-  `vars.PREVIEW_ENABLED != 'false'`, `github.actor != 'dependabot[bot]'`,
+  `vars.DEPLOY_PREVIEW_ENABLED != 'false'`, `github.actor != 'dependabot[bot]'`,
   and `contains(labels, 'preview')`. If deploy.yml's gate ever
   changes, integration-tests has to follow. Acceptable for two
   workflows; if a third needs the same signal, extract into a
-  composite. The `PREVIEW_ENABLED` toggle is particularly
+  composite. The `DEPLOY_PREVIEW_ENABLED` toggle is particularly
   important to mirror — without it, flipping the var to `false`
   (the documented kill switch used until the Vercel projects
   exist; see deploy.yml header re: #75) would route deploy.yml
