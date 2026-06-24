@@ -25,12 +25,18 @@ outputs:
   apiClient:
     description: '@rando/api-client affected'
     value: ${{ steps.affected.outputs.apiClient }}
+  brand:
+    description: '@rando/brand affected'
+    value: ${{ steps.affected.outputs.brand }}
   api:
     description: '@rando/api affected (own files OR a runtime dep)'
     value: ${{ steps.affected.outputs.api }}
   web:
     description: '@rando/web affected (own files OR a runtime dep)'
     value: ${{ steps.affected.outputs.web }}
+  admin:
+    description: '@rando/admin affected (own files OR a runtime dep)'
+    value: ${{ steps.affected.outputs.admin }}
 
   # --- aggregates (from dorny/paths-filter) ---
   # File-pattern signals Turbo can't easily express. Used to skip
@@ -98,8 +104,10 @@ runs:
           [config]="@rando/config"
           [auth]="@rando/auth"
           [apiClient]="@rando/api-client"
+          [brand]="@rando/brand"
           [api]="@rando/api"
           [web]="@rando/web"
+          [admin]="@rando/admin"
         )
 
         case "${{ github.event_name }}" in
@@ -121,10 +129,19 @@ runs:
         esac
 
         if [ -n "$FILTER" ]; then
-          # Use `test` (the broadest task that touches every workspace
-          # with a vitest config) so the affected set covers anything
-          # we'd want to upload coverage for.
-          AFFECTED=$(pnpm exec turbo run test --filter="$FILTER" --dry-run=json 2>/dev/null \
+          # Use `typecheck` for affected-detection because every
+          # workspace in the monorepo defines it (not all have `test`
+          # — admin / native / observability / sync / testing / ui
+          # have no test script today). The dry-run's `tasks[].package`
+          # only includes workspaces where the task would actually run,
+          # so picking the right "broadest task that touches every
+          # workspace" is load-bearing for per-workspace gating —
+          # gating admin on `tasks[].package` from a `test` dry-run
+          # would always return false because admin has no test task.
+          # As a belt-and-suspenders, the test-less workspaces also
+          # got no-op `test` scripts; either signal would have caught
+          # the previous bug.
+          AFFECTED=$(pnpm exec turbo run typecheck --filter="$FILTER" --dry-run=json 2>/dev/null \
             | jq -r '[.tasks[].package] | unique | .[]' \
             || echo "")
           echo "::group::Affected workspaces ($FILTER)"

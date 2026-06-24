@@ -8,6 +8,7 @@
     "build": "next build",
     "start": "next start --port 3100",
     "lint": "eslint .",
+    "test": "echo \"no tests yet — add a vitest.config.ts and src/__tests__/ to enable\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {

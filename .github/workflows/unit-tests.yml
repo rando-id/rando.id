@@ -119,6 +119,14 @@ jobs:
           language: TypeScript
           label: packages/api-client
 
+      - name: Upload coverage — packages/brand
+        if: ${{ steps.changes.outputs.brand == 'true' && steps.pr.outputs.trusted == 'true' }}
+        uses: actions/upload-code-coverage@abb5995db9e0199b0e2bb9dbd136fce4cb1ec4d3 # v1.3.0
+        with:
+          file: packages/brand/coverage/cobertura-coverage.xml
+          language: TypeScript
+          label: packages/brand
+
       - name: Upload coverage — apps/api
         if: ${{ steps.changes.outputs.api == 'true' && steps.pr.outputs.trusted == 'true' }}
         uses: actions/upload-code-coverage@abb5995db9e0199b0e2bb9dbd136fce4cb1ec4d3 # v1.3.0
