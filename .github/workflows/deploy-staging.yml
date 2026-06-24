@@ -33,6 +33,13 @@ concurrency:
   group: deploy-staging
   cancel-in-progress: false
 
+# Least-privilege GITHUB_TOKEN. This workflow checks out the repo and
+# calls Vercel/Cloudflare/1P via secrets — none of which need write
+# access to GitHub itself. Explicit `contents: read` overrides whatever
+# the repo-default permissions are.
+permissions:
+  contents: read
+
 jobs:
   deploy:
     if: ${{ vars.DEPLOY_STAGING_ENABLED != 'false' }}
@@ -52,8 +59,8 @@ jobs:
 
       - name: Trigger staging deploys
         # `inputs.ref` is only set via workflow_dispatch. On the push
-        # trigger, it's empty and `rando deploy env` defaults branch to
-        # `staging`. Either path goes through env (CWE-77 prevention).
+        # trigger, it's empty and `rando deploy promote` defaults branch
+        # to `staging`. Either path goes through env (CWE-77 prevention).
         env:
           REF: ${{ inputs.ref }}
           FORCE_COLOR: '1'

@@ -164,7 +164,7 @@ export class VercelDeployProvider implements DeployProvider {
     // values are 'production', 'staging', or a custom env identifier;
     // omitting target gets you a branch-scoped preview URL, which is
     // exactly what `rando deploy branch --stable-url` wants. `rando
-    // deploy env <staging|production>` opts into a named environment.
+    // deploy promote <staging|production>` opts into a named environment.
     const raw = await this.request<VercelDeploymentShape>('POST', '/v13/deployments', {
       name: project.name,
       gitSource: { type: 'github', ref: input.branch, repoId },
