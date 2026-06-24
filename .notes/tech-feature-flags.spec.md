@@ -6,7 +6,7 @@ issue: 200
 # Feature flags via adapter pattern
 
 Rando uses GitHub Actions Variables today for what are
-effectively feature flags — `PREVIEW_ENABLED`, `TRACKER_ENABLED`,
+effectively feature flags — `DEPLOY_PREVIEW_ENABLED`, `TRACKER_ENABLED`,
 `POSTMAN_ENABLED`, `TRACKER_KIND` — read via `vars.X` in
 workflow `if:` expressions. Managing them today means clicking
 through `Settings → Secrets and variables → Actions → Variables`
@@ -14,7 +14,7 @@ in the GitHub UI, or running `gh variable set` with a PAT that
 has the Variables permission.
 
 Discovered while debugging PR #187's deploy-quota-blown state:
-flipping `PREVIEW_ENABLED=false` to halt preview deploys
+flipping `DEPLOY_PREVIEW_ENABLED=false` to halt preview deploys
 required either UI clicks or a freshly-permissioned PAT, both
 slower than the incident response timeline wants.
 
@@ -38,7 +38,7 @@ CI variables is too narrow — it implies the storage backend
 or enum knob that gates a feature). Calling them feature flags
 keeps the interface stable across adapter swaps:
 
-- `PREVIEW_ENABLED` reads the same whether the backend is GH
+- `DEPLOY_PREVIEW_ENABLED` reads the same whether the backend is GH
   Vars or a real flagging service.
 - A future LaunchDarkly adapter wouldn't need to invent a
   rename to feel right.
@@ -90,7 +90,7 @@ implementation):
   "featureFlags": {
     "kind": "github-actions-variables",
     "flags": {
-      "PREVIEW_ENABLED": {
+      "DEPLOY_PREVIEW_ENABLED": {
         "value": "false",
         "description": "Halt all preview deploys (quota saver / incident kill switch)",
       },
@@ -135,7 +135,7 @@ secrets adapter — same pipe that delivers `VERCEL_TOKEN` and
 
 Workflows themselves still reference the backend natively:
 
-- GH-Vars-backed: `if: vars.PREVIEW_ENABLED != 'false'` —
+- GH-Vars-backed: `if: vars.DEPLOY_PREVIEW_ENABLED != 'false'` —
   template-evaluated at workflow start, zero runtime cost.
 - LaunchDarkly-backed: would require a step that calls the LD
   API at workflow start and writes results to step outputs —
@@ -216,7 +216,7 @@ on GH Vars until they too need richer semantics.
 5. `packages/cli/src/setup-config.ts` — add `featureFlags`
    block to the Zod schema
 6. `rando.config.json` — populate with current flags
-   (`PREVIEW_ENABLED`, `TRACKER_ENABLED`, `TRACKER_KIND`,
+   (`DEPLOY_PREVIEW_ENABLED`, `TRACKER_ENABLED`, `TRACKER_KIND`,
    `POSTMAN_ENABLED`) and their current values
 7. `.github/CONTRIBUTING.md` / `.github/MAINTAINING.md` —
    short callout: "feature flags managed via `rando flags`;
