@@ -106,8 +106,17 @@ export interface DeployProvider {
    * Trigger a new deployment for a project from a git branch. Returns
    * immediately with the deployment record — caller polls `getDeployment`
    * until `state === 'ready'` or `'error'`.
+   *
+   * `target` pins the deployment to a vendor environment:
+   *   - omitted → branch-scoped preview (the `rando deploy branch` path).
+   *   - `'staging'` → the staging vendor environment.
+   *   - `'production'` → the production vendor environment.
    */
-  triggerDeployment(input: { projectId: string; branch: string }): Promise<Deployment>
+  triggerDeployment(input: {
+    projectId: string
+    branch: string
+    target?: 'staging' | 'production'
+  }): Promise<Deployment>
 
   /** Fetch the current state of a deployment. */
   getDeployment(input: { deploymentId: string }): Promise<Deployment>

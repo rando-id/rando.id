@@ -138,7 +138,11 @@ export class VercelDeployProvider implements DeployProvider {
     return mapProject(result)
   }
 
-  async triggerDeployment(input: { projectId: string; branch: string }): Promise<Deployment> {
+  async triggerDeployment(input: {
+    projectId: string
+    branch: string
+    target?: 'staging' | 'production'
+  }): Promise<Deployment> {
     // Vercel's create-deployment endpoint needs the linked GitHub repoId,
     // which lives on the project's `link` object. Look it up first.
     const project = await this.request<VercelProjectShape>(
@@ -159,10 +163,12 @@ export class VercelDeployProvider implements DeployProvider {
     // deploys are now inferred from the branch. The accepted target
     // values are 'production', 'staging', or a custom env identifier;
     // omitting target gets you a branch-scoped preview URL, which is
-    // exactly what `rando deploy branch --stable-url` wants.
+    // exactly what `rando deploy branch --stable-url` wants. `rando
+    // deploy env <staging|production>` opts into a named environment.
     const raw = await this.request<VercelDeploymentShape>('POST', '/v13/deployments', {
       name: project.name,
       gitSource: { type: 'github', ref: input.branch, repoId },
+      ...(input.target ? { target: input.target } : {}),
     })
     return mapDeployment(raw, input.branch)
   }

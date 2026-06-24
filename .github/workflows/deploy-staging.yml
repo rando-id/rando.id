@@ -1,0 +1,65 @@
+name: Deploy staging
+
+# Deploys each configured app to the staging Vercel environment on every
+# push to the `staging` branch. `sync-staging.yml` fast-forwards staging
+# from main on every merge to main, so the practical effect is:
+# merge to main → staging fast-forwards → this workflow deploys.
+#
+# This workflow replaces Vercel's native push-to-deploy for the staging
+# branch. Vercel native is disabled per app via
+# `apps/<name>/vercel.json`'s `git.deploymentEnabled.staging: false`
+# AND project-level `previewDeploymentsDisabled` set by
+# `rando infra setup`. See .notes/process-deploy-strategy.spec.md (D1, D2).
+#
+# Secrets are resolved from a 1Password Environment at job start. The only
+# GitHub repo secret you need is `OP_SERVICE_ACCOUNT_TOKEN`.
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: 'Git ref to deploy (default: tip of staging)'
+        required: false
+        type: string
+        default: ''
+
+concurrency:
+  # Serialize staging deploys so back-to-back syncs from main don't race.
+  # cancel-in-progress=false: the running deploy always finishes; a third
+  # push arriving while one is running and another is pending makes GitHub
+  # drop the pending — the newest sync is a superset.
+  group: deploy-staging
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: ${{ vars.DEPLOY_STAGING_ENABLED != 'false' }}
+    name: Deploy staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: ./.github/actions/setup
+        with:
+          install-cli: 'true'
+
+      - uses: ./.github/actions/op-env
+        with:
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - name: Trigger staging deploys
+        # `inputs.ref` is only set via workflow_dispatch. On the push
+        # trigger, it's empty and `rando deploy env` defaults branch to
+        # `staging`. Either path goes through env (CWE-77 prevention).
+        env:
+          REF: ${{ inputs.ref }}
+          FORCE_COLOR: '1'
+        run: |
+          if [ -n "$REF" ]; then
+            rando deploy promote staging --ref "$REF"
+          else
+            rando deploy promote staging
+          fi

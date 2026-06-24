@@ -176,6 +176,35 @@ describe('VercelDeployProvider', () => {
     })
   })
 
+  it('triggerDeployment forwards target when provided (env deploys)', async () => {
+    const stub = stubFetch([
+      {
+        body: {
+          id: 'p1',
+          name: 'rando-api',
+          link: { type: 'github', repoId: 999, repo: 'me/rando', org: 'me' },
+        },
+      },
+      {
+        body: {
+          id: 'dpl_abc',
+          url: 'rando-api.vercel.app',
+          readyState: 'QUEUED',
+        },
+      },
+    ])
+    await adapter(stub).triggerDeployment({
+      projectId: 'p1',
+      branch: 'staging',
+      target: 'staging',
+    })
+    expect(stub.calls[1]?.body).toEqual({
+      name: 'rando-api',
+      gitSource: { type: 'github', ref: 'staging', repoId: 999 },
+      target: 'staging',
+    })
+  })
+
   it('triggerDeployment refuses when project has no linked GitHub repo', async () => {
     const stub = stubFetch([{ body: { id: 'p1', name: 'rando-api', link: null } }])
     await expect(
