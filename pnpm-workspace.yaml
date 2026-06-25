@@ -44,10 +44,13 @@ catalog:
 # their own catalog makes the lockstep relationship structural,
 # not convention.
 catalogs:
-  # Tamagui's runtime + config package version-lock together (a
-  # tamagui v2 won't load a @tamagui/config v1 and vice versa).
-  # Worth catalog'ing now so a future major bump is one PR editing
-  # this block, not a cascade across ui/web/native.
+  # Tamagui ecosystem packages all version-lock together — a
+  # tamagui v2 won't load a v1 config / plugin / theme and vice
+  # versa. Whichever workspace uses them, they share the same
+  # major. Bumping is one PR editing this block, not a cascade.
   tamagui:
     tamagui: ^1.144.0
     '@tamagui/config': ^1.144.0
+    '@tamagui/next-theme': ^1.144.0
+    '@tamagui/next-plugin': ^1.144.0
+    '@tamagui/babel-plugin': ^1.144.0

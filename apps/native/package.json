@@ -40,7 +40,7 @@
     "@babel/core": "^7.26.0",
     "@rando/eslint-config": "workspace:*",
     "@rando/tsconfig": "workspace:*",
-    "@tamagui/babel-plugin": "^1.144.0",
+    "@tamagui/babel-plugin": "catalog:tamagui",
     "@types/react": "catalog:",
     "babel-preset-expo": "~56.0.14",
     "eslint": "catalog:",
