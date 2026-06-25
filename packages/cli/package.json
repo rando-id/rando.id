@@ -26,7 +26,7 @@
     "@rando/eslint-config": "workspace:*",
     "@rando/tsconfig": "workspace:*",
     "@types/node": "^22.10.2",
-    "@vitest/coverage-v8": "^2.1.9",
+    "@vitest/coverage-v8": "^4.1.9",
     "eslint": "^10.5.0",
     "tsx": "^4.19.2",
     "typescript": "^6.0.3",
