@@ -6,10 +6,9 @@ name: Integration tests
 # otherwise — see .notes/ci-integration-tests-smart-target.spec.md.
 #
 # Target matrix (pull_request events):
-#   - API workspace NOT affected                  → skip (existing gate)
-#   - API affected, human-authored                → preview URL (poll, fallback to staging)
-#   - API affected, Dependabot, no label          → staging (smoke test; no polling)
-#   - API affected, Dependabot, `deploy-preview`  → preview URL (poll, fallback to staging)
+#   - API workspace NOT affected            → skip (existing gate)
+#   - API affected, no `deploy-preview`     → staging (smoke test; no polling)
+#   - API affected, `deploy-preview` label  → preview URL (poll, fallback to staging)
 #
 # Other events:
 #   - schedule (nightly cron)                → staging
@@ -98,11 +97,10 @@ jobs:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
       # Resolve the target URL: preview when a preview will exist
-      # (human-authored, OR Dependabot + `deploy-preview` label —
-      # same gate as deploy-preview.yml). Falls back to staging if the
-      # preview never comes up (deploy failure, Vercel quota hit) so
-      # we still get a smoke test instead of a misleading
-      # SUCCESS-with-skip. Spec:
+      # (PR has the `deploy-preview` label — same gate as
+      # deploy-preview.yml). Falls back to staging if the preview never
+      # comes up (deploy failure, Vercel quota hit) so we still get a
+      # smoke test instead of a misleading SUCCESS-with-skip. Spec:
       # .notes/ci-integration-tests-smart-target.spec.md
       - name: Resolve target URL
         if: steps.gate.outputs.skip != 'true'
@@ -110,19 +108,18 @@ jobs:
         # SECURITY: every untrusted-input value used by the script
         # below is plumbed through `env:` so bash sees them as
         # proper environment variables. Inlining `${{ inputs.baseUrl }}`
-        # (or `github.actor`, label names, branch refs) into the
-        # `run:` body would interpolate user-controlled text into
-        # the shell at template-resolution time — a single-quote
-        # in the value breaks out of the quoted string and runs
-        # arbitrary commands BEFORE the URL parser / allowlist
-        # ever fires (CWE-77). Same goes for github.event_name +
-        # vars.DEPLOY_PREVIEW_ENABLED, kept in env for consistency
-        # even though they're enum-class values we control.
+        # (or label names, branch refs) into the `run:` body would
+        # interpolate user-controlled text into the shell at
+        # template-resolution time — a single-quote in the value
+        # breaks out of the quoted string and runs arbitrary commands
+        # BEFORE the URL parser / allowlist ever fires (CWE-77). Same
+        # goes for github.event_name + vars.DEPLOY_PREVIEW_ENABLED,
+        # kept in env for consistency even though they're enum-class
+        # values we control.
         env:
           DISPATCH_URL: ${{ inputs.baseUrl }}
           EVENT_NAME: ${{ github.event_name }}
           DEPLOY_PREVIEW_ENABLED: ${{ vars.DEPLOY_PREVIEW_ENABLED }}
-          ACTOR: ${{ github.actor }}
           LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
           HEAD_REF: ${{ github.head_ref }}
         run: |
@@ -365,7 +362,7 @@ jobs:
             // target mode resolve-target picked.
             const modeNote =
               mode === 'staging'
-                ? `> _Tested against **staging** (Dependabot smoke test — no preview deploy fires for Dependabot PRs without the \`deploy-preview\` label). Failures may reflect main's state, not this PR's bump. Check the [nightly Postman cron run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/workflows/integration-tests.yml) and recent merges before assuming this PR broke it. To target the preview instead, add the \`deploy-preview\` label and re-push._`
+                ? `> _Tested against **staging** (no \`deploy-preview\` label on this PR — preview deploys are opt-in). Failures may reflect main's state, not this PR. Check the [nightly Postman cron run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/workflows/integration-tests.yml) and recent merges before assuming this PR broke it. To target the preview instead, add the \`deploy-preview\` label and re-push._`
                 : mode === 'staging-disabled'
                   ? `> _Tested against **staging** because \`vars.DEPLOY_PREVIEW_ENABLED\` is set to \`false\` repo-wide (used when the Vercel projects don't exist yet — see deploy-preview.yml's header re: #75 — or during a daily-deploy-quota incident). Failures may reflect staging's state, not this PR. Flip \`DEPLOY_PREVIEW_ENABLED\` back on once the situation clears._`
                   : mode === 'staging-fallback'
