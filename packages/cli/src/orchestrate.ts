@@ -253,6 +253,12 @@ async function setupVercelEnv(
       })
     }
 
+    // Pin project-level deploy settings so Vercel's native git
+    // integration doesn't fire deploys behind our back. Every deploy
+    // routes through `rando deploy …` instead. See
+    // .notes/process-deploy-strategy.spec.md (D1).
+    await syncVercelProjectSettings(deps, projectName, project.id, emit)
+
     // Push 1Password env vars to the Vercel project. The set of vars
     // pushed = the intersection of `apps/<app>/.env.example` (declared
     // by the app) and the relevant 1P environment (provides values).
@@ -395,6 +401,62 @@ async function pushVercelEnvVars(
       missing > 0 ? ` (${missing} declared but missing from 1P)` : ''
     }`,
   })
+}
+
+/**
+ * Disable Vercel's native git integration so it stops auto-deploying on
+ * push. After this, the only way deployments fire is `rando deploy …`
+ * (via Vercel's REST API). See .notes/process-deploy-strategy.spec.md
+ * (D1) for the full strategy.
+ *
+ * Two fields pinned:
+ * - `previewDeploymentsDisabled: true` — documented; covers every
+ *   push-triggered preview deploy.
+ * - `gitProviderCreateDeployments: 'disabled'` — undocumented master
+ *   switch surfaced in our probe of `/v10/projects/{id}`; appears to
+ *   cover production-branch pushes too. Belt-and-suspenders alongside
+ *   the documented field.
+ *
+ * Production-branch pushes (`main`, `staging`) are additionally blocked
+ * by each `apps/<name>/vercel.json`'s `git.deploymentEnabled` block —
+ * committed to the repo so the gate survives a fresh project setup
+ * even if the undocumented API field disappears.
+ *
+ * Idempotent: PATCH is a no-op on the Vercel side when the body
+ * matches current state.
+ */
+async function syncVercelProjectSettings(
+  deps: OrchestratorDeps,
+  projectName: string,
+  projectId: string,
+  emit: (event: SetupEvent) => void,
+): Promise<void> {
+  emit({
+    kind: 'step-start',
+    message: `vercel: pinning native-deploy settings on "${projectName}"`,
+  })
+  try {
+    await deps.deploy.updateProjectSettings({
+      projectId,
+      settings: {
+        previewDeploymentsDisabled: true,
+        gitProviderCreateDeployments: 'disabled',
+      },
+    })
+    emit({
+      kind: 'step-done',
+      message: `vercel "${projectName}": native preview + push deploys disabled`,
+    })
+  } catch (e) {
+    // Soft-fail: a settings-sync hiccup shouldn't block the rest of
+    // setup. Surface as a note so the operator can investigate.
+    emit({
+      kind: 'note',
+      message: `vercel "${projectName}": could not pin deploy settings — ${
+        e instanceof Error ? e.message : String(e)
+      }`,
+    })
+  }
 }
 
 // --- destroy --------------------------------------------------------------

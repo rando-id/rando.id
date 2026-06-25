@@ -8,6 +8,7 @@ import type {
   DeployEnvScope,
   DeployEnvVar,
   DeployProject,
+  DeployProjectSettings,
   DeployProvider,
 } from '../domain/deploy'
 
@@ -118,7 +119,30 @@ export class VercelDeployProvider implements DeployProvider {
     await this.request('DELETE', `/v9/projects/${encodeURIComponent(input.projectId)}`)
   }
 
-  async triggerDeployment(input: { projectId: string; branch: string }): Promise<Deployment> {
+  async updateProjectSettings(input: {
+    projectId: string
+    settings: DeployProjectSettings
+  }): Promise<DeployProject> {
+    const body: Record<string, unknown> = {}
+    if (input.settings.previewDeploymentsDisabled !== undefined) {
+      body.previewDeploymentsDisabled = input.settings.previewDeploymentsDisabled
+    }
+    if (input.settings.gitProviderCreateDeployments !== undefined) {
+      body.gitProviderOptions = { createDeployments: input.settings.gitProviderCreateDeployments }
+    }
+    const result = await this.request<VercelProjectShape>(
+      'PATCH',
+      `/v9/projects/${encodeURIComponent(input.projectId)}`,
+      body,
+    )
+    return mapProject(result)
+  }
+
+  async triggerDeployment(input: {
+    projectId: string
+    branch: string
+    target?: 'staging' | 'production'
+  }): Promise<Deployment> {
     // Vercel's create-deployment endpoint needs the linked GitHub repoId,
     // which lives on the project's `link` object. Look it up first.
     const project = await this.request<VercelProjectShape>(
@@ -139,10 +163,12 @@ export class VercelDeployProvider implements DeployProvider {
     // deploys are now inferred from the branch. The accepted target
     // values are 'production', 'staging', or a custom env identifier;
     // omitting target gets you a branch-scoped preview URL, which is
-    // exactly what `rando deploy branch --stable-url` wants.
+    // exactly what `rando deploy branch --stable-url` wants. `rando
+    // deploy promote <staging|production>` opts into a named environment.
     const raw = await this.request<VercelDeploymentShape>('POST', '/v13/deployments', {
       name: project.name,
       gitSource: { type: 'github', ref: input.branch, repoId },
+      ...(input.target ? { target: input.target } : {}),
     })
     return mapDeployment(raw, input.branch)
   }

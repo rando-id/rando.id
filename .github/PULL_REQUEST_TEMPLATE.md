@@ -21,6 +21,7 @@ Closes #
 
 - [ ] `pnpm typecheck`
 - [ ] `pnpm test`
+- [ ] If a Vercel preview is needed to validate this change, I've added the **`deploy-preview`** label (previews are opt-in for all authors; see CONTRIBUTING.md → "Preview deploys are opt-in")
 - [ ]
 
 ## Screenshots / output

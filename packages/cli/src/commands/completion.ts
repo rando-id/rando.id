@@ -26,7 +26,7 @@ const SUBCOMMANDS: Record<string, string[]> = {
   'db branch': ['create', 'list', 'delete'],
   tunnel: ['create', 'list', 'delete', 'token', 'route'],
   'tunnel route': ['add', 'list', 'remove'],
-  deploy: ['app', 'env', 'domain', 'branch'],
+  deploy: ['app', 'env', 'domain', 'branch', 'teardown', 'promote'],
   'deploy app': ['create', 'list', 'delete'],
   'deploy env': ['set', 'list'],
   'deploy domain': ['add', 'remove'],

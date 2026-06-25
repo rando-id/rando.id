@@ -489,7 +489,7 @@ themselves are left alone — Vercel auto-GCs them on its own retention
 schedule.
 
 ```yaml
-# .github/workflows/deploy.yml
+# .github/workflows/deploy-preview.yml
 name: PR preview
 on:
   pull_request:
@@ -539,7 +539,7 @@ Result: each PR gets its own preview URLs at predictable
 `<branch-slug>-<app>.rando-id.dev` and (optionally) a fresh Neon branch.
 Both vanish on PR close.
 
-The repo ships this workflow at [`.github/workflows/deploy.yml`](../../.github/workflows/deploy.yml) —
+The repo ships this workflow at [`.github/workflows/deploy-preview.yml`](../../.github/workflows/deploy-preview.yml) —
 the Neon-branch steps are commented out by default; uncomment + set
 `RANDO_NEON_PROJECT_ID` as a repo variable to enable per-PR Neon
 branches.
@@ -784,7 +784,7 @@ Two workflows handle the lifecycle on PR events:
   `rando issues lifecycle <KEY> in-progress` on opened / synchronize /
   reopened, or `... done --message "Merged in #N (<url>)"` on
   close-with-merged.
-- **`.github/workflows/deploy.yml`** — after the Vercel branch deploy
+- **`.github/workflows/deploy-preview.yml`** — after the Vercel branch deploy
   succeeds, runs `rando issues lifecycle <KEY> in-review --message
 "<deploy urls>"` for each referenced issue.
 
