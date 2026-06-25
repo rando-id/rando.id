@@ -22,7 +22,7 @@
     "@rando/maps": "workspace:*",
     "@rando/observability": "workspace:*",
     "@rando/ui": "workspace:*",
-    "@tamagui/config": "^1.144.0",
+    "@tamagui/config": "catalog:tamagui",
     "@tanstack/react-query": "^5.101.0",
     "expo": "~56.0.8",
     "expo-crypto": "~56.0.4",
@@ -34,16 +34,16 @@
     "react-native": "0.85.3",
     "react-native-safe-area-context": "^5.8.0",
     "react-native-web": "~0.21.0",
-    "tamagui": "^1.144.0"
+    "tamagui": "catalog:tamagui"
   },
   "devDependencies": {
     "@babel/core": "^7.26.0",
     "@rando/eslint-config": "workspace:*",
     "@rando/tsconfig": "workspace:*",
-    "@tamagui/babel-plugin": "^1.144.0",
-    "@types/react": "^19.0.0",
+    "@tamagui/babel-plugin": "catalog:tamagui",
+    "@types/react": "catalog:",
     "babel-preset-expo": "~56.0.14",
-    "eslint": "^9.17.0",
+    "eslint": "catalog:",
     "typescript": "~5.7.2"
   }
 }

@@ -2,3 +2,55 @@ packages:
   - 'apps/*'
   - 'packages/*'
   - 'tooling/*'
+
+# Cross-cutting dev deps live in catalog so a bump is one PR editing
+# one line, not 16 PRs cascading through the lockfile. See
+# .notes/tech-pnpm-catalog.spec.md (Phase 1).
+#
+# Per-workspace overrides remain valid for cases where the catalog
+# version doesn't fit — e.g. apps/native pinning `~5.7.2` for React
+# Native compat, packages/cli on `^10.5.0` for ESLint while the
+# React-side plugin ecosystem catches up (#224).
+catalog:
+  # Type checker — most workspaces are on TS 6 after the 2026-06-25
+  # bump; apps/native keeps its tilde-pinned 5.7.x outside the catalog.
+  typescript: ^6.0.3
+
+  # Test runner + coverage + UI — must move in lockstep (vitest
+  # ecosystem packages share internal types and break across major
+  # boundaries). All three at the same version, always.
+  vitest: ^2.1.9
+  '@vitest/coverage-v8': ^2.1.9
+  '@vitest/ui': ^2.1.9
+
+  # Lint + Node typings.
+  eslint: ^9.39.4
+  '@types/node': ^22.10.2
+
+  # TypeScript script runner.
+  tsx: ^4.22.4
+
+  # React typings — kept in catalog because every React-using
+  # workspace needs them in lockstep with the runtime React version.
+  '@types/react': ^19.0.2
+  '@types/react-dom': ^19.0.2
+
+  # Schema validation — shared across 5 workspaces. Runtime dep,
+  # version drift would mean two schemas can't share a parser type.
+  zod: ^3.25.76
+
+# Named catalogs group deps that MUST move together. Bumping any
+# member of the group requires bumping the rest — putting them in
+# their own catalog makes the lockstep relationship structural,
+# not convention.
+catalogs:
+  # Tamagui ecosystem packages all version-lock together — a
+  # tamagui v2 won't load a v1 config / plugin / theme and vice
+  # versa. Whichever workspace uses them, they share the same
+  # major. Bumping is one PR editing this block, not a cascade.
+  tamagui:
+    tamagui: ^1.144.0
+    '@tamagui/config': ^1.144.0
+    '@tamagui/next-theme': ^1.144.0
+    '@tamagui/next-plugin': ^1.144.0
+    '@tamagui/babel-plugin': ^1.144.0
