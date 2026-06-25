@@ -205,7 +205,7 @@ GitHub Actions uses a 1Password service account to read environments
 non-interactively. One repo secret — `OP_SERVICE_ACCOUNT_TOKEN` — and
 every workflow resolves the rest.
 
-1. Create a service account at <https://my.1password.com/developer-tools/infrastructure-secrets/serviceaccount>. Scope it to the **staging** environment with **read** access. 1Password shows the token (`ops_...`) once — copy it.
+1. Create a service account at <https://my.1password.com/developer-tools/infrastructure-secrets/serviceaccount>. Scope it to **both** the **staging** AND **production** environments with **read** access — every preview, staging, and production deploy workflow uses this same `OP_SERVICE_ACCOUNT_TOKEN`, and `deploy-production.yml` explicitly reads the prod environment. 1Password shows the token (`ops_...`) once — copy it.
 2. Stash the token in 1Password (your Personal vault, since it's a CI bootstrap secret) as `OP_SERVICE_ACCOUNT_TOKEN` with field `credential`.
 3. Push it to GitHub via `rando secrets push`:
 
