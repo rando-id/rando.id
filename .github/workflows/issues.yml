@@ -10,11 +10,11 @@ name: Issues
 #   pull_request: opened, reopened, synchronize → In Progress
 #   pull_request: closed (merged=true)          → Done
 #
-# The branch-deploy → In Review + URL-comment step lives in deploy.yml,
+# The branch-deploy → In Review + URL-comment step lives in deploy-preview.yml,
 # right next to the deploy itself.
 #
 # Auth: GITHUB_TOKEN is auto-provided by Actions. For tracker.kind="jira",
-# Jira credentials are pulled from 1Password (see deploy.yml header).
+# Jira credentials are pulled from 1Password (see deploy-preview.yml header).
 # Only OP_SERVICE_ACCOUNT_TOKEN needs to be a GitHub repo secret.
 
 on:

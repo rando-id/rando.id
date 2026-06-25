@@ -379,25 +379,41 @@ Once Docker is up, DB seeded, and Clerk keys in place:
 
 - **Bugs / feature requests:** use the [issue templates](./ISSUE_TEMPLATE/). For security-sensitive reports, follow [SECURITY.md](./SECURITY.md) instead — do not file a public issue.
 - **PRs:** the [PR template](./PULL_REQUEST_TEMPLATE.md) prompts for the summary, test plan, and ticket reference. Reference the ticket as `Closes #N` / `Refs #N` in the description.
-- **CI:** typecheck + lint run on every push. Human-authored PRs get a Vercel preview URL automatically.
+- **CI:** typecheck + lint + unit tests run on every push. Preview deploys are opt-in — see below.
 
-### Previews for Dependabot PRs (opt-in)
+### Preview deploys are opt-in (all PRs)
 
-To preserve Vercel's free-tier quota (100 deploys/day) for human work,
-**Dependabot PRs skip the preview deploy by default**. Validation comes
-from unit tests + the nightly `integration-tests.yml` run against
-staging. If you're reviewing a Dependabot PR that genuinely needs a
-preview — typically tamagui / next / react / clerk majors where unit
-tests can't tell the whole story — add the `deploy-preview` label:
+To preserve Vercel's free-tier quota (100 deploys/day) for PRs that
+actually need pre-merge validation, **no PR fires a preview by
+default** — including human-authored ones. Add the `deploy-preview`
+label to opt in:
 
 ```bash
 gh pr edit <N> --add-label deploy-preview
 ```
 
-The next sync (push to the branch, comment-rebase, or an empty commit
-trigger) fires the deploy. The `deploy-preview` label persists across
-rebases, so subsequent syncs continue to deploy until you remove it
-or the PR closes. Spec: [`.notes/ci-preview-quota-strategy.spec.md`](../.notes/ci-preview-quota-strategy.spec.md).
+Adding the label fires the deploy immediately (the workflow listens
+on the `labeled` event in addition to `synchronize`); subsequent
+pushes redeploy at `<branch-slug>-<app>.rando-id.dev`. The label
+persists across rebases, so it stays in effect until you remove it
+or close the PR.
+
+**When to add the label:**
+
+- Any UI change you want to view in a browser before merge.
+- API contract changes you want to exercise from a real preview URL
+  (Postman runs against the labeled PR's preview, not staging).
+- Dependency bumps with runtime risk — tamagui / next / react /
+  clerk majors are the usual suspects (see
+  [`.notes/ci-dependabot-triage.md`](../.notes/ci-dependabot-triage.md)).
+
+**When to skip:**
+
+- Pure docs / spec / `.notes/` changes.
+- CI / workflow tweaks (no app code touched).
+- CLI-only changes (`packages/cli`) — there's no app to preview.
+
+Strategy spec: [`.notes/process-deploy-strategy.spec.md`](../.notes/process-deploy-strategy.spec.md) (D3).
 
 ## Code of Conduct
 

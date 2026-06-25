@@ -94,7 +94,7 @@ jobs:
       - name: Trigger production deploys
         # `inputs.ref` is the user-supplied SHA/branch/tag to deploy.
         # Plumbed via env (not template interpolation) for CWE-77
-        # hardening — same pattern as deploy.yml / deploy-staging.yml.
+        # hardening — same pattern as deploy-preview.yml / deploy-staging.yml.
         env:
           REF: ${{ inputs.ref }}
           FORCE_COLOR: '1'
