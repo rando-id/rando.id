@@ -392,10 +392,10 @@ label to opt in:
 gh pr edit <N> --add-label deploy-preview
 ```
 
-The next sync (push to the branch, comment-rebase, or an empty commit
-trigger) fires the deploy at
-`<branch-slug>-<app>.rando-id.dev`. The label persists across rebases,
-so subsequent pushes continue to redeploy until you remove the label
+Adding the label fires the deploy immediately (the workflow listens
+on the `labeled` event in addition to `synchronize`); subsequent
+pushes redeploy at `<branch-slug>-<app>.rando-id.dev`. The label
+persists across rebases, so it stays in effect until you remove it
 or close the PR.
 
 **When to add the label:**

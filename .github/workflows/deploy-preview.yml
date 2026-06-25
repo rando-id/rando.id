@@ -30,7 +30,13 @@ name: Deploy preview
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, closed]
+    # `labeled` lets adding the `deploy-preview` label fire the deploy
+    # immediately, without forcing a re-push. The branch-deploy job's
+    # `if:` filters `labeled` events to ONLY the `deploy-preview` label
+    # so adding unrelated labels (e.g. `bug`) doesn't waste a quota
+    # slot. `unlabeled` deliberately omitted — removing the label
+    # shouldn't tear down the existing preview; `closed` handles cleanup.
+    types: [opened, synchronize, reopened, closed, labeled]
     # NOTE: do NOT add `paths-ignore` here. It would apply to the
     # `closed` event too — if a PR was deployed and then amended to
     # remove all deploy-worthy changes before close, the workflow
@@ -59,6 +65,10 @@ jobs:
       ${{
         vars.DEPLOY_PREVIEW_ENABLED != 'false'
         && github.event.action != 'closed'
+        && (
+          github.event.action != 'labeled'
+          || github.event.label.name == 'deploy-preview'
+        )
         && contains(github.event.pull_request.labels.*.name, 'deploy-preview')
       }}
     name: Deploy preview

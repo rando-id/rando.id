@@ -352,8 +352,9 @@ exchange for predictable quota behavior.
 gh pr edit <N> --add-label deploy-preview
 ```
 
-The next sync (push, rebase, empty commit) fires the deploy. Label
-persists across rebases.
+Adding the label fires the deploy immediately (the workflow listens
+on `labeled` in addition to `synchronize`). Subsequent pushes redeploy.
+Label persists across rebases.
 
 **When to add it:**
 
