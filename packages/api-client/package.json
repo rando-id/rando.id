@@ -18,10 +18,10 @@
   },
   "devDependencies": {
     "@rando/tsconfig": "workspace:*",
-    "@vitest/coverage-v8": "^2.1.9",
+    "@vitest/coverage-v8": "catalog:",
     "openapi-typescript": "^7.4.5",
-    "typescript": "^6.0.3",
-    "vitest": "^2.1.9"
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   },
   "dependencies": {
     "@ts-rest/core": "^3.52.1",

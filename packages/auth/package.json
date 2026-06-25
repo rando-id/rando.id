@@ -20,8 +20,8 @@
   },
   "devDependencies": {
     "@rando/tsconfig": "workspace:*",
-    "@vitest/coverage-v8": "^2.1.9",
-    "typescript": "^5.7.2",
-    "vitest": "^2.1.9"
+    "@vitest/coverage-v8": "catalog:",
+    "typescript": "catalog:",
+    "vitest": "catalog:"
   }
 }

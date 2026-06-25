@@ -19,6 +19,6 @@
   },
   "devDependencies": {
     "@rando/tsconfig": "workspace:*",
-    "typescript": "^5.7.2"
+    "typescript": "catalog:"
   }
 }

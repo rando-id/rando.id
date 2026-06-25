@@ -24,14 +24,14 @@
   },
   "devDependencies": {
     "@stoplight/spectral-cli": "^6.16.0",
-    "@types/node": "^22.10.2",
+    "@types/node": "catalog:",
     "husky": "^9.1.7",
     "lint-staged": "^17.0.7",
     "postman-cli": "^1.39.0",
     "prettier": "^3.4.2",
-    "tsx": "^4.22.4",
+    "tsx": "catalog:",
     "turbo": "^2.3.3",
-    "typescript": "^5.7.2",
+    "typescript": "catalog:",
     "vercel": "^54.14.0"
   },
   "prettier": {
