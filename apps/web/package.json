@@ -43,7 +43,7 @@
     "@types/react-dom": "catalog:",
     "@vitejs/plugin-react": "^4.7.0",
     "@vitest/coverage-v8": "catalog:",
-    "@vitest/ui": "^4.1.8",
+    "@vitest/ui": "catalog:",
     "eslint": "catalog:",
     "jsdom": "^29.1.1",
     "typescript": "catalog:",

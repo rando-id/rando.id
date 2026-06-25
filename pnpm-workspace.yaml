@@ -16,9 +16,12 @@ catalog:
   # bump; apps/native keeps its tilde-pinned 5.7.x outside the catalog.
   typescript: ^6.0.3
 
-  # Test runner + coverage — must move in lockstep.
+  # Test runner + coverage + UI — must move in lockstep (vitest
+  # ecosystem packages share internal types and break across major
+  # boundaries). All three at the same version, always.
   vitest: ^2.1.9
   '@vitest/coverage-v8': ^2.1.9
+  '@vitest/ui': ^2.1.9
 
   # Lint + Node typings.
   eslint: ^9.39.4
