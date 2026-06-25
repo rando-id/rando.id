@@ -31,3 +31,20 @@ catalog:
   # workspace needs them in lockstep with the runtime React version.
   '@types/react': ^19.0.2
   '@types/react-dom': ^19.0.2
+
+  # Schema validation — shared across 5 workspaces. Runtime dep,
+  # version drift would mean two schemas can't share a parser type.
+  zod: ^3.25.76
+
+# Named catalogs group deps that MUST move together. Bumping any
+# member of the group requires bumping the rest — putting them in
+# their own catalog makes the lockstep relationship structural,
+# not convention.
+catalogs:
+  # Tamagui's runtime + config package version-lock together (a
+  # tamagui v2 won't load a @tamagui/config v1 and vice versa).
+  # Worth catalog'ing now so a future major bump is one PR editing
+  # this block, not a cascade across ui/web/native.
+  tamagui:
+    tamagui: ^1.144.0
+    '@tamagui/config': ^1.144.0

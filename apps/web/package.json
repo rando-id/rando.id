@@ -22,14 +22,14 @@
     "@rando/maps": "workspace:*",
     "@rando/observability": "workspace:*",
     "@rando/ui": "workspace:*",
-    "@tamagui/config": "^1.121.6",
+    "@tamagui/config": "catalog:tamagui",
     "@tamagui/next-theme": "^1.121.6",
     "@tanstack/react-query": "^5.101.0",
     "maplibre-gl": "^5.24.0",
     "next": "^15.1.3",
     "react": "^19.0.0",
     "react-dom": "^19.2.7",
-    "tamagui": "^1.121.6"
+    "tamagui": "catalog:tamagui"
   },
   "devDependencies": {
     "@rando/eslint-config": "workspace:*",

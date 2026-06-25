@@ -19,7 +19,7 @@
   },
   "dependencies": {
     "@rando/brand": "workspace:*",
-    "zod": "^3.24.1"
+    "zod": "catalog:"
   },
   "devDependencies": {
     "@rando/tsconfig": "workspace:*",
