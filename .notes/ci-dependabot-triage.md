@@ -207,15 +207,35 @@ surface immediately at typecheck.
 (operator merges 5 bucket-A patches separately in the UI),
 0 opened. Expect ~5 fewer after the bucket-A merges land.
 
-**For next session:**
+**For next session — dev tools sprint (TS + ESLint + Vitest):**
 
-1. Recount the queue. Compare against 49.
-2. Attempt TypeScript 5→6 across the 10 per-workspace singles.
+Treat as one batch — these three travel together (TS strictness
+can break eslint-plugin output; vitest 3's types pull from
+@types/vitest which can clash with TS 6 changes). Land in this
+order so each pass's CI is testing on top of the previous:
+
+1. **Recount the queue.** Compare against 49.
+2. **TypeScript 5→6** — 10 per-workspace singles
+   (#94, #97, #99, #100, #118, #121, #122, #129, #137, #139).
    Strategy: clone one (e.g. #99 /apps/api) locally, run
    `pnpm typecheck` after the bump, fix the strictness fallout.
-   If clean → merge it, then repeat for the other 9. If breaking
-   → write a `.notes/tech-typescript-6-migration.spec.md` capturing
-   the breakage class + the per-workspace mitigations needed.
-3. Sanity-check the vitest 2→3 per-workspace groups (#96, #117,
-   #148-#151, #153, #167, #182 (mixed)) — these should be a clean
-   merge wave once one passes locally.
+   If clean → merge it, then rebase + merge the other 9.
+   If breaking → write `.notes/tech-typescript-6-migration.spec.md`
+   capturing the breakage class + the per-workspace mitigations.
+3. **ESLint 9→10** — 3 PRs (#91 admin, #111 cli, #146 native).
+   Land after TS 6 because typescript-eslint plugin compat
+   matters. Same clone-fix-rebase pattern.
+4. **Vitest 2→3** — 8 per-workspace group PRs (#96 config,
+   #117 cli, #148 web, #149 auth, #150 api-client, #151 api,
+   #153 maps, #167 brand) + the mixed group #182 (db, includes
+   drizzle-orm). Should be a clean merge wave once one passes
+   locally — config changes around `coverage.thresholds` are
+   the most likely friction.
+5. **Defer the 2→3→4 second hop for vitest** to the session
+   after this one. Two majors in flight at once is asking for
+   bisect pain when something breaks.
+
+Out-of-batch but worth picking up if time allows: file the
+`.notes/tech-dev-tools-sprint.spec.md` capturing the overall
+sequencing rationale + any breakage notes that emerge, so
+future-us doesn't re-derive why we went TS → ESLint → Vitest.
