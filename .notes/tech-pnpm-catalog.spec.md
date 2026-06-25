@@ -73,6 +73,20 @@ catalog:
   # workspace needs them in lockstep with the runtime React version.
   '@types/react': ^19.2.3
   '@types/react-dom': ^19.2.3
+
+  # Runtime: shared schema validation. Version drift would mean
+  # workspaces can't trade zod schemas typesafely.
+  zod: ^3.25.76
+
+# Named catalogs group deps that MUST move together. Bumping any
+# member of the group requires bumping the rest — making the
+# lockstep relationship structural, not convention.
+catalogs:
+  # Tamagui's runtime + config package version-lock together; a
+  # tamagui v2 can't load a @tamagui/config v1.
+  tamagui:
+    tamagui: ^1.144.0
+    '@tamagui/config': ^1.144.0
 ```
 
 Each `package.json` references the catalog via the `catalog:`
@@ -94,7 +108,9 @@ cascade. Today's three sweep rounds collapse to zero.
 
 ## What enters the catalog (and what doesn't)
 
-### Phase 1 — dev tooling (this spec's scope)
+### Phase 1 — dev tooling + low-risk lockstep groups (this spec's scope)
+
+**Default catalog** (9 deps with no semantic siblings):
 
 | Dep                 | Workspaces | Catalog? |
 | ------------------- | ---------: | -------- |
@@ -104,36 +120,46 @@ cascade. Today's three sweep rounds collapse to zero.
 | @types/node         |          6 | ✓        |
 | eslint              |          5 | ✓        |
 | @types/react        |          5 | ✓        |
+| zod                 |          5 | ✓        |
 | @types/react-dom    |          3 | ✓        |
 | tsx                 |          3 | ✓        |
 
-These 8 deps account for the bulk of Dependabot churn. Versions
+**Named catalog `tamagui`** (deps that must move atomically):
+
+| Dep             | Workspaces | Catalog?              |
+| --------------- | ---------: | --------------------- |
+| tamagui         |          3 | ✓ (`catalog:tamagui`) |
+| @tamagui/config |          3 | ✓ (`catalog:tamagui`) |
+
+These 11 deps account for the bulk of Dependabot churn. Versions
 already aligned across workspaces today (no app-specific pins),
-so the migration is a syntactic swap.
+so the migration is a syntactic swap. Tamagui gets its own named
+catalog because tamagui + @tamagui/config version-lock at runtime
+(v2 of one won't load v1 of the other); putting them in the same
+named block makes the lockstep structural rather than
+convention.
 
 ### Phase 2 — app framework deps (separate spec / issue)
 
-| Dep             | Workspaces | Notes                                                       |
-| --------------- | ---------: | ----------------------------------------------------------- |
-| react           |          5 | Catalog candidate but check native vs web peer ranges first |
-| react-dom       |          4 | Lockstep with react                                         |
-| next            |          3 | Used by api / admin / web                                   |
-| @clerk/nextjs   |          3 | Just bumped to v7 — wait for stability                      |
-| tamagui         |          3 | Verify @tamagui/config tracks tamagui major                 |
-| @tamagui/config |          3 | Lockstep with tamagui                                       |
+| Dep           | Workspaces | Notes                                                       |
+| ------------- | ---------: | ----------------------------------------------------------- |
+| react         |          5 | Catalog candidate but check native vs web peer ranges first |
+| react-dom     |          4 | Lockstep with react                                         |
+| next          |          3 | App-router majors benefit from per-app validation cadence   |
+| @clerk/nextjs |          3 | Just bumped to v7 — wait for stability                      |
 
-Deferred to a separate spec because:
+Deferred because:
 
-- React Native version constraints differ from web (apps/native uses
-  `~5.7.2` tilde for typescript today; phase 1 doesn't change that
-  because catalog still allows per-workspace overrides via explicit
-  versions when needed).
-- Recent major bumps (Clerk 6→7) might want a settling period before
-  catalog'ing.
+- React Native version constraints differ from web (apps/native
+  is Expo-coupled; catalog'ing react risks breaking that boundary).
+- Next.js majors are app-router migrations — catalog would force
+  api/admin/web to succeed-or-fail together; per-workspace lets
+  us land them sequentially.
+- Recent Clerk 6→7 majors want a settling period before catalog'ing.
 
-### Phase 3 — runtime deps (low priority)
+### Phase 3 — remaining runtime deps (low priority)
 
-`zod` (5 workspaces) and `@tanstack/react-query` (2). Runtime
+`@tanstack/react-query` (2 workspaces). Runtime
 semantics matter; catalog'ing isn't urgent until we see actual
 version drift causing bugs.
 
