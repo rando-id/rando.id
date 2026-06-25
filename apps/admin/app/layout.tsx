@@ -1,6 +1,6 @@
 import Image from 'next/image'
 import Link from 'next/link'
-import { ClerkProvider, SignedIn, SignedOut, SignInButton, UserButton } from '@clerk/nextjs'
+import { ClerkProvider, Show, SignInButton, UserButton } from '@clerk/nextjs'
 import { lightColors } from '@rando/brand'
 import logo from '@rando/brand/assets/v0/logo/logo-transparent.png'
 
@@ -10,7 +10,7 @@ export const metadata = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <ClerkProvider>
+    <ClerkProvider afterSignOutUrl="/sign-in">
       <html lang="en">
         <body
           style={{
@@ -49,12 +49,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
               </span>
             </Link>
             <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-              <SignedOut>
+              <Show when="signed-out">
                 <SignInButton mode="modal" />
-              </SignedOut>
-              <SignedIn>
-                <UserButton afterSignOutUrl="/sign-in" />
-              </SignedIn>
+              </Show>
+              <Show when="signed-in">
+                <UserButton />
+              </Show>
             </div>
           </header>
           {children}
