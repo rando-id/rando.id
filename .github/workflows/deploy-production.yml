@@ -26,6 +26,13 @@ name: Deploy production
 #
 # Secrets are resolved from a 1Password Environment at job start. The
 # only GitHub repo secret needed is `OP_SERVICE_ACCOUNT_TOKEN`.
+#
+# **The 1P service account behind that token MUST have read access to
+# the production environment** (id `ma4jp2piap7otpnnpvqmc4cgkq`), in
+# addition to staging. The `.github/CONTRIBUTING.md` setup instructions
+# call this out — if you set the SA up before this workflow landed,
+# go back to 1P and add production to its scope. Without it, op-env
+# fails with a permissions error before the deploy step runs.
 
 on:
   workflow_dispatch:
