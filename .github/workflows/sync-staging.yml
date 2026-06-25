@@ -1,0 +1,65 @@
+name: Sync staging
+
+# Keeps `staging` branch fast-forwarded to `main` on every push to
+# main, so Vercel's staging deploy never falls behind. Spec:
+# .notes/ci-staging-auto-sync.spec.md.
+#
+# Fast-forward only by default — if staging has diverged (commits
+# not on main), the push fails and surfaces a clear error rather
+# than silently overwriting work. For recovery from a known-stale
+# divergence (e.g. an accidental direct push to staging), trigger
+# via the Actions UI with `force: true`.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Force-push main onto staging (overwrites divergent commits)'
+        required: false
+        type: boolean
+        default: false
+
+concurrency:
+  # Serialize so back-to-back merges to main don't race each other.
+  # cancel-in-progress=false: the running sync always finishes
+  # (staging is never left mid-push). If a third merge arrives while
+  # one is running and another is pending, GitHub drops the pending
+  # one — that's fine because the newest sync is a superset.
+  group: sync-staging
+  cancel-in-progress: false
+
+jobs:
+  fast-forward:
+    name: Fast-forward staging
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      # Required to push to refs/heads/staging via the default
+      # GITHUB_TOKEN. No PAT needed.
+      contents: write
+    steps:
+      - uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # Need full history so the push knows the ancestry. Default
+          # shallow clone (depth=1) would refuse the fast-forward.
+          fetch-depth: 0
+
+      - name: Push main → staging
+        env:
+          FORCE: ${{ inputs.force }}
+        run: |
+          set -e
+          if [ "$FORCE" = "true" ]; then
+            echo "::warning::Force-push requested via workflow_dispatch — staging will be overwritten regardless of divergence."
+            git push --force origin HEAD:refs/heads/staging
+          else
+            # Plain push fails if staging has commits that aren't on
+            # main — exactly what we want (no silent data loss).
+            if ! git push origin HEAD:refs/heads/staging 2>&1; then
+              echo "::error title=staging sync failed::Fast-forward push to staging refused. Staging may have diverged from main. To recover: (1) inspect `git log origin/main..origin/staging` to see what's on staging that isn't on main; (2) if the divergent commits are stale, re-run this workflow with force=true via Actions → Sync staging → Run workflow; (3) otherwise, rebase the divergent work onto main and merge through the normal PR flow. See .notes/ci-staging-auto-sync.spec.md for the design rationale."
+              exit 1
+            fi
+          fi
+          echo "✓ staging now matches main at $(git rev-parse HEAD)"

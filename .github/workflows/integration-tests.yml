@@ -1,32 +1,33 @@
 name: Integration tests
 
 # Runs the Postman collection (postman/rando-api.postman_collection.json)
-# via the official Postman CLI against the PR's stable preview URL on
-# every pull_request event, and against staging nightly. Also lints
-# the OpenAPI spec via `postman api lint`. Collection-as-code: tests
-# live in the JSON file, reviewed in PRs alongside the contract
-# change that motivated them.
+# via the official Postman CLI against a deployed API. Smart targeting
+# picks the PR's preview when one is expected, falls back to staging
+# otherwise — see .notes/ci-integration-tests-smart-target.spec.md.
 #
-# On PR events:
-#   - Computes <branch-slug>-api.<nonProd-zone> (matches the URL
-#     `rando deploy branch --stable-url` builds in deploy.yml).
-#   - Polls /v1/health on that URL for up to 5 minutes. If it never
-#     comes up (no preview was deployed, or the deploy failed), the
-#     job emits a notice and exits successfully — we don't fail PRs
-#     for preview-deploy issues.
-#   - Runs `pnpm test:api` against the preview URL.
-#   - Runs `pnpm spec:lint` against the preview URL.
-#   - On failure, posts a comment on the PR with the failure count.
+# Target matrix (pull_request events):
+#   - API workspace NOT affected            → skip (existing gate)
+#   - API affected, no `deploy-preview`     → staging (smoke test; no polling)
+#   - API affected, `deploy-preview` label  → preview URL (poll, fallback to staging)
 #
-# Nightly:
-#   - Same flow against staging-api.rando-id.dev.
+# Other events:
+#   - schedule (nightly cron)                → staging
+#   - workflow_dispatch with inputs.baseUrl  → that URL
 #
-# Required: `POSTMAN_API_KEY` env var (auto-loaded from the staging
-# 1Password Environment via `op environment read`) — both
-# `collection run` and `api lint` need it to authenticate.
+# When the preview path falls back to staging, the workflow still
+# succeeds but emits a ::warning::. The underlying deploy failure
+# shows up on the `Vercel – rando-api` check and the `Deploy preview`
+# workflow rollup — those are the sources of truth for deploy health,
+# not this workflow.
+#
+# Items expected in the staging 1Password Environment (loaded by
+# `op-env` before resolve-target so the bypass header is available):
+#   - POSTMAN_API_KEY                — `collection run` + `api lint` auth
+#   - VERCEL_AUTOMATION_BYPASS_SECRET — passes Vercel Deployment
+#     Protection on preview URLs; see .notes/ci-vercel-protection-bypass.spec.md
 #
 # vars.POSTMAN_ENABLED=false disables the workflow without removing
-# it (matches the issues.yml + deploy.yml pattern).
+# it (matches the issues.yml + deploy-preview.yml pattern).
 
 on:
   pull_request:
@@ -67,80 +68,261 @@ jobs:
       # against staging or a user-specified URL, not the PR's preview.
       - name: Skip when no API code touched
         id: gate
+        env:
+          # github.event_name + steps.changes.outputs.api are both
+          # enum-class / our-own-composite values (not user-controlled),
+          # but plumbing them via env: matches the pattern the rest
+          # of this workflow uses for shell-interpolated values and
+          # makes future audits easier.
+          EVENT_NAME: ${{ github.event_name }}
+          API_CHANGED: ${{ steps.changes.outputs.api }}
         run: |
-          if [ "${{ github.event_name }}" = "pull_request" ] && [ "${{ steps.changes.outputs.api }}" != "true" ]; then
+          if [ "$EVENT_NAME" = "pull_request" ] && [ "$API_CHANGED" != "true" ]; then
             echo "skip=true" >> "$GITHUB_OUTPUT"
             echo "::notice title=Integration tests skipped::No API code (or its deps) changed in this PR."
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
           fi
 
-      - name: Compute target URL
-        if: steps.gate.outputs.skip != 'true'
-        id: target
-        run: |
-          if [ -n "${{ inputs.baseUrl }}" ]; then
-            URL="${{ inputs.baseUrl }}"
-          elif [ "${{ github.event_name }}" = "schedule" ]; then
-            URL="https://staging-api.rando-id.dev"
-          else
-            # Same slug logic as packages/cli/src/commands/deploy.ts:slugifyBranch —
-            # lowercase, non-alphanum collapsed to '-', leading/trailing '-' stripped.
-            SLUG=$(echo "${{ github.head_ref }}" \
-              | tr '[:upper:]' '[:lower:]' \
-              | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
-            URL="https://${SLUG}-api.rando-id.dev"
-          fi
-          echo "url=${URL}" >> "$GITHUB_OUTPUT"
-          echo "Target: ${URL}"
-
-      - name: Wait for target URL to be reachable
-        if: steps.gate.outputs.skip != 'true'
-        id: wait
-        run: |
-          # Poll /v1/health for up to 5 minutes (30 × 10s). The deploy
-          # workflow runs in parallel and typically takes 2-4 minutes;
-          # nightly runs against staging which is always up.
-          URL="${{ steps.target.outputs.url }}"
-          for i in $(seq 1 30); do
-            code=$(curl -s -o /dev/null -w "%{http_code}" --max-time 5 "${URL}/v1/health" || echo "000")
-            if [ "$code" = "200" ]; then
-              echo "ready=true" >> "$GITHUB_OUTPUT"
-              echo "${URL} responding 200 on attempt $i"
-              exit 0
-            fi
-            echo "attempt $i: ${URL}/v1/health → ${code}, retrying in 10s..."
-            sleep 10
-          done
-          echo "ready=false" >> "$GITHUB_OUTPUT"
-
-      - name: Skip if target not ready
-        if: steps.gate.outputs.skip != 'true' && steps.wait.outputs.ready != 'true'
-        run: |
-          echo "::notice title=Integration tests skipped::Target URL ${{ steps.target.outputs.url }} did not respond 200 on /v1/health within 5 minutes — likely no preview was deployed, or the deploy failed. Not failing the PR."
-
+      # Load the staging 1Password Environment BEFORE resolving the
+      # target URL so $VERCEL_AUTOMATION_BYPASS_SECRET is available to
+      # the /v1/health poll. The poll has to send the bypass header to
+      # get past Vercel's Deployment Protection on preview URLs (which
+      # would otherwise 302 to vercel.com/sso-api for every request).
+      # See .notes/ci-vercel-protection-bypass.spec.md.
       - name: Load 1Password Environment
-        if: steps.gate.outputs.skip != 'true' && steps.wait.outputs.ready == 'true'
+        if: steps.gate.outputs.skip != 'true'
         uses: ./.github/actions/op-env
         with:
           service-account-token: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
 
+      # Resolve the target URL: preview when a preview will exist
+      # (PR has the `deploy-preview` label — same gate as
+      # deploy-preview.yml). Falls back to staging if the preview never
+      # comes up (deploy failure, Vercel quota hit) so we still get a
+      # smoke test instead of a misleading SUCCESS-with-skip. Spec:
+      # .notes/ci-integration-tests-smart-target.spec.md
+      - name: Resolve target URL
+        if: steps.gate.outputs.skip != 'true'
+        id: target
+        # SECURITY: every untrusted-input value used by the script
+        # below is plumbed through `env:` so bash sees them as
+        # proper environment variables. Inlining `${{ inputs.baseUrl }}`
+        # (or label names, branch refs) into the `run:` body would
+        # interpolate user-controlled text into the shell at
+        # template-resolution time — a single-quote in the value
+        # breaks out of the quoted string and runs arbitrary commands
+        # BEFORE the URL parser / allowlist ever fires (CWE-77). Same
+        # goes for github.event_name + vars.DEPLOY_PREVIEW_ENABLED,
+        # kept in env for consistency even though they're enum-class
+        # values we control.
+        env:
+          DISPATCH_URL: ${{ inputs.baseUrl }}
+          EVENT_NAME: ${{ github.event_name }}
+          DEPLOY_PREVIEW_ENABLED: ${{ vars.DEPLOY_PREVIEW_ENABLED }}
+          LABELS_JSON: ${{ toJson(github.event.pull_request.labels.*.name) }}
+          HEAD_REF: ${{ github.head_ref }}
+        run: |
+          set -e
+          STAGING="https://staging-api.rando-id.dev"
+          if [ -n "$DISPATCH_URL" ]; then
+            # workflow_dispatch accepts an arbitrary baseUrl. Validate
+            # the host against an allowlist of trusted Vercel-bound
+            # domains (and localhost for local debug). For anything
+            # else, scrub VERCEL_AUTOMATION_BYPASS_SECRET from
+            # GITHUB_ENV so downstream steps (curl poll, Postman run,
+            # spec-lint fetch) can't leak the bypass to a third-party
+            # host — even if a maintainer dispatches with a malicious
+            # baseUrl.
+            #
+            # IMPORTANT: parse with node's URL implementation, NOT a
+            # regex. A regex like `s|^https?://([^/:]+).*|\1|` extracts
+            # everything up to the first `:` or `/`, which a userinfo
+            # URL like `https://trusted.rando-id.dev:443@evil.example`
+            # can bypass — the regex returns the trusted-looking
+            # userinfo, but curl/Postman actually connect to
+            # `evil.example`. node's WHATWG URL parser puts the host
+            # in `u.hostname` regardless of userinfo, and we
+            # explicitly reject any userinfo / non-http(s) scheme so
+            # malformed inputs fail fast instead of silently degrading.
+            HOST=$(URL="$DISPATCH_URL" node -e '
+              try {
+                const input = process.env.URL;
+                // WHATWG URL parser SILENTLY STRIPS tab/CR/LF from
+                // input before parsing (per spec). That means an input
+                // like "https://a.rando-id.dev\n.evil.example" parses
+                // to hostname "a.rando-id.dev.evil.example" (the
+                // newline disappears, the segments merge). Our suffix
+                // allowlist would correctly reject that example, but
+                // we never want stripping behavior masking what the
+                // dispatcher actually typed — reject any URL that
+                // contained a tab/CR/LF and force the dispatcher to
+                // submit a clean string.
+                if (/[\t\n\r]/.test(input)) {
+                  console.error("URL contains tab/CR/LF; refusing to apply WHATWG strip-and-parse behavior");
+                  process.exit(2);
+                }
+                const u = new URL(input);
+                if (u.username || u.password) {
+                  console.error("userinfo (username/password) is not permitted in workflow_dispatch baseUrl");
+                  process.exit(2);
+                }
+                if (u.protocol !== "http:" && u.protocol !== "https:") {
+                  console.error("only http(s) schemes are permitted; got " + u.protocol);
+                  process.exit(2);
+                }
+                if (!u.hostname) {
+                  console.error("URL has no hostname");
+                  process.exit(2);
+                }
+                // Plaintext HTTP would expose VERCEL_AUTOMATION_BYPASS_SECRET
+                // to network observers if the dispatch URL points at a
+                // remote allowlisted host. Only permit `http:` for
+                // loopback debugging (localhost / 127.0.0.1) — every
+                // other allowlisted host MUST use HTTPS (CWE-319).
+                if (
+                  u.protocol === "http:" &&
+                  u.hostname !== "localhost" &&
+                  u.hostname !== "127.0.0.1"
+                ) {
+                  console.error("plaintext http:// is only permitted for localhost/127.0.0.1; remote hosts must use https://");
+                  process.exit(2);
+                }
+                process.stdout.write(u.hostname);
+              } catch (e) {
+                console.error("not a valid URL: " + e.message);
+                process.exit(2);
+              }
+            ') || {
+              # NOTE: DISPATCH_URL is from an env var, NOT inlined via
+              # ${{ ... }} — so even if it contains shell metacharacters
+              # the worst that happens is they appear in the error
+              # message verbatim. printf %s prevents echo from
+              # interpreting backslash escapes.
+              printf '::error::workflow_dispatch baseUrl rejected: %s — see the error above. Refusing to proceed (avoids credential leak via malformed URLs).\n' "$DISPATCH_URL"
+              exit 1
+            }
+            case "$HOST" in
+              *.rando-id.dev|*.rando.id|localhost|127.0.0.1)
+                printf 'Target: %s (workflow_dispatch input; host %s in trusted allowlist — bypass header retained)\n' "$DISPATCH_URL" "$HOST"
+                ;;
+              *)
+                printf "::warning::Dispatch target host '%s' is NOT in the trusted allowlist (*.rando-id.dev, *.rando.id, localhost). Stripping VERCEL_AUTOMATION_BYPASS_SECRET to prevent credential leakage; tests will run without the bypass header.\n" "$HOST"
+                # Empty the var in GITHUB_ENV so subsequent steps
+                # (curl / Postman / spec-lint) read an empty value
+                # and skip the header. This overrides the value
+                # loaded by op-env above.
+                echo "VERCEL_AUTOMATION_BYPASS_SECRET=" >> "$GITHUB_ENV"
+                ;;
+            esac
+            # url= writes to GITHUB_OUTPUT. By this point DISPATCH_URL
+            # has been validated by the node block above: userinfo /
+            # non-http(s) / plaintext-http-to-remote-host / tab-CR-LF
+            # all rejected, so the value is safe to forward verbatim.
+            # The tab-CR-LF reject in particular guarantees no embedded
+            # newlines can land in GITHUB_OUTPUT here (the WHATWG URL
+            # parser strips them silently — we don't rely on that, we
+            # reject before parsing). printf '%s\n' over echo is
+            # defense-in-depth: explicit format string, no backslash
+            # interpretation regardless of the shell.
+            printf 'url=%s\n' "$DISPATCH_URL" >> "$GITHUB_OUTPUT"
+            echo "mode=dispatch" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          # Non-PR events with no explicit URL → staging. Covers both
+          # the nightly cron AND `workflow_dispatch` triggered without
+          # a `baseUrl` input. Without this, dispatch-without-input
+          # would fall through to the PR path where `github.head_ref`
+          # is empty, producing an invalid `https://-api.rando-id.dev`
+          # URL that polls for 5 minutes before falling back.
+          if [ "$EVENT_NAME" != "pull_request" ]; then
+            echo "url=${STAGING}" >> "$GITHUB_OUTPUT"
+            echo "mode=staging" >> "$GITHUB_OUTPUT"
+            printf 'Target: %s (%s without explicit URL)\n' "$STAGING" "$EVENT_NAME"
+            exit 0
+          fi
+          # PR event with API workspace affected. Predict whether
+          # deploy-preview.yml will fire a preview using the same label
+          # gate, then poll if so; fall back to staging on timeout. The
+          # staging path skips polling entirely.
+          #
+          # Parity with deploy-preview.yml: include the
+          # DEPLOY_PREVIEW_ENABLED toggle so flipping it to 'false'
+          # (used during a Vercel daily-quota incident) routes straight
+          # to staging instead of polling for a preview that won't be
+          # coming. Uses a distinct `mode=staging-disabled` so the
+          # failure-comment renders the right hint.
+          if [ "$DEPLOY_PREVIEW_ENABLED" = "false" ]; then
+            echo "url=${STAGING}" >> "$GITHUB_OUTPUT"
+            echo "mode=staging-disabled" >> "$GITHUB_OUTPUT"
+            echo "Target: ${STAGING} (vars.DEPLOY_PREVIEW_ENABLED=false; no preview will fire)"
+            exit 0
+          fi
+          HAS_DEPLOY_PREVIEW_LABEL=$(jq -e '. | index("deploy-preview")' <<<"$LABELS_JSON" >/dev/null 2>&1 && echo true || echo false)
+          if [ "$HAS_DEPLOY_PREVIEW_LABEL" != "true" ]; then
+            # No preview will fire (PR lacks the `deploy-preview` label
+            # — post-D3, every author opts in explicitly). Smoke test
+            # staging instead — catches contract regressions on merged
+            # main without burning 5 min of polling.
+            echo "url=${STAGING}" >> "$GITHUB_OUTPUT"
+            echo "mode=staging" >> "$GITHUB_OUTPUT"
+            echo "Target: ${STAGING} (no 'deploy-preview' label — smoke test)"
+            exit 0
+          fi
+          # Preview is expected. Same slug logic as
+          # packages/cli/src/commands/deploy.ts:slugifyBranch.
+          # HEAD_REF is a branch name — git generally restricts these
+          # to safe chars, but we run it through `tr` + `sed` which
+          # collapse anything non-alphanumeric to '-' before it ends
+          # up in a URL, so even an injection-style value couldn't
+          # produce an attacker-controlled URL here.
+          SLUG=$(printf '%s' "$HEAD_REF" \
+            | tr '[:upper:]' '[:lower:]' \
+            | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
+          PREVIEW="https://${SLUG}-api.rando-id.dev"
+          echo "Polling preview ${PREVIEW} for up to 5 minutes…"
+          # x-vercel-protection-bypass lets us through Vercel's
+          # Deployment Protection (otherwise we'd 302 to vercel.com/
+          # sso-api on every probe). If the secret is unset locally
+          # or in a fork PR, the empty-value header is ignored by
+          # Vercel and we fall through to the staging-fallback path
+          # naturally — see .notes/ci-vercel-protection-bypass.spec.md.
+          if [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]; then
+            echo "::warning::VERCEL_AUTOMATION_BYPASS_SECRET unset — preview poll will hit Deployment Protection (302) and fall back to staging. See .notes/ci-vercel-protection-bypass.spec.md for the one-time setup."
+          fi
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w "%{http_code}" \
+              -H "x-vercel-protection-bypass: ${VERCEL_AUTOMATION_BYPASS_SECRET:-}" \
+              --max-time 5 "${PREVIEW}/v1/health" || echo "000")
+            if [ "$code" = "200" ]; then
+              echo "url=${PREVIEW}" >> "$GITHUB_OUTPUT"
+              echo "mode=preview" >> "$GITHUB_OUTPUT"
+              echo "Target: ${PREVIEW} (responding on attempt $i)"
+              exit 0
+            fi
+            echo "attempt $i: ${PREVIEW}/v1/health → ${code}, retrying in 10s..."
+            sleep 10
+          done
+          echo "::warning::Preview ${PREVIEW} never responded 200 on /v1/health within 5 minutes — falling back to ${STAGING}. Check the 'Vercel – rando-api' check / 'Deploy preview' workflow for the underlying cause."
+          echo "url=${STAGING}" >> "$GITHUB_OUTPUT"
+          echo "mode=staging-fallback" >> "$GITHUB_OUTPUT"
+
       - name: Run Postman collection against target
-        if: steps.gate.outputs.skip != 'true' && steps.wait.outputs.ready == 'true'
+        if: steps.gate.outputs.skip != 'true'
         env:
           BASE_URL: ${{ steps.target.outputs.url }}
           FORCE_COLOR: '1'
         run: pnpm test:api
 
       - name: Lint OpenAPI spec
-        if: steps.gate.outputs.skip != 'true' && steps.wait.outputs.ready == 'true'
+        if: steps.gate.outputs.skip != 'true'
         env:
           SPEC_URL: ${{ steps.target.outputs.url }}/v1/openapi.json
           FORCE_COLOR: '1'
         run: pnpm spec:lint
 
       - name: Upload JUnit report
-        if: always() && steps.gate.outputs.skip != 'true' && steps.wait.outputs.ready == 'true'
+        if: always() && steps.gate.outputs.skip != 'true'
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: postman-results
@@ -149,8 +331,18 @@ jobs:
           if-no-files-found: ignore
 
       - name: Comment on PR with failures
-        if: failure() && steps.gate.outputs.skip != 'true' && github.event_name == 'pull_request' && steps.wait.outputs.ready == 'true'
+        if: failure() && steps.gate.outputs.skip != 'true' && github.event_name == 'pull_request'
         uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+        # `target` here can include the user-supplied dispatch URL,
+        # which has been URL-parser-validated upstream but is still
+        # untrusted text. Plumbing it through `env` (rather than
+        # interpolating `${{ steps.target.outputs.url }}` into the
+        # JS string literal) prevents a single-quote from breaking
+        # out of the literal and executing arbitrary code inside
+        # the actions/github-script vm. Same for `mode`.
+        env:
+          TARGET: ${{ steps.target.outputs.url }}
+          MODE: ${{ steps.target.outputs.mode }}
         with:
           script: |
             const fs = require('fs')
@@ -161,12 +353,28 @@ jobs:
               failures = (xml.match(/<failure /g) || []).length
               total = (xml.match(/<testcase /g) || []).length
             } catch {}
-            const target = '${{ steps.target.outputs.url }}'
+            const target = process.env.TARGET
+            const mode = process.env.MODE
             const run = `${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`
+            // Help the author distinguish "your bump broke something"
+            // from "main / staging is broken and your PR ran against
+            // it." The body of the comment changes based on which
+            // target mode resolve-target picked.
+            const modeNote =
+              mode === 'staging'
+                ? `> _Tested against **staging** (no \`deploy-preview\` label on this PR — preview deploys are opt-in). Failures may reflect main's state, not this PR. Check the [nightly Postman cron run](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/workflows/integration-tests.yml) and recent merges before assuming this PR broke it. To target the preview instead, add the \`deploy-preview\` label and re-push._`
+                : mode === 'staging-disabled'
+                  ? `> _Tested against **staging** because \`vars.DEPLOY_PREVIEW_ENABLED\` is set to \`false\` repo-wide (used when the Vercel projects don't exist yet — see deploy-preview.yml's header re: #75 — or during a daily-deploy-quota incident). Failures may reflect staging's state, not this PR. Flip \`DEPLOY_PREVIEW_ENABLED\` back on once the situation clears._`
+                  : mode === 'staging-fallback'
+                    ? `> _Targeted this PR's preview but it never came up; **fell back to staging**. The real deploy failure lives in the [\`Deploy preview\`](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/workflows/deploy-preview.yml) workflow rollup (filter by this PR's branch) and the \`Vercel – rando-api\` check — that's where to look before debugging Postman failures._`
+                    : mode === 'dispatch'
+                      ? `> _Workflow was dispatched manually against a custom URL._`
+                      : null // preview / staging (cron) — no extra note
             const body = [
               `## Integration tests failed`,
               ``,
               `**${failures} of ${total} assertion(s) failed** running the Postman collection against \`${target}\`.`,
+              ...(modeNote ? [``, modeNote] : []),
               ``,
               `Full output: ${run}`,
               ``,

@@ -10,6 +10,7 @@
     "./tamagui.config": "./src/tamagui.config.ts"
   },
   "scripts": {
+    "test": "echo \"no tests yet — add a vitest.config.ts and src/__tests__/ to enable\"",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
@@ -20,10 +21,10 @@
   "devDependencies": {
     "@rando/tsconfig": "workspace:*",
     "@types/react": "^19.0.2",
-    "react": "^19.0.0",
+    "react": "^19.2.7",
     "typescript": "^5.7.2"
   },
   "peerDependencies": {
-    "react": "^19.0.0"
+    "react": "^19.2.7"
   }
 }

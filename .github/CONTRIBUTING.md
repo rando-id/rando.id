@@ -80,20 +80,25 @@ three 1Password **Environments** — one per deploy environment — so
 
 ### Environments (NOT Vaults — read this twice)
 
-1Password has two distinct features with similar names:
+1Password has two distinct features that look related but aren't:
 
-- **Vaults** — the standard container. Items live here. Referenced as `op://<vault-id>/<item>/<field>`. Service accounts read from vaults.
-- **Environments** — a SecretMgr feature that groups items by deploy environment. Referenced as `op://<env-id>/...` (user accounts only) or read in bulk via `op environment read <env-id>` (works for service accounts).
+- **Vaults** — the standard container, the one you've probably used. Items live here, each with custom fields (`username`, `password`, `credential`, custom-named, etc.). Referenced as `op://<vault-id>/<item>/<field>`.
+- **Environments** — a SecretMgr feature, **flat KEY=VALUE pairs**. No items, no fields, no titles — just a bundle of env vars. Read in bulk via `op environment read <env-id>` (dumps `KEY=VALUE` lines). `op://<env-id>/...` syntax does **not** work — the op CLI rejects with "This operation cannot be performed on 1Password Environments."
 
-Rando uses **Environments** because the local/staging/prod separation
-maps cleanly onto them, and service accounts can be scoped to a
-single environment for safety. Account UUID + environment IDs are
-pinned in `rando.config.json` → `secrets`.
+Rando uses **Environments** for the deploy-env credential bundles
+(`local` / `staging` / `prod`) because:
+
+1. Service accounts can be scoped to a single Environment for safety
+2. CI workflows want everything-at-once via `op environment read`, not per-secret lookups
+3. The KEY=VALUE-only model matches how env vars actually work
+
+Account UUID + Environment IDs pinned in `rando.config.json` →
+`secrets.environments`.
 
 How they're accessed:
 
-- **Locally** (user-account auth): `op read op://<env-id>/<item>/<field>` works because the user account transparently resolves environment references.
-- **In CI** (service account): `op environment read <env-id>` dumps every secret as `KEY=VALUE` lines, which workflows pipe to `$GITHUB_ENV`.
+- **Locally** (user-account auth via biometric integration): `rando secrets sync` pulls all vars at once via `op environment read` and writes to `.env`. Individual reads happen the same way under the hood — there's no `op read op://<env-id>/<var>/credential` path because Environments don't have items/fields.
+- **In CI** (service account): `.github/actions/op-env` runs `op environment read <env-id>` and pipes the output to `$GITHUB_ENV`, making every variable available to subsequent workflow steps.
 
 ### One-time per machine
 
@@ -115,12 +120,19 @@ rando secrets sync   # pull every configured var from the local 1P env into .env
 
 ### Convention
 
-Items inside each Environment are titled with the **literal env var
-name**; the field on each item is `credential`. So `NEON_API_KEY` in
-the local environment resolves to
-`op://<local-env-id>/NEON_API_KEY/credential`. Zero per-secret config —
-adding a new env var means creating an item with that name in whichever
-environment(s) need it.
+Each variable inside an Environment is named exactly as the env var
+name — `NEON_API_KEY`, `VERCEL_TOKEN`, `POSTMAN_API_KEY`, etc. No
+titles, no fields, just `KEY = value` pairs. Adding a new env var
+means adding a new variable with that name to whichever Environment(s)
+need it, via either the 1Password desktop app (Developer →
+Environments → click in → "Add variable") or `rando secrets set <name>`.
+
+The exception: `OP_SERVICE_ACCOUNT_TOKEN` itself lives in a **Vault**
+(your Personal vault, typically), not an Environment — it's the
+credential the service account uses to _read_ Environments, so it
+can't itself live inside one. See
+[Bootstrapping `OP_SERVICE_ACCOUNT_TOKEN` for CI](#bootstrapping-op_service_account_token-for-ci)
+below for the full setup.
 
 ### Adding a secret across environments
 
@@ -193,7 +205,7 @@ GitHub Actions uses a 1Password service account to read environments
 non-interactively. One repo secret — `OP_SERVICE_ACCOUNT_TOKEN` — and
 every workflow resolves the rest.
 
-1. Create a service account at <https://my.1password.com/developer-tools/infrastructure-secrets/serviceaccount>. Scope it to the **staging** environment with **read** access. 1Password shows the token (`ops_...`) once — copy it.
+1. Create a service account at <https://my.1password.com/developer-tools/infrastructure-secrets/serviceaccount>. Scope it to **both** the **staging** AND **production** environments with **read** access — every preview, staging, and production deploy workflow uses this same `OP_SERVICE_ACCOUNT_TOKEN`, and `deploy-production.yml` explicitly reads the prod environment. 1Password shows the token (`ops_...`) once — copy it.
 2. Stash the token in 1Password (your Personal vault, since it's a CI bootstrap secret) as `OP_SERVICE_ACCOUNT_TOKEN` with field `credential`.
 3. Push it to GitHub via `rando secrets push`:
 
@@ -367,7 +379,41 @@ Once Docker is up, DB seeded, and Clerk keys in place:
 
 - **Bugs / feature requests:** use the [issue templates](./ISSUE_TEMPLATE/). For security-sensitive reports, follow [SECURITY.md](./SECURITY.md) instead — do not file a public issue.
 - **PRs:** the [PR template](./PULL_REQUEST_TEMPLATE.md) prompts for the summary, test plan, and ticket reference. Reference the ticket as `Closes #N` / `Refs #N` in the description.
-- **CI:** typecheck + lint run on every push. PRs to `staging` get a Vercel preview URL automatically.
+- **CI:** typecheck + lint + unit tests run on every push. Preview deploys are opt-in — see below.
+
+### Preview deploys are opt-in (all PRs)
+
+To preserve Vercel's free-tier quota (100 deploys/day) for PRs that
+actually need pre-merge validation, **no PR fires a preview by
+default** — including human-authored ones. Add the `deploy-preview`
+label to opt in:
+
+```bash
+gh pr edit <N> --add-label deploy-preview
+```
+
+Adding the label fires the deploy immediately (the workflow listens
+on the `labeled` event in addition to `synchronize`); subsequent
+pushes redeploy at `<branch-slug>-<app>.rando-id.dev`. The label
+persists across rebases, so it stays in effect until you remove it
+or close the PR.
+
+**When to add the label:**
+
+- Any UI change you want to view in a browser before merge.
+- API contract changes you want to exercise from a real preview URL
+  (Postman runs against the labeled PR's preview, not staging).
+- Dependency bumps with runtime risk — tamagui / next / react /
+  clerk majors are the usual suspects (see
+  [`.notes/ci-dependabot-triage.md`](../.notes/ci-dependabot-triage.md)).
+
+**When to skip:**
+
+- Pure docs / spec / `.notes/` changes.
+- CI / workflow tweaks (no app code touched).
+- CLI-only changes (`packages/cli`) — there's no app to preview.
+
+Strategy spec: [`.notes/process-deploy-strategy.spec.md`](../.notes/process-deploy-strategy.spec.md) (D3).
 
 ## Code of Conduct
 

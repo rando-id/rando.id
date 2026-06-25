@@ -10,11 +10,11 @@ name: Issues
 #   pull_request: opened, reopened, synchronize → In Progress
 #   pull_request: closed (merged=true)          → Done
 #
-# The branch-deploy → In Review + URL-comment step lives in deploy.yml,
+# The branch-deploy → In Review + URL-comment step lives in deploy-preview.yml,
 # right next to the deploy itself.
 #
 # Auth: GITHUB_TOKEN is auto-provided by Actions. For tracker.kind="jira",
-# Jira credentials are pulled from 1Password (see deploy.yml header).
+# Jira credentials are pulled from 1Password (see deploy-preview.yml header).
 # Only OP_SERVICE_ACCOUNT_TOKEN needs to be a GitHub repo secret.
 
 on:
@@ -59,26 +59,39 @@ jobs:
 
       - name: Transition to In Progress (PR opened / synchronize / reopened)
         if: github.event.action != 'closed' && steps.refs.outputs.keys != ''
+        # steps.refs.outputs.keys is derived by parsing PR title/body
+        # for `Refs: <KEY>` footers — the source text is user-controlled,
+        # so the value MUST go through env: rather than ${{ ... }}
+        # shell interpolation (CWE-77). Pattern from #192 / #198.
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_COLOR: '1'
+          KEYS: ${{ steps.refs.outputs.keys }}
         run: |
-          echo '${{ steps.refs.outputs.keys }}' | while IFS= read -r key; do
+          printf '%s\n' "$KEYS" | while IFS= read -r key; do
             [ -z "$key" ] && continue
             echo "→ transitioning $key to in-progress"
             rando issues lifecycle "$key" in-progress || echo "(non-fatal: $key)"
           done
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          FORCE_COLOR: '1'
 
       - name: Transition to Done (PR merged)
         if: github.event.action == 'closed' && github.event.pull_request.merged == true && steps.refs.outputs.keys != ''
-        run: |
-          echo '${{ steps.refs.outputs.keys }}' | while IFS= read -r key; do
-            [ -z "$key" ] && continue
-            echo "→ transitioning $key to done"
-            rando issues lifecycle "$key" done \
-              --message "Merged in #${{ github.event.pull_request.number }} (${{ github.event.pull_request.html_url }})" \
-              || echo "(non-fatal: $key)"
-          done
+        # Same KEYS concern; PR_NUMBER is numeric-by-construction and
+        # PR_URL is github-controlled (safe), but env-ifying both
+        # matches the pattern and makes future audits trivial — every
+        # shell-interpolated ${{ ... }} in this repo's workflows should
+        # come from env:.
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           FORCE_COLOR: '1'
+          KEYS: ${{ steps.refs.outputs.keys }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_URL: ${{ github.event.pull_request.html_url }}
+        run: |
+          printf '%s\n' "$KEYS" | while IFS= read -r key; do
+            [ -z "$key" ] && continue
+            echo "→ transitioning $key to done"
+            rando issues lifecycle "$key" done \
+              --message "Merged in #$PR_NUMBER ($PR_URL)" \
+              || echo "(non-fatal: $key)"
+          done

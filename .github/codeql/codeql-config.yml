@@ -1,0 +1,37 @@
+name: 'Rando CodeQL config'
+
+# Custom CodeQL configuration. Wired into `.github/workflows/codeql.yml`
+# via the `config-file:` parameter on `github/codeql-action/init`.
+#
+# Why a config file at all: CodeQL's `js/network-data-written-to-file`
+# rule flagged `scripts/spec-lint.mjs` (alerts 8 and 14 — same finding,
+# different lines as the file evolved). The rule fires on any flow from
+# `RemoteFlowSource` to `FileSystemWriteAccess`, regardless of whether
+# the file path is user-controlled. In spec-lint.mjs:
+#
+#   • The destination path is hardcoded: `mkdtempSync(...) + 'openapi.json'`
+#     — no user-controlled path component, so the rule's stated concern
+#     (arbitrary file upload to attacker-chosen paths) doesn't apply.
+#   • The content is treated as DATA by `postman api lint`, never executed,
+#     and the file is deleted in the `finally` block immediately after.
+#   • We additionally validate Content-Type + JSON.parse + round-trip
+#     re-serialize before writing (see the file's header SECURITY block).
+#
+# `paths-ignore` is file-scoped, NOT rule-scoped — CodeQL config doesn't
+# support per-(file, rule) suppression. We accepted the file-scoped
+# trade-off over a repo-wide `query-filters: exclude` because:
+#
+#   1. spec-lint.mjs is small (~140 lines) and single-purpose (run a
+#      subprocess). The set of future vulnerabilities that could land here
+#      is narrow and obvious-at-review.
+#   2. Excluding `js/network-data-written-to-file` repo-wide would silence
+#      the rule on `apps/` and `packages/` too, where untrusted-data-to-FS
+#      flows would be a real concern (file upload endpoints, asset
+#      caching, etc.) if we ever add them.
+#
+# If spec-lint.mjs grows beyond its current scope, revisit this — the
+# right answer then is probably to split out the trusted file-write into
+# a tiny helper and put the suppression on the helper alone.
+
+paths-ignore:
+  - scripts/spec-lint.mjs

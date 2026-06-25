@@ -105,6 +105,44 @@ describe('VercelDeployProvider', () => {
     expect(stub.calls[0]?.url).toBe('https://vercel.test/v9/projects/p1')
   })
 
+  it('updateProjectSettings PATCHes only the fields provided', async () => {
+    const stub = stubFetch([{ body: { id: 'p1', name: 'rando-api', rootDirectory: 'apps/api' } }])
+    const result = await adapter(stub).updateProjectSettings({
+      projectId: 'p1',
+      settings: { previewDeploymentsDisabled: true },
+    })
+    expect(result).toEqual({ id: 'p1', name: 'rando-api', rootDirectory: 'apps/api' })
+    expect(stub.calls[0]?.method).toBe('PATCH')
+    expect(stub.calls[0]?.url).toBe('https://vercel.test/v9/projects/p1')
+    expect(stub.calls[0]?.body).toEqual({ previewDeploymentsDisabled: true })
+  })
+
+  it('updateProjectSettings nests gitProviderCreateDeployments under gitProviderOptions', async () => {
+    const stub = stubFetch([{ body: { id: 'p1', name: 'rando-api', rootDirectory: 'apps/api' } }])
+    await adapter(stub).updateProjectSettings({
+      projectId: 'p1',
+      settings: {
+        previewDeploymentsDisabled: true,
+        gitProviderCreateDeployments: 'disabled',
+      },
+    })
+    expect(stub.calls[0]?.body).toEqual({
+      previewDeploymentsDisabled: true,
+      gitProviderOptions: { createDeployments: 'disabled' },
+    })
+  })
+
+  it('updateProjectSettings omits undefined fields from the PATCH body', async () => {
+    const stub = stubFetch([{ body: { id: 'p1', name: 'rando-api', rootDirectory: 'apps/api' } }])
+    await adapter(stub).updateProjectSettings({
+      projectId: 'p1',
+      settings: { gitProviderCreateDeployments: 'enabled' },
+    })
+    expect(stub.calls[0]?.body).toEqual({
+      gitProviderOptions: { createDeployments: 'enabled' },
+    })
+  })
+
   it('triggerDeployment looks up repoId, then POSTs to /v13/deployments', async () => {
     const stub = stubFetch([
       {
@@ -135,6 +173,35 @@ describe('VercelDeployProvider', () => {
     expect(stub.calls[1]?.body).toEqual({
       name: 'rando-api',
       gitSource: { type: 'github', ref: 'feat/x', repoId: 999 },
+    })
+  })
+
+  it('triggerDeployment forwards target when provided (env deploys)', async () => {
+    const stub = stubFetch([
+      {
+        body: {
+          id: 'p1',
+          name: 'rando-api',
+          link: { type: 'github', repoId: 999, repo: 'me/rando', org: 'me' },
+        },
+      },
+      {
+        body: {
+          id: 'dpl_abc',
+          url: 'rando-api.vercel.app',
+          readyState: 'QUEUED',
+        },
+      },
+    ])
+    await adapter(stub).triggerDeployment({
+      projectId: 'p1',
+      branch: 'staging',
+      target: 'staging',
+    })
+    expect(stub.calls[1]?.body).toEqual({
+      name: 'rando-api',
+      gitSource: { type: 'github', ref: 'staging', repoId: 999 },
+      target: 'staging',
     })
   })
 

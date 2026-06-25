@@ -387,7 +387,8 @@ export function deployCommand(adapters: Adapters, io: Io): Command {
             return { projectName: t.projectName, deployment: final }
           }),
         )
-        const anyFailed = results.some((r) => r.deployment.state !== 'ready')
+        const failed = results.filter((r) => r.deployment.state !== 'ready')
+        const anyFailed = failed.length > 0
         if (anyFailed) waitSp.fail(`Finished — some deployments failed`)
         else waitSp.succeed(`All ${triggered.length} deployments ready`)
 
@@ -400,6 +401,120 @@ export function deployCommand(adapters: Adapters, io: Io): Command {
 
         io.stdout('')
         emitBranchResults(io, results, opts.json, 'ready', stableUrls)
+
+        // Throw so callers (CI workflow steps, scripts) see exit code 1
+        // when any deploy didn't reach `ready`. Without this, `deploy-preview.yml`'s
+        // `Trigger preview deploys` step appeared green on partial failures.
+        if (anyFailed) {
+          throw new Error(`${failed.length}/${results.length} deployments failed`)
+        }
+      },
+    )
+
+  // `rando deploy promote <staging|production>` — deploy each app to a
+  // named Vercel environment. Replaces Vercel's native push-to-deploy
+  // after D1 turns the latter off (see
+  // .notes/process-deploy-strategy.spec.md). Same plumbing as `branch`:
+  // per-app project lookup, trigger, optional wait. Differences: pins
+  // `target` so the deployment lands on the env's persistent Vercel
+  // domain (no stable-URL / Cloudflare setup — env domains are
+  // configured once in the Vercel project, not per-PR).
+  //
+  // Named `promote` (not `env`) because `deploy env` is already the
+  // env-var subcommand group above.
+  deploy
+    .command('promote <target>')
+    .description(
+      'Promote (deploy) each configured app to a named Vercel environment (staging|production). Replaces Vercel-native push-to-deploy.',
+    )
+    .option('--apps <names>', 'Comma-separated app names (default: all apps in config)', '')
+    .option(
+      '--config <path>',
+      'Path to rando.config.json (default: repo root)',
+      DEFAULT_CONFIG_PATH,
+    )
+    .option(
+      '--ref <branch-or-sha>',
+      'Git ref to deploy. Defaults: staging→staging, production→main',
+      '',
+    )
+    .option('--no-wait', 'Trigger and exit without polling for ready state')
+    .option('--json', 'Emit raw JSON', false)
+    .action(
+      async (
+        target: string,
+        opts: { apps: string; config: string; ref: string; wait: boolean; json: boolean },
+      ) => {
+        if (target !== 'staging' && target !== 'production') {
+          throw new Error(`Unknown deploy target "${target}". Must be one of: staging, production.`)
+        }
+        const ref = opts.ref || (target === 'staging' ? 'staging' : 'main')
+        const configPath = resolve(process.cwd(), opts.config)
+        const config = loadSetupConfig(configPath)
+        const requested = opts.apps ? opts.apps.split(',').map((s) => s.trim()) : []
+        const apps = requested.length
+          ? config.apps.filter((a) => requested.includes(a.name))
+          : config.apps
+        if (apps.length === 0) {
+          throw new Error(
+            `No matching apps in config. Requested: ${requested.join(', ')}. ` +
+              `Available: ${config.apps.map((a) => a.name).join(', ')}`,
+          )
+        }
+
+        io.stdout(`${colors.hint('target:')} ${colors.resource(target)}`)
+        io.stdout(`${colors.hint('ref:')}    ${colors.resource(ref)}`)
+        io.stdout(`${colors.hint('apps:')}   ${apps.map((a) => a.name).join(', ')}`)
+        io.stdout('')
+
+        const provider = adapters.deploy()
+        const sp = io.spinner(`Triggering ${apps.length} ${target} deployments…`)
+        const triggered = await Promise.all(
+          apps.map(async (app) => {
+            const projectName = vercelProjectName(config, app)
+            const project = await provider.getProjectByName({ name: projectName })
+            if (!project) throw new NotFoundError('deploy app', projectName)
+            const deployment = await provider.triggerDeployment({
+              projectId: project.id,
+              branch: ref,
+              target,
+            })
+            return { projectName, deployment }
+          }),
+        )
+        sp.succeed(`Triggered ${apps.length} ${target} deployments`)
+
+        if (opts.wait === false) {
+          io.stdout('')
+          emitBranchResults(io, triggered, opts.json, 'triggered')
+          return
+        }
+
+        let completed = 0
+        const waitSp = io.spinner(`Building 0/${triggered.length}…`)
+        const results = await Promise.all(
+          triggered.map(async (t) => {
+            const final = await pollUntilSettled(provider, t.deployment.id)
+            completed += 1
+            waitSp.setText(`Building ${completed}/${triggered.length}…`)
+            return { projectName: t.projectName, deployment: final }
+          }),
+        )
+        const failed = results.filter((r) => r.deployment.state !== 'ready')
+        const anyFailed = failed.length > 0
+        if (anyFailed) waitSp.fail(`Finished — some deployments failed`)
+        else waitSp.succeed(`All ${triggered.length} ${target} deployments ready`)
+
+        io.stdout('')
+        emitBranchResults(io, results, opts.json, 'ready')
+
+        // Throw so the calling workflow step (deploy-staging.yml /
+        // deploy-production.yml) sees exit code 1 on partial failure.
+        // Without this, staging deploys could silently leave one app in
+        // the error state while CI reports green.
+        if (anyFailed) {
+          throw new Error(`${failed.length}/${results.length} ${target} deployments failed`)
+        }
       },
     )
 

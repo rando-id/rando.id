@@ -9,10 +9,11 @@
     ".": "./src/index.ts"
   },
   "scripts": {
+    "test": "echo \"no tests yet — add a vitest.config.ts and src/__tests__/ to enable\"",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {
     "@rando/tsconfig": "workspace:*",
-    "typescript": "^5.7.2"
+    "typescript": "^6.0.3"
   }
 }
