@@ -318,7 +318,7 @@ describe('deploy branch', () => {
   it('exits non-zero when any deployment ends in a non-ready state', async () => {
     // One app succeeds, the other ends in `error` — `rando deploy branch`
     // must propagate a non-zero exit so the calling workflow step fails.
-    // Pre-fix behavior: silent exit 0; deploy.yml's "Trigger preview
+    // Pre-fix behavior: silent exit 0; deploy-preview.yml's "Trigger preview
     // deploys" step appeared green on partial failure.
     const deploy: Partial<DeployProvider> = {
       getProjectByName: vi.fn(async ({ name }) => ({ id: `p_${name}`, name, rootDirectory: null })),

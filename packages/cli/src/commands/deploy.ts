@@ -403,7 +403,7 @@ export function deployCommand(adapters: Adapters, io: Io): Command {
         emitBranchResults(io, results, opts.json, 'ready', stableUrls)
 
         // Throw so callers (CI workflow steps, scripts) see exit code 1
-        // when any deploy didn't reach `ready`. Without this, `deploy.yml`'s
+        // when any deploy didn't reach `ready`. Without this, `deploy-preview.yml`'s
         // `Trigger preview deploys` step appeared green on partial failures.
         if (anyFailed) {
           throw new Error(`${failed.length}/${results.length} deployments failed`)

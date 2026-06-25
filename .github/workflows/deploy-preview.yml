@@ -1,11 +1,12 @@
-name: Deploy
+name: Deploy preview
 
-# Spins up a Vercel preview deploy for every PR with a stable
-# `<branch-slug>-<app>.rando-id.dev` URL, and tears it down on close.
-# Production + staging deploys run via Vercel's native GitHub
-# integration (push to main/staging) — this workflow only covers the
-# branch-deploy flow today. See MAINTAINING.md → "Deploy strategy"
-# for when/why to move prod deploys here too.
+# Spins up a Vercel preview deploy for any PR that carries the
+# `deploy-preview` label, with a stable `<branch-slug>-<app>.rando-id.dev`
+# URL, and tears it down on close. Production + staging deploys run via
+# sibling workflows (`deploy-staging.yml`, `deploy-production.yml`);
+# Vercel's native git integration is OFF (disabled by `rando infra
+# setup` — D1 of the deploy strategy). See MAINTAINING.md → "Deploy
+# strategy" for the full picture.
 #
 # Secrets are resolved from a **1Password Environment** (not a Vault)
 # at job start. The only GitHub repo secret you need is
@@ -45,22 +46,20 @@ concurrency:
 
 jobs:
   branch-deploy:
-    # Dependabot PRs are opt-in for previews: skip unless the PR has
-    # the `deploy-preview` label. Human-authored PRs always preview
-    # by default. Vercel's free tier caps deploys at 100/day across
-    # the account, and 70+ open Dependabot PRs would burn through
-    # that on rebases alone — see
-    # .notes/ci-preview-quota-strategy.spec.md.
+    # ALL PRs (human OR bot) are opt-in for previews: skip unless the
+    # PR has the `deploy-preview` label. Pre-D3, only Dependabot opted
+    # in by label and humans always previewed; flipped so every PR
+    # makes an explicit decision. Trade-off: contributors add a label
+    # when they want a preview (cheap), in exchange for Vercel's
+    # 100/day quota only burning on PRs that actually need validation.
+    # See .notes/process-deploy-strategy.spec.md (D3).
     # Teardown stays unconditional below so closing always cleans up,
     # even if the PR never had a preview.
     if: >-
       ${{
         vars.DEPLOY_PREVIEW_ENABLED != 'false'
         && github.event.action != 'closed'
-        && (
-          github.actor != 'dependabot[bot]'
-          || contains(github.event.pull_request.labels.*.name, 'deploy-preview')
-        )
+        && contains(github.event.pull_request.labels.*.name, 'deploy-preview')
       }}
     name: Deploy preview
     runs-on: ubuntu-latest
