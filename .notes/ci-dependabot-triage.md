@@ -140,3 +140,82 @@ per-workspace singles then.
    real test) → next 15→16 (app-router migration) → drizzle
    0.38→0.45 (SQL builder changes) → zod 3→4 / clerk 6→7
    (breaking).
+
+### 2026-06-24 — first triage with previews opt-in (post #216)
+
+**Context shift:** D3 (#216) landed earlier today. Previews are now
+opt-in for every PR via the `deploy-preview` label, and Vercel
+native deploys are off across all three projects (D1 — `rando infra
+setup` ran live). Net effect: Dependabot PRs no longer burn quota
+on rebase or sync. The queue is approachable for the first time.
+
+**Queue at start:** 60 open. Net −8 from 2026-06-22's end-of-session
+68, mostly via Dependabot rebases collapsing some stale heads.
+
+**Closed as stale** (per-workspace singles superseded by groups —
+the strategy queued up two Mondays ago finally has groups to
+compare against):
+
+| Closed | Why                                                    | Kept                                  |
+| ------ | ------------------------------------------------------ | ------------------------------------- |
+| #98    | @types/node single in /packages/db                     | #147 (types group)                    |
+| #145   | @types/node single in /apps/api                        | #147 (types group)                    |
+| #107   | @clerk/nextjs single in /apps/admin                    | #160 (clerk group)                    |
+| #108   | @clerk/nextjs single in /apps/web                      | #160 (clerk group)                    |
+| #125   | drizzle-orm single in /packages/db                     | #159 (drizzle group)                  |
+| #92    | vitest 2→4 single in /packages/db (skip-major)         | #182 (db group: drizzle + vitest 2→3) |
+| #101   | vitest 2→4 single in /packages/api-client (skip-major) | #150 (api-client vitest 2→3 group)    |
+| #130   | vitest 2→4 single in /packages/config (skip-major)     | #96 (config vitest 2→3 group)         |
+| #131   | vitest 2→4 single in /packages/auth (skip-major)       | #149 (auth vitest 2→3 group)          |
+| #141   | vitest 2→4 single in /packages/cli (skip-major)        | #117 (cli vitest 2→3 group)           |
+| #143   | vitest 2→4 single in /packages/maps (skip-major)       | #153 (maps vitest 2→3 group)          |
+
+**Reversal from 2026-06-22's plan**: that session preferred the
+2→4 skip-major (kept the root vitest group, closed the 2→3
+per-workspace singles). This session goes the other way: keep
+the **2→3 per-workspace groups** (now landed), close the **2→4
+skip-major singles**. Reasoning: 2→3→4 in two steps surfaces
+breakage at the smaller-delta boundary; skip-major bundles all
+the breakage at once. The root 2→4 group (#154) is no longer in
+the queue.
+
+**Labeled for preview** (operator clicks merge in UI):
+
+| #   | Bump                                   | Label                                                                              |
+| --- | -------------------------------------- | ---------------------------------------------------------------------------------- |
+| #93 | react-dom 19.2.3 → 19.2.7 in /apps/web | `deploy-preview` — fires the preview to confirm web renders. Patch bump, low risk. |
+
+**Not labeled — merge-as-is candidates** (patch React bumps,
+unchanged behavior expected; integration tests against staging
+cover the contract):
+
+| #    | Bump                                      |
+| ---- | ----------------------------------------- |
+| #136 | react-dom 19.2.3 → 19.2.7 in /apps/native |
+| #207 | react 19.2.3 → 19.2.7 in /apps/native     |
+| #208 | react 19.2.3 → 19.2.7 in /packages/ui     |
+| #209 | react 19.2.3 → 19.2.7 in /apps/admin      |
+
+**Major bumps — deferred** (no progress this session, same list
+as 2026-06-22 minus the 6 vitest-skip-major singles closed
+above). Next session's batch pick: TypeScript 5→6 (10 per-workspace
+singles — #94, #97, #99, #100, #118, #121, #122, #129, #137, #139).
+Lowest blast radius — `tsc --noEmit` is already in CI; failures
+surface immediately at typecheck.
+
+**Queue at end:** 49 open. Net: −11 closed, 0 merged-locally
+(operator merges 5 bucket-A patches separately in the UI),
+0 opened. Expect ~5 fewer after the bucket-A merges land.
+
+**For next session:**
+
+1. Recount the queue. Compare against 49.
+2. Attempt TypeScript 5→6 across the 10 per-workspace singles.
+   Strategy: clone one (e.g. #99 /apps/api) locally, run
+   `pnpm typecheck` after the bump, fix the strictness fallout.
+   If clean → merge it, then repeat for the other 9. If breaking
+   → write a `.notes/tech-typescript-6-migration.spec.md` capturing
+   the breakage class + the per-workspace mitigations needed.
+3. Sanity-check the vitest 2→3 per-workspace groups (#96, #117,
+   #148-#151, #153, #167, #182 (mixed)) — these should be a clean
+   merge wave once one passes locally.
