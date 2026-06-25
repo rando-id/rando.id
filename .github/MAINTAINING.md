@@ -213,7 +213,7 @@ Re-running is a no-op when state matches target.
 
 ### Adding a new app
 
-Two file edits + one orchestrator run, no Vercel dashboard work:
+Four file edits + one orchestrator run, no Vercel dashboard work:
 
 1. Add the workspace to `rando.config.json`'s `apps` array.
 2. Create `apps/<name>/vercel.json` with the standard shape:
@@ -575,16 +575,16 @@ pnpm rando clerk webhook setup --env prod
 ## Branching workflow
 
 ```
-                      auto-sync (push:main)
-main ◄───── PR ─── <feature>     ───────────────► staging
-  │                                                 │
-  │ Vercel watches main                             │ Vercel watches staging
-  ▼                                                 ▼
-rando.id (prod)                          staging-*.rando-id.dev
+                                   sync-staging.yml (push:main)
+main ◄────── PR ────── <feature>            ───────────────────► staging
+  │                                                                 │
+  │ workflow_dispatch + Environment reviewer                         │ deploy-staging.yml (push:staging)
+  ▼                                                                 ▼
+rando.id (prod, via deploy-production.yml)               staging-*.rando-id.dev
 ```
 
-- Feature branches → PRs into `main` directly (preview deploys per-app at `<branch>-<app>.rando-id.dev` via `deploy-preview.yml`).
-- Merge to `main` → fires **two** deploys: prod (Vercel watches `main`) AND staging (`sync-staging.yml` fast-forwards `staging` to `main`, Vercel watches `staging` separately).
+- Feature branches → PRs into `main` directly. Add the `deploy-preview` label to opt into a per-app preview at `<branch>-<app>.rando-id.dev` (via `deploy-preview.yml`). Previews are off by default — see "Previews are opt-in (all PRs)" above.
+- Merge to `main` → fires **one** thing automatically: `sync-staging.yml` fast-forwards `staging` to `main`, which triggers `deploy-staging.yml`. Production does NOT auto-deploy — that requires `workflow_dispatch` on `deploy-production.yml` plus an Environment reviewer approval.
 - Staging is a **pure mirror of main**, NOT an independent release branch. No PRs target staging, no hotfixes land on staging, no commits exist on staging that aren't on main. The auto-sync workflow refuses to overwrite divergent commits — fail-loud is intentional.
 - If you ever need a real release process (cut staging independently, hotfix-on-staging), revisit `.notes/ci-staging-auto-sync.spec.md`'s "What would make us reconsider" — the model needs to change.
 
