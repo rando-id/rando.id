@@ -1,6 +1,7 @@
 ---
-status: proposed # draft → proposed (issue filed) → approved (milestone attached)
+status: archived
 issue: 186
+closed: 2026-06-24
 ---
 
 # Per-app preview deploys (only deploy what changed)

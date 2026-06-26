@@ -1,6 +1,7 @@
 ---
-status: proposed # draft → proposed (issue filed) → approved (milestone attached)
+status: archived
 issue: 191
+closed: 2026-06-24
 ---
 
 # Vercel Protection Bypass for integration tests

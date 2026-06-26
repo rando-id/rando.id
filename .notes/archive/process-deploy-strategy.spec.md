@@ -1,6 +1,7 @@
 ---
-status: proposed # draft → proposed (issue filed) → approved (milestone attached)
+status: archived
 issue: 210
+closed: 2026-06-25
 ---
 
 # Deploy strategy — staging auto, previews opt-in, prod gated

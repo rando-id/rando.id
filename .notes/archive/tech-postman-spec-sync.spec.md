@@ -1,6 +1,7 @@
 ---
-status: approved # draft → proposed (issue filed) → approved (milestone attached)
+status: archived
 issue: 169
+closed: 2026-06-22
 ---
 
 # Postman OpenAPI spec sync — push the spec, not just the collection

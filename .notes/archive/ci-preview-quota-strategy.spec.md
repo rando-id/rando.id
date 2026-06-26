@@ -1,6 +1,7 @@
 ---
-status: proposed # draft → proposed (issue filed) → approved (milestone attached)
+status: archived
 issue: 184
+closed: 2026-06-23
 ---
 
 # Preview deploys: opt-in for Dependabot PRs
