@@ -1,0 +1,33 @@
+name: Dependency Review
+
+# Gate PRs that introduce vulnerable or incompatibly-licensed deps.
+# Complements Dependabot (which bumps existing deps) by catching NEW
+# additions a contributor pulls in. See .notes/security-github-baseline.md.
+
+on:
+  pull_request:
+    branches: [main, staging]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  dependency-review:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          # Block PRs that add deps with high+ severity advisories. Adjust
+          # downward if it becomes noisy.
+          fail-on-severity: high
+          # Inline summary on the PR for any blocked dep.
+          comment-summary-in-pr: on-failure
+          # Disallow GPL-family licenses for new deps (allow existing ones
+          # via transitive). Tune the deny-list if a legitimate dep falls
+          # into this bucket.
+          deny-licenses: GPL-2.0, GPL-3.0, AGPL-1.0, AGPL-3.0
