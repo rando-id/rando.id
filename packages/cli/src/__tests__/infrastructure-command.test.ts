@@ -42,6 +42,7 @@ function fakeAdapters(): Adapters {
     postman: () => never('postman'),
     secrets: () => never('secrets'),
     gh: () => never('gh'),
+    ghAdmin: () => never('ghAdmin'),
     vercelCli: () => never('vercelCli'),
   }
 }

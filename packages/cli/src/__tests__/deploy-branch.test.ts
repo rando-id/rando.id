@@ -49,6 +49,7 @@ function adaptersWithDeploy(deploy: DeployProvider, dns?: DnsProvider): Adapters
     postman: never as never,
     secrets: never as never,
     gh: never as never,
+    ghAdmin: never as never,
     vercelCli: never as never,
   }
 }

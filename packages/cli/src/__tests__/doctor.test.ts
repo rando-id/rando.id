@@ -33,6 +33,7 @@ function fakeAdapters(overrides: Partial<Adapters> = {}): Adapters {
     postman: never,
     secrets: never,
     gh: never,
+    ghAdmin: never,
     vercelCli: never,
     ...overrides,
   }

@@ -2,6 +2,7 @@
   "project": "rando",
   "repo": "rando-id/rando.id",
   "tunnel": "rando-dev",
+  "codeowners": ["iamnewton"],
   "domains": {
     "nonProd": "rando-id.dev",
     "production": "rando.id"
