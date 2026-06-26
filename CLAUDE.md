@@ -8,7 +8,7 @@ Conventions for working on Rando. Loaded automatically by Claude Code into every
 - **Soft-skip over hard-fail when a dependency is missing or optional.** The orchestrator never blocks on auth issues, missing `.env.example`, or missing 1P keys — it emits a note and continues so the rest of the pipeline still runs.
 - **Idempotent orchestrator steps.** Check-then-create, treat "already exists" / 409 as success, never blow up on re-runs.
 - **`.env.example` is the per-context contract.** The keys an app declares in its `.env.example` determine what gets synced from 1P locally AND what gets pushed to Vercel for that app's deploy. No hardcoded variable lists.
-- **Future: centralize fetch in a single `packages/clients` package.** Not built yet — direction only. Today's `packages/cli/src/adapters/*` and `packages/api-client/*` should converge there. When writing new fetch code, ask whether it belongs in the central package first; if you build it elsewhere, leave a comment noting the eventual move.
+- **Future: centralize fetch in a single `packages/clients` package.** Not built yet — direction only. Today's `packages/cli/src/adapters/*` and `packages/api-client/*` should converge there. See `.notes/tech-clients-monorepo.spec.md` for the phased plan (in-repo first, then extract to `@theholocron/clients-*`). When writing new fetch code, ask whether it belongs in the central package first; if you build it elsewhere, leave a comment noting the eventual move.
 
 ## Workflow
 
@@ -29,7 +29,7 @@ Conventions for working on Rando. Loaded automatically by Claude Code into every
   ---
   ```
 
-  Lifecycle: spec starts `draft`; flips to `proposed` when you file the tracking issue via `pnpm rando issues create` and link it as `issue: NNN` in frontmatter; flips to `approved` when a milestone is attached to the issue. `.notes/` is committed — these are shared decision records, public-facing for contributors. The file body holds background, options considered, tradeoffs, decision. Skip the entire flow only for trivial decisions (variable rename, doc typo) — anything that involved comparing options gets a spec file.
+  Lifecycle: spec starts `draft`; flips to `proposed` when you file the tracking issue via `pnpm rando issues create` and link it as `issue: NNN` in frontmatter; flips to `approved` when a milestone is attached to the issue; **moves to `.notes/archive/` when the tracking issue closes** (or the spec is otherwise fully realized). Archived specs keep their filename and frontmatter — `status:` flips to `archived` and `closed:` records the date. The archive directory keeps the active spec list scannable; archived decisions stay reachable for historical context. `.notes/` is committed — these are shared decision records, public-facing for contributors. The file body holds background, options considered, tradeoffs, decision. Skip the entire flow only for trivial decisions (variable rename, doc typo) — anything that involved comparing options gets a spec file.
 
 - **File a ticket via `pnpm rando issues create` for non-trivial work and reference it in commits/PRs** (`Closes #N` / `Refs #N`). Skip for typo fixes and one-line copy changes.
 - **Prefer automation.** If something must stay manual, document it in `.github/MAINTAINING.md` / `.github/CONTRIBUTING.md` AND consider building a `rando` subcommand for it next time. The CLI is where setup steps go to die.
