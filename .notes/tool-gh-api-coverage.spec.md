@@ -131,7 +131,7 @@ if we ever have > 3 repos to manage.
 
 ```
 rando vc setup --admin-token "$PAT" --dry-run   # full report: what'd change
-rando vc setup --admin-token "$PAT"             # apply everything (then revoke PAT)
+rando vc setup --admin-token "$PAT"             # apply everything (then prompt to revoke PAT manually)
 rando vc ruleset --admin-token "$PAT"     # just the ruleset
 rando vc environments --admin-token "$PAT"
 rando vc secret --admin-token "$PAT"     # calls into [[security-secrets-strategy]]

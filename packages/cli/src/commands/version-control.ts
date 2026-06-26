@@ -5,9 +5,12 @@
 // rename. See .notes/tool-gh-api-coverage.spec.md.
 //
 // Token flow: --admin-token flag (or RANDO_ADMIN_TOKEN env var) supplies a
-// fine-grained PAT minted for this run only. `setup` revokes it at the end
-// if --token-id is provided; individual subcommands leave revocation to
-// the operator (use `revoke-token`).
+// fine-grained PAT minted for this run only. After the run completes, the
+// operator deletes the PAT manually at
+// https://github.com/settings/personal-access-tokens — GitHub has no REST
+// endpoint for self-revoking a fine-grained PAT. The `setup` subcommand
+// prints the cleanup link in its `finally` block so the reminder fires
+// even on mid-run failure.
 
 import { mkdir, readFile, writeFile } from 'node:fs/promises'
 import { dirname, resolve } from 'node:path'
@@ -138,10 +141,12 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
     })
 
   cmd
-    .command('secret <name> <value>')
+    .command('secret <name> [value]')
     .description(
-      'Set one repo or environment secret. Encrypts via libsodium before push. ' +
-        'Use --env <name> to target an environment instead of the repo.',
+      'Set one repo or environment secret. The value is read from stdin when ' +
+        'omitted (recommended — keeps the plaintext out of shell history + ps). ' +
+        'Encrypts via libsodium before push. Use --env <name> to target an ' +
+        'environment instead of the repo.',
     )
     .option('--admin-token <pat>', 'Ephemeral admin PAT (or set RANDO_ADMIN_TOKEN)')
     .option('--env <name>', 'Environment name (omit for repo-level secret)')
@@ -150,7 +155,7 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
     .action(
       async (
         name: string,
-        value: string,
+        value: string | undefined,
         opts: { adminToken?: string; env?: string; dryRun: boolean; config: string },
       ) => {
         const cfg = loadSetupConfig(resolve(process.cwd(), opts.config))
@@ -159,11 +164,21 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
           io.stdout(colors.hint(`dry-run: encrypt + PUT secret ${name} on ${target}`))
           return
         }
+        // Prefer stdin so the plaintext value never lands in shell history
+        // or `ps` output. Positional `value` stays supported for scripts
+        // that already pipe through process env or other safe channels.
+        const resolvedValue = value ?? (await readStdin())
+        if (!resolvedValue) {
+          throw new Error(
+            'No secret value provided. Pipe via stdin (`echo $X | rando vc secret NAME`) ' +
+              'or pass as a positional argument.',
+          )
+        }
         const gh = adapters.ghAdmin({ token: resolveToken(opts.adminToken) })
         const publicKey = opts.env
           ? await gh.getEnvironmentSecretPublicKey(cfg.repo, opts.env)
           : await gh.getRepoSecretPublicKey(cfg.repo)
-        const encrypted = await encryptSecretForGitHub(value, publicKey.key)
+        const encrypted = await encryptSecretForGitHub(resolvedValue, publicKey.key)
         if (opts.env) {
           await gh.setEnvironmentSecret(cfg.repo, opts.env, name, encrypted, publicKey.key_id)
         } else {
@@ -189,6 +204,21 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
     })
 
   return cmd
+}
+
+/**
+ * Read the secret value from stdin when available. Returns empty string when
+ * stdin is a TTY (interactive prompt — no piped input) so the caller can
+ * surface a clear "provide a value" error instead of hanging on read.
+ */
+async function readStdin(): Promise<string> {
+  if (process.stdin.isTTY) return ''
+  let buf = ''
+  process.stdin.setEncoding('utf-8')
+  for await (const chunk of process.stdin) buf += chunk
+  // Trim trailing newline that `echo` and most pipes add — secrets rarely
+  // need a literal trailing newline, and operators get bitten when they do.
+  return buf.replace(/\n$/, '')
 }
 
 function resolveToken(flag?: string): string {
