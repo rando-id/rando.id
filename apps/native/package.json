@@ -23,7 +23,7 @@
     "@rando/observability": "workspace:*",
     "@rando/ui": "workspace:*",
     "@tamagui/config": "catalog:tamagui",
-    "@tanstack/react-query": "^5.101.0",
+    "@tanstack/react-query": "catalog:",
     "expo": "~56.0.8",
     "expo-crypto": "~56.0.4",
     "expo-location": "~56.0.15",
