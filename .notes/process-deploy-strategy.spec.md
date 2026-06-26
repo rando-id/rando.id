@@ -236,6 +236,36 @@ already; command in `packages/cli/src/commands/deploy.ts`.
   GitHub does — the workflow re-evaluates `if:` on every PR
   event including `labeled`. No code needed.
 
+## End-to-end developer flow
+
+Validates the full pipeline a new contributor (or a forked-template
+operator on a new app) walks through:
+
+| Stage              | Trigger                                                                                   | What deploys                                                    | Approval                             |
+| ------------------ | ----------------------------------------------------------------------------------------- | --------------------------------------------------------------- | ------------------------------------ |
+| **Local dev**      | `pnpm dev`                                                                                | Nothing — runs against local Postgres + `pnpm rando dev` tunnel | none                                 |
+| **Per-PR preview** | PR open + `deploy-preview` label                                                          | All affected apps to `<branch>-<app>.rando-id.dev`              | label-application = opt-in           |
+| **Staging**        | Merge to `main` → `sync-staging.yml` fast-forwards `staging` → `deploy-staging.yml` fires | All apps to `staging-<app>.rando-id.dev`                        | automatic on merge                   |
+| **Production**     | Operator triggers `deploy-production.yml` workflow_dispatch with SHA                      | All apps to `<app>.rando.id`                                    | GitHub Environment reviewer approval |
+
+The "setup + deploy to dev" stage is covered by:
+
+1. `rando init <app>` ([[process-reusable-template]] — TBD command) sets
+   up the local environment, secrets, tunnel
+2. `pnpm rando dev` runs the local dev tunnel pointing at `dev-<app>.rando-id.dev`
+3. `rando deploy branch` (existing) puts a PR up on a preview URL
+
+The dev → staging → production chain above is fully gated by:
+
+- Local: trust-the-developer, no automation needed
+- Preview: label-gated opt-in (D3)
+- Staging: automatic but downstream of merge (D2)
+- Production: human-in-the-loop via Environment reviewer (D4)
+
+No silent path from `git push` to production. Two distinct human
+actions (merge approval + prod-deploy approval) plus one automated
+gate (label) before anything customer-facing changes.
+
 ## Sequencing for today
 
 The four changes can land independently with feature flags
