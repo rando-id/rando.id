@@ -2,7 +2,7 @@ name: Sync staging
 
 # Keeps `staging` branch fast-forwarded to `main` on every push to
 # main, so Vercel's staging deploy never falls behind. Spec:
-# .notes/ci-staging-auto-sync.spec.md.
+# .notes/archive/ci-staging-auto-sync.spec.md.
 #
 # Fast-forward only by default — if staging has diverged (commits
 # not on main), the push fails and surfaces a clear error rather
@@ -58,7 +58,7 @@ jobs:
             # Plain push fails if staging has commits that aren't on
             # main — exactly what we want (no silent data loss).
             if ! git push origin HEAD:refs/heads/staging 2>&1; then
-              echo "::error title=staging sync failed::Fast-forward push to staging refused. Staging may have diverged from main. To recover: (1) inspect `git log origin/main..origin/staging` to see what's on staging that isn't on main; (2) if the divergent commits are stale, re-run this workflow with force=true via Actions → Sync staging → Run workflow; (3) otherwise, rebase the divergent work onto main and merge through the normal PR flow. See .notes/ci-staging-auto-sync.spec.md for the design rationale."
+              echo "::error title=staging sync failed::Fast-forward push to staging refused. Staging may have diverged from main. To recover: (1) inspect `git log origin/main..origin/staging` to see what's on staging that isn't on main; (2) if the divergent commits are stale, re-run this workflow with force=true via Actions → Sync staging → Run workflow; (3) otherwise, rebase the divergent work onto main and merge through the normal PR flow. See .notes/archive/ci-staging-auto-sync.spec.md for the design rationale."
               exit 1
             fi
           fi

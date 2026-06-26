@@ -54,7 +54,7 @@ async function resolveSpec() {
   // (CI flow loads it from the staging 1Password Environment). Without
   // this, fetching from a preview URL gets 302'd to vercel.com/sso-api
   // and the spec content is the SSO HTML page, not JSON.
-  // .notes/ci-vercel-protection-bypass.spec.md.
+  // .notes/archive/ci-vercel-protection-bypass.spec.md.
   //
   // SECURITY: the response body is untrusted network data and we're
   // about to hand it to `postman api lint`, which reads it as a spec
@@ -86,7 +86,7 @@ async function resolveSpec() {
     throw new Error(
       `Failed to fetch ${SPEC_URL}: ${detail}. ` +
         `If this is a Vercel preview URL, set VERCEL_AUTOMATION_BYPASS_SECRET ` +
-        `to bypass Deployment Protection (see .notes/ci-vercel-protection-bypass.spec.md).`,
+        `to bypass Deployment Protection (see .notes/archive/ci-vercel-protection-bypass.spec.md).`,
     )
   }
   if (!res.ok) {
@@ -97,7 +97,7 @@ async function resolveSpec() {
     throw new Error(
       `Expected JSON spec from ${SPEC_URL}, got Content-Type "${contentType}". ` +
         `Likely Deployment Protection redirected to the SSO interstitial — set ` +
-        `VERCEL_AUTOMATION_BYPASS_SECRET (see .notes/ci-vercel-protection-bypass.spec.md).`,
+        `VERCEL_AUTOMATION_BYPASS_SECRET (see .notes/archive/ci-vercel-protection-bypass.spec.md).`,
     )
   }
   const body = await res.text()

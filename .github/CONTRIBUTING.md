@@ -413,7 +413,7 @@ or close the PR.
 - CI / workflow tweaks (no app code touched).
 - CLI-only changes (`packages/cli`) — there's no app to preview.
 
-Strategy spec: [`.notes/process-deploy-strategy.spec.md`](../.notes/process-deploy-strategy.spec.md) (D3).
+Strategy spec: [`.notes/archive/process-deploy-strategy.spec.md`](../.notes/archive/process-deploy-strategy.spec.md) (D3).
 
 ## Code of Conduct
 

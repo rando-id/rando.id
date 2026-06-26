@@ -58,7 +58,7 @@ jobs:
     # makes an explicit decision. Trade-off: contributors add a label
     # when they want a preview (cheap), in exchange for Vercel's
     # 100/day quota only burning on PRs that actually need validation.
-    # See .notes/process-deploy-strategy.spec.md (D3).
+    # See .notes/archive/process-deploy-strategy.spec.md (D3).
     # Teardown stays unconditional below so closing always cleans up,
     # even if the PR never had a preview.
     if: >-
