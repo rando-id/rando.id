@@ -39,13 +39,13 @@ catalog:
   # version drift would mean two schemas can't share a parser type.
   zod: ^3.25.76
 
-  # Auth — apps/admin, apps/web, and (future) anything else doing
-  # Clerk-side rendering. Kept on v6 until a deliberate v7 migration
-  # spec lands; catalog'ing now means that future v7 bump is one
-  # PR editing this line.
+  # Auth — apps/admin, apps/api, apps/web (all three consume Clerk
+  # today). Kept on v6 until a deliberate v7 migration spec lands;
+  # catalog'ing now means that future v7 bump is one PR editing
+  # this line.
   '@clerk/nextjs': ^6.10.0
 
-  # Data fetching — apps/web + apps/admin share react-query for
+  # Data fetching — apps/web + apps/native share react-query for
   # client-side caching. Version drift would mean different
   # QueryClient internals; catalog ensures lockstep.
   '@tanstack/react-query': ^5.101.0
