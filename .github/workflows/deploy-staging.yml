@@ -9,7 +9,7 @@ name: Deploy staging
 # branch. Vercel native is disabled per app via
 # `apps/<name>/vercel.json`'s `git.deploymentEnabled.staging: false`
 # AND project-level `previewDeploymentsDisabled` set by
-# `rando infra setup`. See .notes/process-deploy-strategy.spec.md (D1, D2).
+# `rando infra setup`. See .notes/archive/process-deploy-strategy.spec.md (D1, D2).
 #
 # Secrets are resolved from a 1Password Environment at job start. The only
 # GitHub repo secret you need is `OP_SERVICE_ACCOUNT_TOKEN`.

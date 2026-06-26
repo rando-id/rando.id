@@ -37,7 +37,7 @@ export interface Deployment {
  * Project-level settings that control whether the vendor's git
  * integration auto-deploys on push. Rando turns these OFF so every
  * deploy routes through `rando deploy …` for unified gating. See
- * .notes/process-deploy-strategy.spec.md (D1).
+ * .notes/archive/process-deploy-strategy.spec.md (D1).
  */
 export interface DeployProjectSettings {
   /**

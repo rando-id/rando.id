@@ -6,7 +6,7 @@ name: Deploy production
 # commit SHA and confirm. Vercel native push-to-deploy on `main` is
 # disabled by `rando infra setup` (D1) + `apps/<name>/vercel.json`'s
 # `git.deploymentEnabled.main: false`. See
-# .notes/process-deploy-strategy.spec.md (D4).
+# .notes/archive/process-deploy-strategy.spec.md (D4).
 #
 # Beyond `workflow_dispatch`, the GitHub Environment `production`
 # (configured in repo settings) requires reviewer approval before the

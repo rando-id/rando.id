@@ -1,6 +1,7 @@
 ---
-status: proposed # draft → proposed (issue filed) → approved (milestone attached)
+status: archived
 issue: 178
+closed: 2026-06-22
 ---
 
 # Skip deploys for docs-only changes

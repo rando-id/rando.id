@@ -1,6 +1,7 @@
 ---
-status: proposed # draft → proposed (issue filed) → approved (milestone attached)
+status: archived
 issue: 188
+closed: 2026-06-23
 ---
 
 # Integration tests: smart-target staging-by-default, preview-when-applicable

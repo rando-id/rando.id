@@ -11,7 +11,7 @@
           "// is populated from VERCEL_AUTOMATION_BYPASS_SECRET in CI; locally",
           "// it's empty and the empty-value header is a no-op (localhost",
           "// ignores it; Vercel ignores empty bypass values). See",
-          "// .notes/ci-vercel-protection-bypass.spec.md.",
+          "// .notes/archive/ci-vercel-protection-bypass.spec.md.",
           "const bypass = pm.environment.get('vercelBypass') || pm.variables.get('vercelBypass') || '';",
           "if (bypass) {",
           "  pm.request.headers.upsert({ key: 'x-vercel-protection-bypass', value: bypass });",

@@ -256,7 +256,7 @@ async function setupVercelEnv(
     // Pin project-level deploy settings so Vercel's native git
     // integration doesn't fire deploys behind our back. Every deploy
     // routes through `rando deploy …` instead. See
-    // .notes/process-deploy-strategy.spec.md (D1).
+    // .notes/archive/process-deploy-strategy.spec.md (D1).
     await syncVercelProjectSettings(deps, projectName, project.id, emit)
 
     // Push 1Password env vars to the Vercel project. The set of vars
@@ -406,7 +406,7 @@ async function pushVercelEnvVars(
 /**
  * Disable Vercel's native git integration so it stops auto-deploying on
  * push. After this, the only way deployments fire is `rando deploy …`
- * (via Vercel's REST API). See .notes/process-deploy-strategy.spec.md
+ * (via Vercel's REST API). See .notes/archive/process-deploy-strategy.spec.md
  * (D1) for the full strategy.
  *
  * Two fields pinned:

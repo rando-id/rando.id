@@ -1,6 +1,7 @@
 ---
-status: proposed # draft → proposed (issue filed) → approved (milestone attached)
+status: archived
 issue: 175
+closed: 2026-06-23
 ---
 
 # `testing.api` — make the adapter actually pluggable

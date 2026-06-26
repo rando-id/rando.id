@@ -44,14 +44,14 @@ Required env vars — **stored in 1Password**, populated into the root
 `.env` by `rando secrets sync` (see
 [CONTRIBUTING.md → 1Password integration](./CONTRIBUTING.md#1password-integration-required-path)):
 
-| Variable                          | Used by                                                                                                                                                         |
-| --------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `NEON_API_KEY`                    | `rando db ...`                                                                                                                                                  |
-| `CLOUDFLARE_API_TOKEN`            | `rando tunnel`, `rando dns`                                                                                                                                     |
-| `CLOUDFLARE_ACCOUNT_ID`           | `rando tunnel`                                                                                                                                                  |
-| `VERCEL_TOKEN`                    | `rando deploy`                                                                                                                                                  |
-| `VERCEL_TEAM_ID`                  | `rando deploy` (optional)                                                                                                                                       |
-| `VERCEL_AUTOMATION_BYPASS_SECRET` | `integration-tests.yml` — bypass Deployment Protection on preview URLs (staging env only). See `.notes/ci-vercel-protection-bypass.spec.md` for one-time setup. |
+| Variable                          | Used by                                                                                                                                                                 |
+| --------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `NEON_API_KEY`                    | `rando db ...`                                                                                                                                                          |
+| `CLOUDFLARE_API_TOKEN`            | `rando tunnel`, `rando dns`                                                                                                                                             |
+| `CLOUDFLARE_ACCOUNT_ID`           | `rando tunnel`                                                                                                                                                          |
+| `VERCEL_TOKEN`                    | `rando deploy`                                                                                                                                                          |
+| `VERCEL_TEAM_ID`                  | `rando deploy` (optional)                                                                                                                                               |
+| `VERCEL_AUTOMATION_BYPASS_SECRET` | `integration-tests.yml` — bypass Deployment Protection on preview URLs (staging env only). See `.notes/archive/ci-vercel-protection-bypass.spec.md` for one-time setup. |
 
 Manual step → `rando` equivalent:
 
@@ -102,7 +102,7 @@ After the first CI run passes:
   - Require status checks to pass — pick `Lint`, `Typecheck`, and `Unit tests`
   - Require branches to be up to date before merging
 
-**Do NOT add a protection rule for `staging`.** The `sync-staging.yml` workflow needs to push directly to `staging` via the default `GITHUB_TOKEN`, and PR-required rules block that path (`GITHUB_TOKEN` cannot satisfy "require a pull request before merging" — it can't open a PR to itself). Staging is a deploy trigger, NOT a review boundary. If it ever needs protection (e.g. to lock down direct human pushes), the rule must explicitly bypass for `github-actions[bot]` or use a deploy key with the protection-bypass list — but until then, leave `staging` unprotected. See [`.notes/ci-staging-auto-sync.spec.md`](../.notes/ci-staging-auto-sync.spec.md) for the design rationale.
+**Do NOT add a protection rule for `staging`.** The `sync-staging.yml` workflow needs to push directly to `staging` via the default `GITHUB_TOKEN`, and PR-required rules block that path (`GITHUB_TOKEN` cannot satisfy "require a pull request before merging" — it can't open a PR to itself). Staging is a deploy trigger, NOT a review boundary. If it ever needs protection (e.g. to lock down direct human pushes), the rule must explicitly bypass for `github-actions[bot]` or use a deploy key with the protection-bypass list — but until then, leave `staging` unprotected. See [`.notes/archive/ci-staging-auto-sync.spec.md`](../.notes/archive/ci-staging-auto-sync.spec.md) for the design rationale.
 
 ### Repo secrets
 
@@ -126,7 +126,7 @@ push to a branch cancels the previous run.
 | [`workflows/lint.yml`](./workflows/lint.yml)                           | `pnpm lint` across all workspaces.                                                                                                                                                                                                                                                                                                               |
 | [`workflows/typecheck.yml`](./workflows/typecheck.yml)                 | `pnpm typecheck` across all workspaces (Turbo-parallelized).                                                                                                                                                                                                                                                                                     |
 | [`workflows/unit-tests.yml`](./workflows/unit-tests.yml)               | `pnpm test:coverage` — vitest + Cobertura/LCOV. Uploads coverage as a run artifact and to GitHub Code Quality (public preview; GA July 2026) for per-PR coverage comments. Requires **Settings → Code security → Code quality** enabled at the repo level + the workflow's `code-quality: write` permission; without both, the upload step 403s. |
-| [`workflows/integration-tests.yml`](./workflows/integration-tests.yml) | Postman collection + spec lint against a deployed API. Smart-targets the PR's preview when one is expected (PR carries `deploy-preview` label), falls back to staging for unlabeled PRs and on preview-fetch timeout. Nightly cron always runs against staging. See `.notes/ci-integration-tests-smart-target.spec.md`.                          |
+| [`workflows/integration-tests.yml`](./workflows/integration-tests.yml) | Postman collection + spec lint against a deployed API. Smart-targets the PR's preview when one is expected (PR carries `deploy-preview` label), falls back to staging for unlabeled PRs and on preview-fetch timeout. Nightly cron always runs against staging. See `.notes/archive/ci-integration-tests-smart-target.spec.md`.                  |
 | [`workflows/deploy-preview.yml`](./workflows/deploy-preview.yml)       | Per-PR branch deploy (`<slug>-<app>.rando-id.dev`) when the PR carries the `deploy-preview` label; tears down on close.                                                                                                                                                                                                                          |
 | [`workflows/deploy-staging.yml`](./workflows/deploy-staging.yml)       | Auto-deploys to the Vercel staging environment on every push to the `staging` branch. Also `workflow_dispatch` for manual redeploys / rollbacks.                                                                                                                                                                                                 |
 | [`workflows/deploy-production.yml`](./workflows/deploy-production.yml) | Manual prod deploy via `workflow_dispatch` only — gated by the `production` GitHub Environment's required reviewer.                                                                                                                                                                                                                              |
@@ -157,18 +157,18 @@ step is a new composite action — keeps the dep graph + secrets handling
 Every Vercel deploy at Rando — preview, staging, production — runs
 through one of our `deploy-*.yml` workflows via `rando deploy …`.
 Vercel's native git integration is **off** (set by `rando infra
-setup` — D1 of [`.notes/process-deploy-strategy.spec.md`](../.notes/process-deploy-strategy.spec.md)),
+setup` — D1 of [`.notes/archive/process-deploy-strategy.spec.md`](../.notes/archive/process-deploy-strategy.spec.md)),
 so no push ever auto-deploys behind our back. Single source of truth,
 gated explicitly per environment.
 
 ### The four modes
 
-| Trigger                             | Workflow                | Gate                                                                                                                             | Vercel target        |
-| ----------------------------------- | ----------------------- | -------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
-| PR sync with `deploy-preview` label | `deploy-preview.yml`    | `deploy-preview` label on the PR + per-app affected gate ([per-app-preview-gating](../.notes/ci-per-app-preview-gating.spec.md)) | preview (per-branch) |
-| Push to `staging`                   | `deploy-staging.yml`    | `vars.DEPLOY_STAGING_ENABLED != 'false'`                                                                                         | staging              |
-| Manual `workflow_dispatch`          | `deploy-production.yml` | GitHub Environment `production` reviewer approval + `vars.DEPLOY_PRODUCTION_ENABLED != 'false'`                                  | production           |
-| Any other push                      | _(nothing)_             | —                                                                                                                                | —                    |
+| Trigger                             | Workflow                | Gate                                                                                                                                     | Vercel target        |
+| ----------------------------------- | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- | -------------------- |
+| PR sync with `deploy-preview` label | `deploy-preview.yml`    | `deploy-preview` label on the PR + per-app affected gate ([per-app-preview-gating](../.notes/archive/ci-per-app-preview-gating.spec.md)) | preview (per-branch) |
+| Push to `staging`                   | `deploy-staging.yml`    | `vars.DEPLOY_STAGING_ENABLED != 'false'`                                                                                                 | staging              |
+| Manual `workflow_dispatch`          | `deploy-production.yml` | GitHub Environment `production` reviewer approval + `vars.DEPLOY_PRODUCTION_ENABLED != 'false'`                                          | production           |
+| Any other push                      | _(nothing)_             | —                                                                                                                                        | —                    |
 
 `sync-staging.yml` keeps the `staging` branch fast-forwarded from
 `main` on every push to main, so the practical effect is: merge to
@@ -230,7 +230,7 @@ Four file edits + one orchestrator run, no Vercel dashboard work:
 
 3. Update `.github/actions/changes/action.yml` so the composite emits a
    per-workspace boolean for the new app (see
-   [ci-per-app-preview-gating](../.notes/ci-per-app-preview-gating.spec.md)
+   [ci-per-app-preview-gating](../.notes/archive/ci-per-app-preview-gating.spec.md)
    "Touch points" #1).
 4. Extend `deploy-preview.yml`'s "Compute affected apps" step to
    include the new app.
@@ -241,7 +241,7 @@ Four file edits + one orchestrator run, no Vercel dashboard work:
 
 `integration-tests.yml` falls back to staging when a preview never
 comes up (Vercel quota, deploy failure, etc.) — see
-`.notes/ci-integration-tests-smart-target.spec.md`. **This means a
+`.notes/archive/ci-integration-tests-smart-target.spec.md`. **This means a
 green `Postman collection + spec lint` check doesn't prove the PR's
 own preview succeeded.** When reviewing:
 
@@ -294,7 +294,7 @@ Two seams filter out PRs / pushes that don't change deployable code:
   `apps/*/vercel.json` files in the same PR. Pinning also limits
   the supply-chain surface — `npx` runs before Vercel installs
   `node_modules` (that's the whole point), so we can't use
-  `pnpm exec`. See `.notes/ci-deploy-skip.spec.md` → "Bump policy
+  `pnpm exec`. See `.notes/archive/ci-deploy-skip.spec.md` → "Bump policy
   for `turbo-ignore`".
 
 **Adding a new app workspace?** Two edits keep gating coherent:
@@ -322,7 +322,7 @@ remove all deploy-worthy changes before close would skip the workflow
 entirely and orphan infra. The job-level gate above keeps teardown
 safe.
 
-Spec: `.notes/ci-per-app-preview-gating.spec.md`. Other workflows
+Spec: `.notes/archive/ci-per-app-preview-gating.spec.md`. Other workflows
 (`lint.yml`, `typecheck.yml`, `codeql.yml`) continue to gate on the
 broader `code` aggregate — they don't deploy per-app, so per-workspace
 specificity isn't useful there.
@@ -372,9 +372,9 @@ Label persists across rebases.
 
 `teardown` stays unconditional — closing a PR always cleans up infra,
 even one that never had a preview. Specs:
-[`.notes/process-deploy-strategy.spec.md`](../.notes/process-deploy-strategy.spec.md)
+[`.notes/archive/process-deploy-strategy.spec.md`](../.notes/archive/process-deploy-strategy.spec.md)
 (D3) +
-[`.notes/ci-preview-quota-strategy.spec.md`](../.notes/ci-preview-quota-strategy.spec.md)
+[`.notes/archive/ci-preview-quota-strategy.spec.md`](../.notes/archive/ci-preview-quota-strategy.spec.md)
 (original Dependabot opt-in, now generalized).
 
 ## Cloudflare
@@ -587,7 +587,7 @@ rando.id (prod, via deploy-production.yml)               staging-*.rando-id.dev
 - Feature branches → PRs into `main` directly. Add the `deploy-preview` label to opt into a per-app preview at `<branch>-<app>.rando-id.dev` (via `deploy-preview.yml`). Previews are off by default — see "Previews are opt-in (all PRs)" above.
 - Merge to `main` → fires **one** thing automatically: `sync-staging.yml` fast-forwards `staging` to `main`, which triggers `deploy-staging.yml`. Production does NOT auto-deploy — that requires `workflow_dispatch` on `deploy-production.yml` plus an Environment reviewer approval.
 - Staging is a **pure mirror of main**, NOT an independent release branch. No PRs target staging, no hotfixes land on staging, no commits exist on staging that aren't on main. The auto-sync workflow refuses to overwrite divergent commits — fail-loud is intentional.
-- If you ever need a real release process (cut staging independently, hotfix-on-staging), revisit `.notes/ci-staging-auto-sync.spec.md`'s "What would make us reconsider" — the model needs to change.
+- If you ever need a real release process (cut staging independently, hotfix-on-staging), revisit `.notes/archive/ci-staging-auto-sync.spec.md`'s "What would make us reconsider" — the model needs to change.
 
 ### Staging out of sync — recovery
 

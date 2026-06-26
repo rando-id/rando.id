@@ -414,7 +414,7 @@ export function deployCommand(adapters: Adapters, io: Io): Command {
   // `rando deploy promote <staging|production>` — deploy each app to a
   // named Vercel environment. Replaces Vercel's native push-to-deploy
   // after D1 turns the latter off (see
-  // .notes/process-deploy-strategy.spec.md). Same plumbing as `branch`:
+  // .notes/archive/process-deploy-strategy.spec.md). Same plumbing as `branch`:
   // per-app project lookup, trigger, optional wait. Differences: pins
   // `target` so the deployment lands on the env's persistent Vercel
   // domain (no stable-URL / Cloudflare setup — env domains are

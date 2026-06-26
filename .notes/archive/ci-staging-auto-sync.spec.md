@@ -1,6 +1,7 @@
 ---
-status: proposed # draft → proposed (issue filed) → approved (milestone attached)
+status: archived
 issue: 194
+closed: 2026-06-24
 ---
 
 # Auto-sync staging from main on every push

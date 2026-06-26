@@ -1,6 +1,7 @@
 ---
-status: proposed # draft → proposed (issue filed) → approved (milestone attached)
+status: archived
 issue: 223
+closed: 2026-06-25
 ---
 
 # pnpm workspace catalog for shared dev deps

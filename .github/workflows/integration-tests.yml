@@ -3,7 +3,7 @@ name: Integration tests
 # Runs the Postman collection (postman/rando-api.postman_collection.json)
 # via the official Postman CLI against a deployed API. Smart targeting
 # picks the PR's preview when one is expected, falls back to staging
-# otherwise — see .notes/ci-integration-tests-smart-target.spec.md.
+# otherwise — see .notes/archive/ci-integration-tests-smart-target.spec.md.
 #
 # Target matrix (pull_request events):
 #   - API workspace NOT affected            → skip (existing gate)
@@ -24,7 +24,7 @@ name: Integration tests
 # `op-env` before resolve-target so the bypass header is available):
 #   - POSTMAN_API_KEY                — `collection run` + `api lint` auth
 #   - VERCEL_AUTOMATION_BYPASS_SECRET — passes Vercel Deployment
-#     Protection on preview URLs; see .notes/ci-vercel-protection-bypass.spec.md
+#     Protection on preview URLs; see .notes/archive/ci-vercel-protection-bypass.spec.md
 #
 # vars.POSTMAN_ENABLED=false disables the workflow without removing
 # it (matches the issues.yml + deploy-preview.yml pattern).
@@ -89,7 +89,7 @@ jobs:
       # the /v1/health poll. The poll has to send the bypass header to
       # get past Vercel's Deployment Protection on preview URLs (which
       # would otherwise 302 to vercel.com/sso-api for every request).
-      # See .notes/ci-vercel-protection-bypass.spec.md.
+      # See .notes/archive/ci-vercel-protection-bypass.spec.md.
       - name: Load 1Password Environment
         if: steps.gate.outputs.skip != 'true'
         uses: ./.github/actions/op-env
@@ -101,7 +101,7 @@ jobs:
       # deploy-preview.yml). Falls back to staging if the preview never
       # comes up (deploy failure, Vercel quota hit) so we still get a
       # smoke test instead of a misleading SUCCESS-with-skip. Spec:
-      # .notes/ci-integration-tests-smart-target.spec.md
+      # .notes/archive/ci-integration-tests-smart-target.spec.md
       - name: Resolve target URL
         if: steps.gate.outputs.skip != 'true'
         id: target
@@ -286,9 +286,9 @@ jobs:
           # sso-api on every probe). If the secret is unset locally
           # or in a fork PR, the empty-value header is ignored by
           # Vercel and we fall through to the staging-fallback path
-          # naturally — see .notes/ci-vercel-protection-bypass.spec.md.
+          # naturally — see .notes/archive/ci-vercel-protection-bypass.spec.md.
           if [ -z "${VERCEL_AUTOMATION_BYPASS_SECRET:-}" ]; then
-            echo "::warning::VERCEL_AUTOMATION_BYPASS_SECRET unset — preview poll will hit Deployment Protection (302) and fall back to staging. See .notes/ci-vercel-protection-bypass.spec.md for the one-time setup."
+            echo "::warning::VERCEL_AUTOMATION_BYPASS_SECRET unset — preview poll will hit Deployment Protection (302) and fall back to staging. See .notes/archive/ci-vercel-protection-bypass.spec.md for the one-time setup."
           fi
           for i in $(seq 1 30); do
             code=$(curl -s -o /dev/null -w "%{http_code}" \
