@@ -13,6 +13,7 @@ import type { DbProvider } from './domain/db'
 import type { DeployProvider } from './domain/deploy'
 import type { DnsProvider } from './domain/dns'
 import type { GhProvider } from './domain/gh'
+import type { GhAdminProvider } from './domain/gh-admin'
 import type { IssueTrackerProvider } from './domain/tracker'
 import type { PostmanProvider } from './domain/postman'
 import type { SecretsProvider } from './domain/secrets'
@@ -23,6 +24,7 @@ import { NeonDbProvider } from './adapters/neon'
 import { CloudflareTunnelProvider } from './adapters/cloudflare-tunnel'
 import { CloudflareDnsProvider } from './adapters/cloudflare-dns'
 import { GhCliProvider } from './adapters/gh-cli'
+import { GhRestProvider } from './adapters/gh-rest'
 import { GitHubIssuesProvider } from './adapters/github-issues'
 import { JiraCloudProvider } from './adapters/jira-cloud'
 import { OpCliProvider } from './adapters/op-cli'
@@ -94,6 +96,13 @@ export interface Adapters {
    * by `gh` itself (keychain / GH_TOKEN env var).
    */
   gh(): GhProvider
+  /**
+   * GitHub REST admin — rulesets, environments, repo settings, secret
+   * push. Takes an explicit ephemeral admin PAT per call so the token
+   * lifecycle stays bounded to one `rando vc setup` run (see
+   * .notes/tool-gh-api-coverage.spec.md §"Ephemeral admin PAT").
+   */
+  ghAdmin(opts: { token: string }): GhAdminProvider
   /**
    * Vercel CLI — for marketplace-storage ops the REST API doesn't
    * expose (Vercel-managed Neon provisioning, currently). Auth is
@@ -216,6 +225,7 @@ export function createAdapters(env: NodeJS.ProcessEnv = process.env): Adapters {
       return new OpCliProvider({ account })
     },
     gh: () => new GhCliProvider(),
+    ghAdmin: (opts) => new GhRestProvider({ token: opts.token }),
     vercelCli: () => {
       // Pass the token + team scope if they're set so commands target
       // the team that owns the project. VERCEL_TEAM_ID accepts either

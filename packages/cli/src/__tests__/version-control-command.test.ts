@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { run } from '../cli'
 import type { Adapters } from '../config'
+import type { GhAdminProvider } from '../domain/gh-admin'
 import { captureIo } from './helpers'
 
 const tmpDirs: string[] = []
@@ -16,7 +17,7 @@ afterEach(() => {
 })
 
 function writeConfig(): { path: string; cwd: string } {
-  const dir = mkdtempSync(join(tmpdir(), 'rando-cli-setup-gh-'))
+  const dir = mkdtempSync(join(tmpdir(), 'rando-cli-vc-'))
   tmpDirs.push(dir)
   const path = join(dir, 'rando.config.json')
   writeFileSync(
@@ -35,27 +36,30 @@ function never(kind: string): never {
   throw new Error(`${kind} adapter should not be touched in this test`)
 }
 
-const fakeAdapters: Adapters = {
-  db: () => never('db'),
-  tunnel: () => never('tunnel'),
-  deploy: () => never('deploy'),
-  dns: () => never('dns'),
-  tracker: () => never('tracker'),
-  apiTesting: () => never('apiTesting'),
-  postman: () => never('postman'),
-  secrets: () => never('secrets'),
-  gh: () => never('gh'),
-  vercelCli: () => never('vercelCli'),
+function fakeAdapters(ghAdmin: () => GhAdminProvider = () => never('ghAdmin')): Adapters {
+  return {
+    db: () => never('db'),
+    tunnel: () => never('tunnel'),
+    deploy: () => never('deploy'),
+    dns: () => never('dns'),
+    tracker: () => never('tracker'),
+    apiTesting: () => never('apiTesting'),
+    postman: () => never('postman'),
+    secrets: () => never('secrets'),
+    gh: () => never('gh'),
+    ghAdmin,
+    vercelCli: () => never('vercelCli'),
+  }
 }
 
-describe('setup-gh command', () => {
-  it('apply --dry-run prints plan without calling APIs', async () => {
+describe('version-control (vc) command', () => {
+  it('vc setup --dry-run prints plan without calling APIs', async () => {
     const { path, cwd } = writeConfig()
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     try {
-      await run(['setup-gh', 'apply', '--admin-token', 'fake', '--config', path, '--dry-run'], {
-        adapters: fakeAdapters,
+      await run(['vc', 'setup', '--admin-token', 'fake', '--config', path, '--dry-run'], {
+        adapters: fakeAdapters(),
         io: io.io,
         exit: () => {
           throw new Error('unexpected exit')
@@ -75,8 +79,8 @@ describe('setup-gh command', () => {
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     try {
-      await run(['setup-gh', 'codeowners', '--config', path, '--dry-run'], {
-        adapters: fakeAdapters,
+      await run(['vc', 'codeowners', '--config', path, '--dry-run'], {
+        adapters: fakeAdapters(),
         io: io.io,
         exit: () => {
           throw new Error('unexpected exit')
@@ -96,8 +100,8 @@ describe('setup-gh command', () => {
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     try {
-      await run(['setup-gh', 'codeowners', '--config', path], {
-        adapters: fakeAdapters,
+      await run(['vc', 'codeowners', '--config', path], {
+        adapters: fakeAdapters(),
         io: io.io,
         exit: () => {
           throw new Error('unexpected exit')
@@ -115,8 +119,8 @@ describe('setup-gh command', () => {
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     try {
-      await run(['setup-gh', 'ruleset', '--admin-token', 'fake', '--config', path, '--dry-run'], {
-        adapters: fakeAdapters,
+      await run(['vc', 'ruleset', '--admin-token', 'fake', '--config', path, '--dry-run'], {
+        adapters: fakeAdapters(),
         io: io.io,
         exit: () => {
           throw new Error('unexpected exit')
@@ -135,16 +139,13 @@ describe('setup-gh command', () => {
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     try {
-      await run(
-        ['setup-gh', 'repo-settings', '--admin-token', 'fake', '--config', path, '--dry-run'],
-        {
-          adapters: fakeAdapters,
-          io: io.io,
-          exit: () => {
-            throw new Error('unexpected exit')
-          },
+      await run(['vc', 'repo-settings', '--admin-token', 'fake', '--config', path, '--dry-run'], {
+        adapters: fakeAdapters(),
+        io: io.io,
+        exit: () => {
+          throw new Error('unexpected exit')
         },
-      )
+      })
     } finally {
       spy.mockRestore()
     }
@@ -153,14 +154,14 @@ describe('setup-gh command', () => {
     expect(text).toContain('delete_branch_on_merge')
   })
 
-  it('apply without --admin-token (and without env var) errors', async () => {
+  it('setup without --admin-token (and without env var) errors', async () => {
     const { path, cwd } = writeConfig()
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     const exit = vi.fn() as unknown as (code: number) => never
     try {
-      await run(['setup-gh', 'apply', '--config', path, '--dry-run'], {
-        adapters: fakeAdapters,
+      await run(['vc', 'setup', '--config', path, '--dry-run'], {
+        adapters: fakeAdapters(),
         io: io.io,
         exit,
       })
@@ -172,14 +173,14 @@ describe('setup-gh command', () => {
     expect(exit).toHaveBeenCalled()
   })
 
-  it('apply picks up RANDO_ADMIN_TOKEN env var when --admin-token absent', async () => {
+  it('setup picks up RANDO_ADMIN_TOKEN env var when --admin-token absent', async () => {
     process.env.RANDO_ADMIN_TOKEN = 'env-token'
     const { path, cwd } = writeConfig()
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     try {
-      await run(['setup-gh', 'apply', '--config', path, '--dry-run'], {
-        adapters: fakeAdapters,
+      await run(['vc', 'setup', '--config', path, '--dry-run'], {
+        adapters: fakeAdapters(),
         io: io.io,
         exit: () => {
           throw new Error('unexpected exit')
@@ -190,5 +191,37 @@ describe('setup-gh command', () => {
     }
     // Dry-run completes without error means the token was resolved.
     expect(io.stderr.join('\n')).not.toContain('No admin PAT')
+  })
+
+  it('revoke-token uses the injected ghAdmin adapter', async () => {
+    const revokeAdminToken = vi.fn(async () => undefined)
+    const mock: GhAdminProvider = {
+      whoami: vi.fn(),
+      listRulesets: vi.fn(),
+      createRuleset: vi.fn(),
+      updateRuleset: vi.fn(),
+      upsertEnvironment: vi.fn(),
+      updateRepoSettings: vi.fn(),
+      getRepoSecretPublicKey: vi.fn(),
+      getEnvironmentSecretPublicKey: vi.fn(),
+      setRepoSecret: vi.fn(),
+      setEnvironmentSecret: vi.fn(),
+      revokeAdminToken,
+    } as unknown as GhAdminProvider
+    const { cwd } = writeConfig()
+    const io = captureIo()
+    const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
+    try {
+      await run(['vc', 'revoke-token', '--admin-token', 'fake', '--token-id', '999'], {
+        adapters: fakeAdapters(() => mock),
+        io: io.io,
+        exit: () => {
+          throw new Error('unexpected exit')
+        },
+      })
+    } finally {
+      spy.mockRestore()
+    }
+    expect(revokeAdminToken).toHaveBeenCalledWith(999)
   })
 })

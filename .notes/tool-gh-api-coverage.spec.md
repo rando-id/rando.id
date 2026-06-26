@@ -3,7 +3,7 @@ status: proposed
 issue: 247
 ---
 
-# All GitHub infra via API — `rando setup gh` coverage map
+# All GitHub infra via API — `rando vc setup` coverage map
 
 ## Why
 
@@ -21,7 +21,7 @@ onboarding from being one-shot:
 - **CODEOWNERS** — file missing entirely
 - **Repo secrets** (the bootstrap PAT, OP_SERVICE_ACCOUNT_TOKEN) — manual
 
-`rando setup gh` was filed as #222 to fix this. This spec is the surface
+`rando vc setup` was filed as #222 to fix this. This spec is the surface
 map: what endpoints, what shape the command takes, what's already covered
 in `gh-cli.ts` vs gaps.
 
@@ -62,7 +62,7 @@ in `gh-cli.ts` vs gaps.
 
 - **PAT creation.** GitHub doesn't expose an API to mint its own PATs.
   See "Ephemeral admin PAT" below — the operator creates a high-scope
-  PAT just for the duration of `rando setup gh` and revokes it
+  PAT just for the duration of `rando vc setup` and revokes it
   immediately after. The long-lived bootstrap PAT (used by every other
   workflow) stays minimal-scope.
 - **2FA enrollment.** User-level action only.
@@ -74,7 +74,7 @@ in `gh-cli.ts` vs gaps.
 
 ### Ephemeral admin PAT — credential lifecycle
 
-`rando setup gh` needs admin-grade scopes (`administration:write`,
+`rando vc setup` needs admin-grade scopes (`administration:write`,
 `secrets:write`, `actions:write`, `environments:write`, ruleset writes).
 Granting those scopes to the long-lived bootstrap PAT means every
 unrelated workflow run inherits them too — a leak of any single
@@ -84,18 +84,18 @@ Solution: the admin PAT is **ephemeral**, scoped to a single setup run:
 
 1. **Pre-run.** Operator generates a fine-grained PAT in GH UI with the
    admin scope set. (PAT minting itself stays manual — GH gives no API
-   for it.) Names it predictably: `rando-setup-gh-YYYYMMDD-HHMMSS`.
-2. **Run.** Operator pipes it in: `rando setup gh --admin-token "$ADMIN_PAT"`.
+   for it.) Names it predictably: `rando-vc-setup-YYYYMMDD-HHMMSS`.
+2. **Run.** Operator pipes it in: `rando vc setup --admin-token "$ADMIN_PAT"`.
    Token is held only in process memory; never written to disk, never
    logged, never committed. The command runs idempotently against all
    P0 endpoints.
-3. **Post-run.** `rando setup gh` calls `DELETE /personal-access-tokens/{id}`
+3. **Post-run.** `rando vc setup` calls `DELETE /personal-access-tokens/{id}`
    on itself as its last step, revoking its own token. If the run fails
    mid-flight, the operator deletes the PAT manually (and a `rando setup
 gh --revoke-token` subcommand exists as a fallback).
 4. **Audit.** GH's PAT-creation log captures the create + revoke pair.
    The window the elevated token exists is bounded by the wall-clock of
-   one `rando setup gh` run (~30 API calls, seconds).
+   one `rando vc setup` run (~30 API calls, seconds).
 
 What this BUYS us:
 
@@ -123,23 +123,23 @@ if we ever have > 3 repos to manage.
 
 ## Command surface
 
-`rando setup gh` becomes the umbrella; subcommands handle the slices:
+`rando vc setup` becomes the umbrella; subcommands handle the slices:
 
 ```
-rando setup gh --admin-token "$PAT" --dry-run   # full report: what'd change
-rando setup gh --admin-token "$PAT"             # apply everything (then revoke PAT)
-rando setup gh ruleset --admin-token "$PAT"     # just the ruleset
-rando setup gh environments --admin-token "$PAT"
-rando setup gh secrets --admin-token "$PAT"     # calls into [[security-secrets-strategy]]
-rando setup gh labels --admin-token "$PAT"
-rando setup gh repo-settings --admin-token "$PAT"
-rando setup gh codeowners                       # local file, no token needed
-rando setup gh --revoke-token "$PAT"            # cleanup-only after a partial failure
+rando vc setup --admin-token "$PAT" --dry-run   # full report: what'd change
+rando vc setup --admin-token "$PAT"             # apply everything (then revoke PAT)
+rando vc ruleset --admin-token "$PAT"     # just the ruleset
+rando vc environments --admin-token "$PAT"
+rando vc secret --admin-token "$PAT"     # calls into [[security-secrets-strategy]]
+rando vc labels --admin-token "$PAT"
+rando vc repo-settings --admin-token "$PAT"
+rando vc codeowners                       # local file, no token needed
+rando vc revoke-token "$PAT"            # cleanup-only after a partial failure
 ```
 
 The token is required for every subcommand that hits an admin endpoint
 (everything except `codeowners`, which is a local file write). Reading
-from the process env (`RANDO_ADMIN_TOKEN=$PAT rando setup gh`) works too
+from the process env (`RANDO_ADMIN_TOKEN=$PAT rando vc setup`) works too
 — the flag is for explicit one-shot runs.
 
 Each subcommand is idempotent: read state, diff against desired, apply
@@ -155,7 +155,7 @@ The "desired state" is a function of:
 - A new file `.github/rulesets/<name>.json` (or in `rando.config.json`) for ruleset definition
 - `.env.example` files for the env-var set (via [[process-env-management]] integration)
 
-Single declarative source: edit the file, run `rando setup gh`, state
+Single declarative source: edit the file, run `rando vc setup`, state
 converges. No UI clicks required.
 
 ## Phased delivery
@@ -163,38 +163,38 @@ converges. No UI clicks required.
 **Phase 1 (lands first, immediate ROI)**
 
 1. P0 endpoint adapters in `gh-cli.ts` (ruleset, environment, secret, repo settings)
-2. `rando setup gh ruleset` + `rando setup gh repo-settings`
+2. `rando vc ruleset` + `rando vc repo-settings`
 3. Smoke test against `iamnewton/rando` (the existing repo — operates idempotently, no change if state matches)
 
 **Phase 2 (after [[security-secrets-strategy]] decision)**
 
-4. `rando setup gh secrets` — implements the Option B sync path
-5. `rando setup gh environments` — includes reviewer setup
-6. `rando setup gh labels` — provisions the label set
+4. `rando vc secret` — implements the Option B sync path
+5. `rando vc environments` — includes reviewer setup
+6. `rando vc labels` — provisions the label set
 
 **Phase 3 (alongside [[process-reusable-template]])**
 
-7. `rando setup gh codeowners` — generates from config + maintainers
-8. `rando init <app>` calls `rando setup gh` as final step
+7. `rando vc codeowners` — generates from config + maintainers
+8. `rando init <app>` calls `rando vc setup` as final step
 9. CODEOWNERS auto-refresh on `rando.config.json` change
 
 ## Touch points
 
 1. `packages/cli/src/adapters/gh.ts` (new — split from `gh-cli.ts`) —
    REST-API based for endpoints that don't need shell-out
-2. `packages/cli/src/domain/gh.ts` — new interface covering the P0 set
-3. `packages/cli/src/commands/setup/gh.ts` (new) — command + subcommands
-4. `packages/cli/src/orchestrate.ts` — call `setup-gh` in `rando infra
+2. `packages/cli/src/domain/gh-admin.ts` — interface (registered in `Adapters` factory as `ghAdmin(opts)`) covering the P0 set
+3. `packages/cli/src/commands/version-control.ts` (new) — command + subcommands
+4. `packages/cli/src/orchestrate.ts` — call `vc setup` in `rando infra
 setup` after the Vercel/Cloudflare/Neon steps
 5. `.github/CODEOWNERS` (new file once generator lands)
 6. `.github/rulesets/main.json` (new — declarative ruleset)
 7. `MAINTAINING.md` — "Setting up a new repo" section condenses to
-   `rando setup gh` + a few one-time manual prereqs (PAT, 1P token)
+   `rando vc setup` + a few one-time manual prereqs (PAT, 1P token)
 
 ## What we accept
 
 - **GH API rate limits.** Authenticated PATs get 5000 req/hr;
-  `rando setup gh` makes ~30 calls per full run — comfortably under
+  `rando vc setup` makes ~30 calls per full run — comfortably under
   the limit. No batching needed.
 - **libsodium for secret encryption.** Repo + environment secrets must
   be encrypted client-side before push. Pulls in `tweetsodium` or
@@ -216,9 +216,9 @@ setup` after the Vercel/Cloudflare/Neon steps
 
 ## Refs
 
-- #222 — original `rando setup gh` issue
+- #222 — original `rando vc setup` issue
 - [[process-deploy-strategy]] D4 — needs environment + reviewers
 - [[security-secrets-strategy]] — secret-push integration point
 - [[ci-pr-issue-labeler]] — needs label-set provisioning
 - [[security-github-baseline]] — gap inventory this resolves
-- [[process-reusable-template]] — calls `rando setup gh` from `rando init`
+- [[process-reusable-template]] — calls `rando vc setup` from `rando init`

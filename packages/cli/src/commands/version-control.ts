@@ -1,17 +1,21 @@
-// `rando setup gh` — provision GitHub repo state via REST API using an
-// ephemeral admin PAT. See .notes/tool-gh-api-coverage.spec.md.
+// `rando version-control` (alias `vc`) — provision version-control hosting
+// state (rulesets, environments, secrets, repo settings) via REST API.
+// Today the only backend is GitHub; the command surface stays
+// vendor-neutral so a future GitLab/Bitbucket adapter swaps in without a
+// rename. See .notes/tool-gh-api-coverage.spec.md.
 //
 // Token flow: --admin-token flag (or RANDO_ADMIN_TOKEN env var) supplies a
-// fine-grained PAT minted for this run only. `apply` revokes it at the end;
-// individual subcommands leave revocation to the operator (use `revoke-token`).
+// fine-grained PAT minted for this run only. `setup` revokes it at the end
+// if --token-id is provided; individual subcommands leave revocation to
+// the operator (use `revoke-token`).
 
 import { readFile, writeFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { Command } from 'commander'
+import type { Adapters } from '../config'
 import { encryptSecretForGitHub } from '../crypto/sodium'
 import { ProviderApiError } from '../domain/errors'
 import type { GhAdminProvider, GhEnvironment, GhRepoSettings } from '../domain/gh-admin'
-import { GhRestProvider } from '../adapters/gh-rest'
 import type { Io } from '../output'
 import { loadSetupConfig, type SetupConfig } from '../setup-config'
 
@@ -28,15 +32,17 @@ const DEFAULT_REPO_SETTINGS: GhRepoSettings = {
   delete_branch_on_merge: true,
 }
 
-export function setupGhCommand(io: Io): Command {
+export function versionControlCommand(adapters: Adapters, io: Io): Command {
   const { colors } = io
-  const cmd = new Command('setup-gh').description(
-    'Provision GitHub repo state (rulesets, environments, secrets, settings) via REST API. ' +
-      'Uses an ephemeral admin PAT — see .notes/tool-gh-api-coverage.spec.md.',
-  )
+  const cmd = new Command('version-control')
+    .alias('vc')
+    .description(
+      'Provision version-control hosting state (rulesets, environments, secrets, settings) ' +
+        'via REST API. Uses an ephemeral admin PAT — see .notes/tool-gh-api-coverage.spec.md.',
+    )
 
   cmd
-    .command('apply')
+    .command('setup')
     .description('Run every subcommand in order, then revoke the admin token.')
     .option('--admin-token <pat>', 'Ephemeral admin PAT (or set RANDO_ADMIN_TOKEN)')
     .option('--token-id <id>', 'PAT id for self-revocation (skip to leave token live)')
@@ -55,7 +61,7 @@ export function setupGhCommand(io: Io): Command {
           if (opts.tokenId) io.stdout(`  • revoke admin token #${opts.tokenId}`)
           return
         }
-        const gh = new GhRestProvider({ token })
+        const gh = adapters.ghAdmin({ token })
         const who = await gh.whoami()
         io.stdout(`${colors.hint('→')} authenticated as ${colors.bold(who.login)}`)
         await applyRuleset(gh, cfg.repo, io)
@@ -87,7 +93,7 @@ export function setupGhCommand(io: Io): Command {
         io.stdout(colors.hint(`dry-run: would apply ruleset from ${RULESET_PATH} to ${cfg.repo}`))
         return
       }
-      const gh = new GhRestProvider({ token: resolveToken(opts.adminToken) })
+      const gh = adapters.ghAdmin({ token: resolveToken(opts.adminToken) })
       await applyRuleset(gh, cfg.repo, io)
     })
 
@@ -104,13 +110,13 @@ export function setupGhCommand(io: Io): Command {
         io.stdout(JSON.stringify(DEFAULT_REPO_SETTINGS, null, 2))
         return
       }
-      const gh = new GhRestProvider({ token: resolveToken(opts.adminToken) })
+      const gh = adapters.ghAdmin({ token: resolveToken(opts.adminToken) })
       await applyRepoSettings(gh, cfg.repo, DEFAULT_REPO_SETTINGS, io)
     })
 
   cmd
     .command('environments')
-    .description('Create/update GitHub Environments (staging, production).')
+    .description('Create/update Environments (staging, production).')
     .option('--admin-token <pat>', 'Ephemeral admin PAT (or set RANDO_ADMIN_TOKEN)')
     .option('--dry-run', 'Print what would happen', false)
     .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
@@ -120,7 +126,7 @@ export function setupGhCommand(io: Io): Command {
         io.stdout(colors.hint(`dry-run: PUT /repos/${cfg.repo}/environments/{staging,production}`))
         return
       }
-      const gh = new GhRestProvider({ token: resolveToken(opts.adminToken) })
+      const gh = adapters.ghAdmin({ token: resolveToken(opts.adminToken) })
       await applyEnvironments(gh, cfg.repo, io)
     })
 
@@ -146,7 +152,7 @@ export function setupGhCommand(io: Io): Command {
           io.stdout(colors.hint(`dry-run: encrypt + PUT secret ${name} on ${target}`))
           return
         }
-        const gh = new GhRestProvider({ token: resolveToken(opts.adminToken) })
+        const gh = adapters.ghAdmin({ token: resolveToken(opts.adminToken) })
         const publicKey = opts.env
           ? await gh.getEnvironmentSecretPublicKey(cfg.repo, opts.env)
           : await gh.getRepoSecretPublicKey(cfg.repo)
@@ -177,11 +183,11 @@ export function setupGhCommand(io: Io): Command {
 
   cmd
     .command('revoke-token')
-    .description('Manually revoke an admin PAT by id (cleanup after a failed apply).')
+    .description('Manually revoke an admin PAT by id (cleanup after a failed setup).')
     .requiredOption('--admin-token <pat>', 'Ephemeral admin PAT')
     .requiredOption('--token-id <id>', 'PAT id to revoke')
     .action(async (opts: { adminToken: string; tokenId: string }) => {
-      const gh = new GhRestProvider({ token: opts.adminToken })
+      const gh = adapters.ghAdmin({ token: opts.adminToken })
       await gh.revokeAdminToken(parseInt(opts.tokenId, 10))
       io.stdout(`${colors.success('✓')} admin token #${opts.tokenId} revoked`)
     })
@@ -236,8 +242,8 @@ async function applyEnvironments(gh: GhAdminProvider, repo: string, io: Io): Pro
       name: 'production',
       // Reviewer wiring is operator-driven for now; leave the array empty so
       // the env gets created without enforcement. Operator adds reviewers
-      // either via `setup-gh apply` re-run with reviewers in config (Phase
-      // 2) or directly in the GH UI.
+      // either via `vc setup` re-run with reviewers in config (Phase 2) or
+      // directly in the GH UI.
     },
   ]
   for (const env of environments) {
@@ -266,7 +272,7 @@ function renderCodeowners(cfg: SetupConfig): string {
   // rando.config.json.
   const owner = cfg.repo.split('/')[0]
   return [
-    '# Generated by `rando setup gh codeowners` — do not edit by hand.',
+    '# Generated by `rando vc codeowners` — do not edit by hand.',
     '# Source: rando.config.json (repo + future maintainers field).',
     '',
     `* @${owner}`,
