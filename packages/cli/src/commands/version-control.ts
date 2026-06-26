@@ -208,7 +208,17 @@ async function applyRuleset(gh: GhAdminProvider, repo: string, io: Io): Promise<
     io.stderr(io.colors.warn(`ruleset: skipped — ${RULESET_PATH} not found`))
     return
   }
-  const payload = JSON.parse(raw) as Record<string, unknown>
+  // Parse separately so a malformed-JSON error produces a clearer message
+  // than a generic SyntaxError stack trace, and so it soft-fails (matches
+  // the missing-file branch above + CLAUDE.md soft-skip rule).
+  let payload: Record<string, unknown>
+  try {
+    payload = JSON.parse(raw) as Record<string, unknown>
+  } catch (err) {
+    const detail = err instanceof Error ? err.message : String(err)
+    io.stderr(io.colors.warn(`ruleset: skipped — invalid JSON in ${RULESET_PATH}: ${detail}`))
+    return
+  }
   const desiredName = (payload.name as string | undefined) ?? 'main'
   try {
     const existing = await gh.listRulesets(repo)
