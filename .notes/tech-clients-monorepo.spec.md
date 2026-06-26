@@ -1,6 +1,6 @@
 ---
-status: draft # draft → proposed (issue filed) → approved (milestone attached)
-issue: TBD
+status: proposed
+issue: 235
 ---
 
 # Central clients package → `@theholocron/clients` monorepo

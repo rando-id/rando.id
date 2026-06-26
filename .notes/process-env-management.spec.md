@@ -1,6 +1,6 @@
 ---
-status: draft
-issue: TBD
+status: proposed
+issue: 241
 ---
 
 # `.env.example` as the source of truth + organized by tool

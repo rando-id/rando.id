@@ -1,6 +1,6 @@
 ---
-status: draft
-issue: TBD
+status: proposed
+issue: 239
 ---
 
 # MSW expansion — shared handlers across test layers

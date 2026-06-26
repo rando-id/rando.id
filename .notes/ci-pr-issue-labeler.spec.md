@@ -1,6 +1,6 @@
 ---
-status: draft
-issue: TBD
+status: proposed
+issue: 246
 ---
 
 # Auto-label PRs + issues based on paths and content

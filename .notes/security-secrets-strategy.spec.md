@@ -1,6 +1,6 @@
 ---
-status: draft
-issue: TBD
+status: proposed
+issue: 245
 ---
 
 # Secrets strategy — 1Password vs GitHub Environments
@@ -83,7 +83,20 @@ provision 1P containers per-environment.
 | Sync drift risk           | ✅ no sync         | ⚠ requires `rando secrets push` discipline | ⚠                    | ✅ no sync      |
 | Migration cost            | Highest            | Medium                                     | Low                  | Zero            |
 
-## Recommendation (for discussion)
+## Decision (2026-06-26): Option B
+
+**Decided.** 1Password stays as the human-editable vault; `rando secrets push --to gh-env` syncs to GitHub Environment secrets via the GH REST API. Workflows read GH Environment secrets directly (no more `op-env` action in every workflow).
+
+Rationale (per discussion in #245):
+
+- Operator UX (1P UI) is genuinely useful — Option A's GH-only write-only UI was a step back
+- Removes the `OP_SERVICE_ACCOUNT_TOKEN` bootstrap surface from every workflow run (it's still used by `rando secrets push`, but only on operator-initiated runs)
+- Vercel integration becomes native through GH Environments — `rando` doesn't have to push to Vercel separately
+- Phase 2 of [[tool-gh-api-coverage]] depends on this; deciding now unblocks that work
+
+Drift mitigation comes via the nightly drift check (separate follow-up — file as a child of #245 once Phase 2 lands).
+
+## Recommendation (preserved for history)
 
 **Option B** is the strongest middle ground:
 
