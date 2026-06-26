@@ -1,6 +1,6 @@
 ---
-status: draft
-issue: TBD
+status: proposed
+issue: 236
 ---
 
 # Storybook setup — component lib + app stories + MSW

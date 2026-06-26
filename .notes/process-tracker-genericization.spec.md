@@ -1,6 +1,6 @@
 ---
-status: draft
-issue: TBD
+status: proposed
+issue: 242
 ---
 
 # Genericize Jira references → tracker-agnostic naming

@@ -1,6 +1,6 @@
 ---
-status: draft
-issue: TBD
+status: proposed
+issue: 240
 ---
 
 # Shared types derived from db schema

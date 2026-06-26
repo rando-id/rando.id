@@ -1,6 +1,6 @@
 ---
-status: draft
-issue: TBD
+status: proposed
+issue: 244
 ---
 
 # `rando.config.json` completeness — capture everything app-specific

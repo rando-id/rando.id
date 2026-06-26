@@ -1,6 +1,6 @@
 ---
-status: draft
-issue: TBD
+status: proposed
+issue: 247
 ---
 
 # All GitHub infra via API — `rando setup gh` coverage map
@@ -60,9 +60,11 @@ in `gh-cli.ts` vs gaps.
 
 ### What stays manual (and why)
 
-- **Initial PAT creation.** GitHub doesn't expose an API to mint its own
-  PATs; the operator generates the bootstrap PAT once, stores it in
-  `OP_SERVICE_ACCOUNT_TOKEN`, and `rando setup gh` uses it for everything else.
+- **PAT creation.** GitHub doesn't expose an API to mint its own PATs.
+  See "Ephemeral admin PAT" below — the operator creates a high-scope
+  PAT just for the duration of `rando setup gh` and revokes it
+  immediately after. The long-lived bootstrap PAT (used by every other
+  workflow) stays minimal-scope.
 - **2FA enrollment.** User-level action only.
 - **Repo creation** itself (could automate via `POST /user/repos` or `POST
 /orgs/{org}/repos`, but the first run is so tied to org/team policy that
@@ -70,20 +72,75 @@ in `gh-cli.ts` vs gaps.
 - **Required reviewer accounts.** Need to exist as GH users first; the
   API references them by login but can't create them.
 
+### Ephemeral admin PAT — credential lifecycle
+
+`rando setup gh` needs admin-grade scopes (`administration:write`,
+`secrets:write`, `actions:write`, `environments:write`, ruleset writes).
+Granting those scopes to the long-lived bootstrap PAT means every
+unrelated workflow run inherits them too — a leak of any single
+workflow's token equals full repo control.
+
+Solution: the admin PAT is **ephemeral**, scoped to a single setup run:
+
+1. **Pre-run.** Operator generates a fine-grained PAT in GH UI with the
+   admin scope set. (PAT minting itself stays manual — GH gives no API
+   for it.) Names it predictably: `rando-setup-gh-YYYYMMDD-HHMMSS`.
+2. **Run.** Operator pipes it in: `rando setup gh --admin-token "$ADMIN_PAT"`.
+   Token is held only in process memory; never written to disk, never
+   logged, never committed. The command runs idempotently against all
+   P0 endpoints.
+3. **Post-run.** `rando setup gh` calls `DELETE /personal-access-tokens/{id}`
+   on itself as its last step, revoking its own token. If the run fails
+   mid-flight, the operator deletes the PAT manually (and a `rando setup
+gh --revoke-token` subcommand exists as a fallback).
+4. **Audit.** GH's PAT-creation log captures the create + revoke pair.
+   The window the elevated token exists is bounded by the wall-clock of
+   one `rando setup gh` run (~30 API calls, seconds).
+
+What this BUYS us:
+
+- The long-lived `OP_SERVICE_ACCOUNT_TOKEN` / GH workflow PATs need
+  only read-scopes for normal operation. A leak of one of those
+  doesn't let an attacker reconfigure the ruleset, rotate reviewers,
+  or rewrite secrets.
+- Setup runs leave a positive audit trail (PAT created, used, revoked
+  — easy to reconcile against the operator's intent).
+- New apps following [[process-reusable-template]] adopt the same
+  pattern — fresh ephemeral PAT per new repo, never persisted.
+
+What this DOES NOT buy:
+
+- Protection against compromise of the admin PAT DURING the setup
+  window. Mitigation: short window + don't run setup on shared dev
+  boxes. Worst case is ~30 seconds of elevated access.
+- Full automation of PAT creation. GH could change this later; until
+  then, the manual step is unavoidable. We make it small.
+
+GitHub App alternative (deferred): a GitHub App installation token
+has built-in expiry (1 hour) and finer-grained permissions, but
+requires creating + maintaining an App in the org. Worth revisiting
+if we ever have > 3 repos to manage.
+
 ## Command surface
 
 `rando setup gh` becomes the umbrella; subcommands handle the slices:
 
 ```
-rando setup gh --dry-run            # full report: what'd change
-rando setup gh                      # apply everything
-rando setup gh ruleset              # just the ruleset
-rando setup gh environments         # environments + reviewers
-rando setup gh secrets              # secret push (calls into [[security-secrets-strategy]])
-rando setup gh labels               # label set provisioning
-rando setup gh repo-settings        # squash/auto-merge/etc.
-rando setup gh codeowners           # generate/refresh CODEOWNERS
+rando setup gh --admin-token "$PAT" --dry-run   # full report: what'd change
+rando setup gh --admin-token "$PAT"             # apply everything (then revoke PAT)
+rando setup gh ruleset --admin-token "$PAT"     # just the ruleset
+rando setup gh environments --admin-token "$PAT"
+rando setup gh secrets --admin-token "$PAT"     # calls into [[security-secrets-strategy]]
+rando setup gh labels --admin-token "$PAT"
+rando setup gh repo-settings --admin-token "$PAT"
+rando setup gh codeowners                       # local file, no token needed
+rando setup gh --revoke-token "$PAT"            # cleanup-only after a partial failure
 ```
+
+The token is required for every subcommand that hits an admin endpoint
+(everything except `codeowners`, which is a local file write). Reading
+from the process env (`RANDO_ADMIN_TOKEN=$PAT rando setup gh`) works too
+— the flag is for explicit one-shot runs.
 
 Each subcommand is idempotent: read state, diff against desired, apply
 delta. `--dry-run` shows the diff without applying.

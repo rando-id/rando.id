@@ -1,6 +1,6 @@
 ---
-status: draft
-issue: TBD
+status: proposed
+issue: 245
 ---
 
 # Secrets strategy — 1Password vs GitHub Environments

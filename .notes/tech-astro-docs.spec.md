@@ -1,6 +1,6 @@
 ---
-status: draft
-issue: TBD
+status: proposed
+issue: 238
 ---
 
 # Astro docs site(s) — contributor + product + API reference

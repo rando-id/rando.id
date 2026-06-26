@@ -1,6 +1,6 @@
 ---
-status: draft
-issue: TBD
+status: proposed
+issue: 243
 ---
 
 # Reusable template — what carries over to a new app (e.g. holonet)
