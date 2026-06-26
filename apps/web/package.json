@@ -14,7 +14,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@clerk/nextjs": "catalog:",
+    "@clerk/nextjs": "catalog:clerk",
     "@rando/api-client": "workspace:*",
     "@rando/auth": "workspace:*",
     "@rando/brand": "workspace:*",
@@ -24,7 +24,7 @@
     "@rando/ui": "workspace:*",
     "@tamagui/config": "catalog:tamagui",
     "@tamagui/next-theme": "catalog:tamagui",
-    "@tanstack/react-query": "catalog:",
+    "@tanstack/react-query": "catalog:react-query",
     "maplibre-gl": "^5.24.0",
     "next": "^15.1.3",
     "react": "^19.0.0",
@@ -39,14 +39,14 @@
     "@testing-library/react": "^16.3.2",
     "@testing-library/user-event": "^14.6.1",
     "@types/node": "catalog:",
-    "@types/react": "catalog:",
-    "@types/react-dom": "catalog:",
+    "@types/react": "catalog:react",
+    "@types/react-dom": "catalog:react",
     "@vitejs/plugin-react": "^4.7.0",
-    "@vitest/coverage-v8": "catalog:",
-    "@vitest/ui": "catalog:",
-    "eslint": "catalog:",
+    "@vitest/coverage-v8": "catalog:vitest",
+    "@vitest/ui": "catalog:vitest",
+    "eslint": "catalog:eslint",
     "jsdom": "^29.1.1",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:vitest"
   }
 }

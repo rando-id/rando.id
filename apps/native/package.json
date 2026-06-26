@@ -23,7 +23,7 @@
     "@rando/observability": "workspace:*",
     "@rando/ui": "workspace:*",
     "@tamagui/config": "catalog:tamagui",
-    "@tanstack/react-query": "catalog:",
+    "@tanstack/react-query": "catalog:react-query",
     "expo": "~56.0.8",
     "expo-crypto": "~56.0.4",
     "expo-location": "~56.0.15",
@@ -41,9 +41,9 @@
     "@rando/eslint-config": "workspace:*",
     "@rando/tsconfig": "workspace:*",
     "@tamagui/babel-plugin": "catalog:tamagui",
-    "@types/react": "catalog:",
+    "@types/react": "catalog:react",
     "babel-preset-expo": "~56.0.14",
-    "eslint": "catalog:",
+    "eslint": "catalog:eslint",
     "typescript": "~5.7.2"
   }
 }

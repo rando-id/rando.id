@@ -20,7 +20,7 @@
   },
   "devDependencies": {
     "@rando/tsconfig": "workspace:*",
-    "@types/react": "catalog:",
+    "@types/react": "catalog:react",
     "react": "^19.2.7",
     "typescript": "catalog:"
   },

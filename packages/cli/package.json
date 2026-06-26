@@ -26,10 +26,10 @@
     "@rando/eslint-config": "workspace:*",
     "@rando/tsconfig": "workspace:*",
     "@types/node": "catalog:",
-    "@vitest/coverage-v8": "catalog:",
+    "@vitest/coverage-v8": "catalog:vitest",
     "eslint": "^10.5.0",
     "tsx": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:vitest"
   }
 }
