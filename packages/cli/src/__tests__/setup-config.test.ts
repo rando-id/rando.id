@@ -35,7 +35,7 @@ describe('loadSetupConfig', () => {
     const path = writeTempConfig(validConfig)
     const config = loadSetupConfig(path)
     expect(config.project).toBe('rando')
-    expect(config.tunnel).toBe('rando-dev') // default
+    expect(config.tunnel).toEqual({ kind: 'cloudflare', name: 'rando-dev' }) // default
     expect(config.apps[1]?.prodApex).toBe(true)
     expect(config.apps[0]?.prodApex).toBe(false) // default
   })

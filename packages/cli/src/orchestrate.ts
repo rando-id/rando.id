@@ -85,16 +85,19 @@ async function setupDev(
   apps: SetupConfig['apps'],
   emit: (event: SetupEvent) => void,
 ): Promise<void> {
-  emit({ kind: 'step-start', message: `tunnel: ensuring "${config.tunnel}" exists` })
-  let tunnel = await deps.tunnel.getTunnelByName({ name: config.tunnel })
+  emit({ kind: 'step-start', message: `tunnel: ensuring "${config.tunnel.name}" exists` })
+  let tunnel = await deps.tunnel.getTunnelByName({ name: config.tunnel.name })
   if (tunnel) {
-    emit({ kind: 'step-skip', message: `tunnel "${config.tunnel}" already exists (${tunnel.id})` })
+    emit({
+      kind: 'step-skip',
+      message: `tunnel "${config.tunnel.name}" already exists (${tunnel.id})`,
+    })
   } else {
-    tunnel = await deps.tunnel.createTunnel({ name: config.tunnel })
+    tunnel = await deps.tunnel.createTunnel({ name: config.tunnel.name })
     emit({ kind: 'step-done', message: `tunnel "${tunnel.name}" created (${tunnel.id})` })
     emit({
       kind: 'note',
-      message: `tunnel token: run \`rando tunnel token ${config.tunnel}\` to copy it into your repo-root .env as CLOUDFLARE_TUNNEL_TOKEN`,
+      message: `tunnel token: run \`rando tunnel token ${config.tunnel.name}\` to copy it into your repo-root .env as CLOUDFLARE_TUNNEL_TOKEN`,
     })
   }
 
@@ -504,10 +507,10 @@ async function destroyDev(
   apps: SetupConfig['apps'],
   emit: (event: SetupEvent) => void,
 ): Promise<void> {
-  emit({ kind: 'step-start', message: `tunnel: locating "${config.tunnel}"` })
-  const tunnel = await deps.tunnel.getTunnelByName({ name: config.tunnel })
+  emit({ kind: 'step-start', message: `tunnel: locating "${config.tunnel.name}"` })
+  const tunnel = await deps.tunnel.getTunnelByName({ name: config.tunnel.name })
   if (!tunnel) {
-    emit({ kind: 'step-skip', message: `tunnel "${config.tunnel}" already absent` })
+    emit({ kind: 'step-skip', message: `tunnel "${config.tunnel.name}" already absent` })
     return
   }
 
