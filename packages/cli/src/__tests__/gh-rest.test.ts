@@ -110,11 +110,4 @@ describe('GhRestProvider', () => {
       `https://api.github.com/repos/${REPO}/environments/staging/secrets/X`,
     )
   })
-
-  it('revokeAdminToken → DELETE /personal-access-tokens/{id}', async () => {
-    const { provider, calls } = makeProvider([{ status: 200, body: {} }])
-    await provider.revokeAdminToken(12345)
-    expect(calls[0]?.method).toBe('DELETE')
-    expect(calls[0]?.url).toBe('https://api.github.com/personal-access-tokens/12345')
-  })
 })

@@ -132,17 +132,6 @@ export class GhRestProvider implements GhAdminProvider {
     })
   }
 
-  async revokeAdminToken(tokenId: number): Promise<void> {
-    // Fine-grained PAT self-revoke. The endpoint is on the user's PAT list;
-    // requires the token being deleted to BE the token making the call (or
-    // an explicit admin override). Either way, the result is the PAT can
-    // no longer authenticate.
-    await this.request<void>(`/personal-access-tokens/${tokenId}`, {
-      method: 'DELETE',
-      expectNoContent: true,
-    })
-  }
-
   private async request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     const url = `${this.baseUrl}${path}`
     const headers: Record<string, string> = {

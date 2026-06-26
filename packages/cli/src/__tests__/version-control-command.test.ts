@@ -154,27 +154,7 @@ describe('version-control (vc) command', () => {
     expect(text).toContain('delete_branch_on_merge')
   })
 
-  it('setup without --admin-token (and without env var) errors', async () => {
-    const { path, cwd } = writeConfig()
-    const io = captureIo()
-    const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
-    const exit = vi.fn() as unknown as (code: number) => never
-    try {
-      await run(['vc', 'setup', '--config', path, '--dry-run'], {
-        adapters: fakeAdapters(),
-        io: io.io,
-        exit,
-      })
-    } finally {
-      spy.mockRestore()
-    }
-    const text = io.stderr.join('\n')
-    expect(text).toContain('No admin PAT')
-    expect(exit).toHaveBeenCalled()
-  })
-
-  it('setup picks up RANDO_ADMIN_TOKEN env var when --admin-token absent', async () => {
-    process.env.RANDO_ADMIN_TOKEN = 'env-token'
+  it('setup --dry-run does NOT require an admin token (deferred resolve)', async () => {
     const { path, cwd } = writeConfig()
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
@@ -189,30 +169,30 @@ describe('version-control (vc) command', () => {
     } finally {
       spy.mockRestore()
     }
-    // Dry-run completes without error means the token was resolved.
+    // Dry-run prints the plan and exits cleanly with NO token set.
     expect(io.stderr.join('\n')).not.toContain('No admin PAT')
+    expect(io.stdout.join('\n')).toContain('dry-run')
   })
 
-  it('revoke-token uses the injected ghAdmin adapter', async () => {
-    const revokeAdminToken = vi.fn(async () => undefined)
+  it('setup prints the manual-revoke link in the post-run message', async () => {
     const mock: GhAdminProvider = {
-      whoami: vi.fn(),
-      listRulesets: vi.fn(),
-      createRuleset: vi.fn(),
+      whoami: vi.fn(async () => ({ login: 'iamnewton' })),
+      listRulesets: vi.fn(async () => []),
+      createRuleset: vi.fn(async () => ({ id: 1, name: 'main', enforcement: 'active' as const })),
       updateRuleset: vi.fn(),
-      upsertEnvironment: vi.fn(),
-      updateRepoSettings: vi.fn(),
+      upsertEnvironment: vi.fn(async () => undefined),
+      updateRepoSettings: vi.fn(async () => undefined),
       getRepoSecretPublicKey: vi.fn(),
       getEnvironmentSecretPublicKey: vi.fn(),
       setRepoSecret: vi.fn(),
       setEnvironmentSecret: vi.fn(),
-      revokeAdminToken,
-    } as unknown as GhAdminProvider
-    const { cwd } = writeConfig()
+    }
+    const { path, cwd } = writeConfig()
+    mkdirSync(join(cwd, '.github'), { recursive: true })
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     try {
-      await run(['vc', 'revoke-token', '--admin-token', 'fake', '--token-id', '999'], {
+      await run(['vc', 'setup', '--admin-token', 'fake', '--config', path], {
         adapters: fakeAdapters(() => mock),
         io: io.io,
         exit: () => {
@@ -222,6 +202,7 @@ describe('version-control (vc) command', () => {
     } finally {
       spy.mockRestore()
     }
-    expect(revokeAdminToken).toHaveBeenCalledWith(999)
+    expect(io.stderr.join('\n')).toContain('revoke the admin PAT manually')
+    expect(io.stderr.join('\n')).toContain('https://github.com/settings/personal-access-tokens')
   })
 })

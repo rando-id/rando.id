@@ -89,13 +89,17 @@ Solution: the admin PAT is **ephemeral**, scoped to a single setup run:
    Token is held only in process memory; never written to disk, never
    logged, never committed. The command runs idempotently against all
    P0 endpoints.
-3. **Post-run.** `rando vc setup` calls `DELETE /personal-access-tokens/{id}`
-   on itself as its last step, revoking its own token. If the run fails
-   mid-flight, the operator deletes the PAT manually (and a `rando setup
-gh --revoke-token` subcommand exists as a fallback).
-4. **Audit.** GH's PAT-creation log captures the create + revoke pair.
+3. **Post-run.** `rando vc setup` prints a link to
+   `https://github.com/settings/personal-access-tokens` and asks the
+   operator to delete the PAT in the UI. GitHub does NOT expose a REST
+   endpoint for self-revoking a fine-grained PAT — the only available
+   `DELETE /personal-access-tokens/{id}` endpoint is for ORG admins
+   revoking other members' PATs, not self-revoke. Manual cleanup is
+   the only path.
+4. **Audit.** GH's PAT-creation log captures the create + use trail.
    The window the elevated token exists is bounded by the wall-clock of
-   one `rando vc setup` run (~30 API calls, seconds).
+   one `rando vc setup` run plus the operator's delay between run and
+   manual deletion (typically seconds-to-minutes, NOT hours).
 
 What this BUYS us:
 
@@ -103,8 +107,8 @@ What this BUYS us:
   only read-scopes for normal operation. A leak of one of those
   doesn't let an attacker reconfigure the ruleset, rotate reviewers,
   or rewrite secrets.
-- Setup runs leave a positive audit trail (PAT created, used, revoked
-  — easy to reconcile against the operator's intent).
+- Setup runs leave a positive audit trail (PAT created, used; deletion
+  is operator-triggered after the run completes).
 - New apps following [[process-reusable-template]] adopt the same
   pattern — fresh ephemeral PAT per new repo, never persisted.
 
@@ -134,7 +138,7 @@ rando vc secret --admin-token "$PAT"     # calls into [[security-secrets-strateg
 rando vc labels --admin-token "$PAT"
 rando vc repo-settings --admin-token "$PAT"
 rando vc codeowners                       # local file, no token needed
-rando vc revoke-token "$PAT"            # cleanup-only after a partial failure
+# (no revoke-token subcommand — manual cleanup at github.com/settings/personal-access-tokens)
 ```
 
 The token is required for every subcommand that hits an admin endpoint

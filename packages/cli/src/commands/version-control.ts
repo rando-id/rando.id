@@ -43,43 +43,41 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
 
   cmd
     .command('setup')
-    .description('Run every subcommand in order, then revoke the admin token.')
+    .description(
+      'Run every subcommand in order. After the run, the operator deletes the admin PAT ' +
+        'manually in the GitHub UI (GitHub has no self-revoke REST endpoint).',
+    )
     .option('--admin-token <pat>', 'Ephemeral admin PAT (or set RANDO_ADMIN_TOKEN)')
-    .option('--token-id <id>', 'PAT id for self-revocation (skip to leave token live)')
     .option('--dry-run', 'Print what would happen without calling any APIs', false)
     .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
-    .action(
-      async (opts: { adminToken?: string; tokenId?: string; dryRun: boolean; config: string }) => {
-        const token = resolveToken(opts.adminToken)
-        const cfg = loadSetupConfig(resolve(process.cwd(), opts.config))
-        if (opts.dryRun) {
-          io.stdout(colors.hint('dry-run: would apply'))
-          io.stdout(`  • ruleset from ${RULESET_PATH}`)
-          io.stdout(`  • repo settings on ${cfg.repo}`)
-          io.stdout(`  • environments: staging, production`)
-          io.stdout(`  • CODEOWNERS written to ${CODEOWNERS_PATH}`)
-          if (opts.tokenId) io.stdout(`  • revoke admin token #${opts.tokenId}`)
-          return
-        }
-        const gh = adapters.ghAdmin({ token })
-        const who = await gh.whoami()
-        io.stdout(`${colors.hint('→')} authenticated as ${colors.bold(who.login)}`)
-        await applyRuleset(gh, cfg.repo, io)
-        await applyRepoSettings(gh, cfg.repo, DEFAULT_REPO_SETTINGS, io)
-        await applyEnvironments(gh, cfg.repo, io)
-        await writeCodeowners(cfg, io)
-        if (opts.tokenId) {
-          await gh.revokeAdminToken(parseInt(opts.tokenId, 10))
-          io.stdout(`${colors.success('✓')} admin token revoked`)
-        } else {
-          io.stderr(
-            colors.warn(
-              'admin token NOT revoked (no --token-id). Revoke it manually in GitHub UI.',
-            ),
-          )
-        }
-      },
-    )
+    .action(async (opts: { adminToken?: string; dryRun: boolean; config: string }) => {
+      const cfg = loadSetupConfig(resolve(process.cwd(), opts.config))
+      if (opts.dryRun) {
+        io.stdout(colors.hint('dry-run: would apply'))
+        io.stdout(`  • ruleset from ${RULESET_PATH}`)
+        io.stdout(`  • repo settings on ${cfg.repo}`)
+        io.stdout(`  • environments: staging, production`)
+        io.stdout(`  • CODEOWNERS written to ${CODEOWNERS_PATH}`)
+        return
+      }
+      const gh = adapters.ghAdmin({ token: resolveToken(opts.adminToken) })
+      const who = await gh.whoami()
+      io.stdout(`${colors.hint('→')} authenticated as ${colors.bold(who.login)}`)
+      await applyRuleset(gh, cfg.repo, io)
+      await applyRepoSettings(gh, cfg.repo, DEFAULT_REPO_SETTINGS, io)
+      await applyEnvironments(gh, cfg.repo, io)
+      await writeCodeowners(cfg, io)
+      // No REST self-revoke (the `DELETE /personal-access-tokens/{id}`
+      // endpoint is org-admin-only, not self-revoke; see #249 review).
+      // Print the cleanup link so the operator deletes the PAT in the UI.
+      io.stderr('')
+      io.stderr(
+        colors.warn(
+          'next step: revoke the admin PAT manually at ' +
+            'https://github.com/settings/personal-access-tokens',
+        ),
+      )
+    })
 
   cmd
     .command('ruleset')
@@ -179,17 +177,6 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
         return
       }
       await writeCodeowners(cfg, io)
-    })
-
-  cmd
-    .command('revoke-token')
-    .description('Manually revoke an admin PAT by id (cleanup after a failed setup).')
-    .requiredOption('--admin-token <pat>', 'Ephemeral admin PAT')
-    .requiredOption('--token-id <id>', 'PAT id to revoke')
-    .action(async (opts: { adminToken: string; tokenId: string }) => {
-      const gh = adapters.ghAdmin({ token: opts.adminToken })
-      await gh.revokeAdminToken(parseInt(opts.tokenId, 10))
-      io.stdout(`${colors.success('✓')} admin token #${opts.tokenId} revoked`)
     })
 
   return cmd

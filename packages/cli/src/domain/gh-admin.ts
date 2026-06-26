@@ -2,7 +2,12 @@
 // these calls need explicit token control for the ephemeral admin PAT
 // lifecycle (see .notes/tool-gh-api-coverage.spec.md §"Ephemeral admin PAT").
 // `GhProvider` uses `gh` CLI auth (keychain / GH_TOKEN); this adapter takes
-// the token directly so it can be revoked at the end of a single run.
+// the token directly so the operator can scope a fresh PAT per run.
+//
+// Token cleanup is operator-driven (manual UI deletion) — GitHub has no
+// REST endpoint for self-revoking a fine-grained PAT. The
+// `DELETE /personal-access-tokens/{id}` endpoint is for ORG admins
+// revoking other members' PATs, not self-revoke.
 
 export interface GhRuleset {
   id: number
@@ -67,12 +72,4 @@ export interface GhAdminProvider {
     encryptedValue: string,
     keyId: string,
   ): Promise<void>
-
-  /**
-   * Revoke the current admin PAT via `DELETE /personal-access-tokens/{id}`.
-   * Called as the last step of `rando setup gh` to enforce the ephemeral
-   * lifecycle — caller passes the PAT's numeric id (obtained from a prior
-   * `GET /user/personal-access-tokens/{id}` or operator input).
-   */
-  revokeAdminToken(tokenId: number): Promise<void>
 }
