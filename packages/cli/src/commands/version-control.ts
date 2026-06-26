@@ -60,13 +60,16 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
         io.stdout(`  • CODEOWNERS written to ${CODEOWNERS_PATH}`)
         return
       }
-      // try/finally so the manual-revoke reminder fires even if a step
-      // throws mid-flight. The reminder is just a printed link (no API
-      // call), so emitting it on the failure path is safe.
+      // Resolve the token OUTSIDE the try/finally so the manual-revoke
+      // reminder only fires when a PAT was actually accepted — a missing
+      // token should not produce "go revoke a PAT" advice.
+      const gh = adapters.ghAdmin({ token: resolveToken(opts.adminToken) })
       try {
-        const gh = adapters.ghAdmin({ token: resolveToken(opts.adminToken) })
         const who = await gh.whoami()
         io.stdout(`${colors.hint('→')} authenticated as ${colors.bold(who.login)}`)
+        // Each step soft-fails: a 403 / 404 on one capability should not
+        // block the rest of the run (CLAUDE.md soft-skip rule). Individual
+        // helpers catch ProviderApiError, emit a stderr warning, and return.
         await applyRuleset(gh, cfg.repo, io)
         await applyRepoSettings(gh, cfg.repo, DEFAULT_REPO_SETTINGS, io)
         await applyEnvironments(gh, cfg.repo, io)
@@ -207,14 +210,22 @@ async function applyRuleset(gh: GhAdminProvider, repo: string, io: Io): Promise<
   }
   const payload = JSON.parse(raw) as Record<string, unknown>
   const desiredName = (payload.name as string | undefined) ?? 'main'
-  const existing = await gh.listRulesets(repo)
-  const match = existing.find((r) => r.name === desiredName)
-  if (match) {
-    await gh.updateRuleset(repo, match.id, payload)
-    io.stdout(`${io.colors.success('✓')} ruleset updated: ${desiredName} (#${match.id})`)
-  } else {
-    const created = await gh.createRuleset(repo, payload)
-    io.stdout(`${io.colors.success('✓')} ruleset created: ${desiredName} (#${created.id})`)
+  try {
+    const existing = await gh.listRulesets(repo)
+    const match = existing.find((r) => r.name === desiredName)
+    if (match) {
+      await gh.updateRuleset(repo, match.id, payload)
+      io.stdout(`${io.colors.success('✓')} ruleset updated: ${desiredName} (#${match.id})`)
+    } else {
+      const created = await gh.createRuleset(repo, payload)
+      io.stdout(`${io.colors.success('✓')} ruleset created: ${desiredName} (#${created.id})`)
+    }
+  } catch (err) {
+    if (err instanceof ProviderApiError) {
+      io.stderr(io.colors.warn(`ruleset: ${err.message}`))
+      return
+    }
+    throw err
   }
 }
 
@@ -224,8 +235,16 @@ async function applyRepoSettings(
   settings: GhRepoSettings,
   io: Io,
 ): Promise<void> {
-  await gh.updateRepoSettings(repo, settings)
-  io.stdout(`${io.colors.success('✓')} repo settings applied`)
+  try {
+    await gh.updateRepoSettings(repo, settings)
+    io.stdout(`${io.colors.success('✓')} repo settings applied`)
+  } catch (err) {
+    if (err instanceof ProviderApiError) {
+      io.stderr(io.colors.warn(`repo settings: ${err.message}`))
+      return
+    }
+    throw err
+  }
 }
 
 async function applyEnvironments(gh: GhAdminProvider, repo: string, io: Io): Promise<void> {
