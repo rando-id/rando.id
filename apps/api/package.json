@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@anatine/zod-openapi": "^1.14.2",
-    "@clerk/nextjs": "catalog:",
+    "@clerk/nextjs": "catalog:clerk",
     "@rando/api-client": "workspace:*",
     "@rando/auth": "workspace:*",
     "@rando/config": "workspace:*",
@@ -33,11 +33,11 @@
     "@rando/eslint-config": "workspace:*",
     "@rando/tsconfig": "workspace:*",
     "@types/node": "catalog:",
-    "@types/react": "catalog:",
-    "@types/react-dom": "catalog:",
-    "@vitest/coverage-v8": "catalog:",
-    "eslint": "catalog:",
+    "@types/react": "catalog:react",
+    "@types/react-dom": "catalog:react",
+    "@vitest/coverage-v8": "catalog:vitest",
+    "eslint": "catalog:eslint",
     "typescript": "catalog:",
-    "vitest": "catalog:"
+    "vitest": "catalog:vitest"
   }
 }
