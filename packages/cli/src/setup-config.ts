@@ -14,6 +14,16 @@ export const SetupConfigSchema = z.object({
   /** Cloudflare Tunnel name (created if absent). */
   tunnel: z.string().min(1).default('rando-dev'),
 
+  /**
+   * GitHub logins that `rando vc codeowners` writes into the `*` rule of
+   * `.github/CODEOWNERS`. Optional — when absent, the generator falls
+   * back to `<repo-owner>` from `repo`, which is the org name for org
+   * repos (mentions the whole org rather than specific humans). Set
+   * this to a list of real human logins for the typical solo / small-
+   * team case.
+   */
+  codeowners: z.array(z.string().min(1)).optional(),
+
   /** Apex domains for each domain group. */
   domains: z.object({
     /** Non-prod traffic (local + staging share this zone). */

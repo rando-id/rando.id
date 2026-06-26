@@ -55,17 +55,18 @@ describe('GhRestProvider', () => {
     expect(calls[0]?.url).toBe(`https://api.github.com/repos/${REPO}/rulesets/99`)
   })
 
-  it('upsertEnvironment → PUT to environments/{name} with reviewers translated', async () => {
+  it('upsertEnvironment → PUT to environments/{name} with reviewer numeric ids', async () => {
     const { provider, calls } = makeProvider([{ status: 200, body: { name: 'production' } }])
     await provider.upsertEnvironment(REPO, {
       name: 'production',
-      required_reviewers: [{ type: 'User', login: 'iamnewton' }],
+      // GitHub's reviewer API requires the numeric `id`, NOT login.
+      required_reviewers: [{ type: 'User', id: 5769156 }],
       wait_timer: 0,
     })
     expect(calls[0]?.method).toBe('PUT')
     expect(calls[0]?.url).toBe(`https://api.github.com/repos/${REPO}/environments/production`)
-    const body = calls[0]?.body as { reviewers: Array<{ type: string; login: string }> }
-    expect(body.reviewers[0]).toEqual({ type: 'User', login: 'iamnewton' })
+    const body = calls[0]?.body as { reviewers: Array<{ type: string; id: number }> }
+    expect(body.reviewers[0]).toEqual({ type: 'User', id: 5769156 })
   })
 
   it('updateRepoSettings → PATCH /repos/{repo} with settings', async () => {

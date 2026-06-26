@@ -18,7 +18,13 @@ export interface GhRuleset {
 
 export interface GhEnvironment {
   name: string
-  required_reviewers?: Array<{ type: 'User' | 'Team'; login: string }>
+  /**
+   * GitHub's environment-reviewer API requires the numeric `id` for both
+   * User and Team reviewers — `login` is silently ignored. Resolve logins
+   * to ids ahead of time (e.g. via `GET /users/{login}`) before calling
+   * `upsertEnvironment`.
+   */
+  required_reviewers?: Array<{ type: 'User' | 'Team'; id: number }>
   wait_timer?: number
   prevent_self_review?: boolean
 }

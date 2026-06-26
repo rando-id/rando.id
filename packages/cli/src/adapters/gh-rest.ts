@@ -73,13 +73,7 @@ export class GhRestProvider implements GhAdminProvider {
     if (env.wait_timer !== undefined) body.wait_timer = env.wait_timer
     if (env.prevent_self_review !== undefined) body.prevent_self_review = env.prevent_self_review
     if (env.required_reviewers !== undefined) {
-      body.reviewers = env.required_reviewers.map((r) => ({
-        type: r.type,
-        // The API takes numeric id for User/Team; the spec stores logins for
-        // readability. Translation step lives in the command — the adapter
-        // takes whatever shape the caller hands it.
-        ...(typeof r.login === 'number' ? { id: r.login } : { login: r.login }),
-      }))
+      body.reviewers = env.required_reviewers.map((r) => ({ type: r.type, id: r.id }))
     }
     await this.request<void>(`/repos/${repo}/environments/${env.name}`, {
       method: 'PUT',
