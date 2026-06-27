@@ -61,7 +61,7 @@ export interface ContactCardProps {
 Drizzle's `$inferSelect` is the right anchor because:
 
 - The DB is the only thing that has to exist for the app to work
-- Drizzle types are stable across drizzle major bumps (we just did
+- Drizzle types are stable across drizzle minor version bumps (we just did
   0.38 → 0.45 in #159 with zero type-surface change)
 - Zod validation can still happen at the API boundary using
   `drizzle-zod` to derive zod schemas FROM drizzle — single source
