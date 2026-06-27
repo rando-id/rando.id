@@ -130,7 +130,7 @@ Record those counts in this doc as a follow-up entry once available.
 4. **Action pins are mixed.** Most actions in our workflows are
    SHA-pinned (good — Dependabot bumps them weekly). Worth a sweep
    to confirm there's no `actions/checkout@v6` style version-tag
-   pin sneaking around.
+   pin remaining.
 5. **No stale-issue/PR automation.** Issues and PRs accumulate
    indefinitely. The Dependabot triage doc is the closest thing
    we have to a process — but no GitHub-side automation.
@@ -160,7 +160,7 @@ Record those counts in this doc as a follow-up entry once available.
 
 ## Related existing tickets
 
-- **#217** — `op-env` env-id explicit (foot-gun around vault
+- **#217** — `op-env` env-id explicit (potential risk around vault
   secrets — secret scanning angle).
 - **#222** — `rando setup gh` automating repo config (this baseline
   is exactly what that command would set + verify).
