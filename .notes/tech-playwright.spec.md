@@ -58,11 +58,11 @@ regression baseline, auth-state fixtures.
 
 ## Why Playwright over Cypress / WebdriverIO
 
-| Tool                    | Pros                                                            | Cons                                                    |
-| ----------------------- | --------------------------------------------------------------- | ------------------------------------------------------- |
-| **Playwright** (chosen) | Multi-browser, fast, parallel by default, Microsoft maintenance | Bigger install footprint                                |
-| Cypress                 | Better dev UX (test runner), strong docs                        | Single-tab assumption breaks Clerk modals; slower in CI |
-| WebdriverIO             | Standards-based (W3C)                                           | More config, less community for React-app testing       |
+| Tool                    | Pros                                                            | Cons                                                                    |
+| ----------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| **Playwright** (chosen) | Multi-browser, fast, parallel by default, Microsoft maintenance | Bigger install footprint                                                |
+| Cypress                 | Better dev UX (test runner), strong docs                        | Auth popup/cross-origin flows can be brittle; typically slower in CI   |
+| WebdriverIO             | Standards-based (W3C)                                           | More config, less community for React-app testing                       |
 
 ## Touch points
 
