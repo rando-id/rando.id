@@ -95,7 +95,7 @@ needs a fine-grained PAT with `Administration: read` or
 
 1. Settings → Security & analysis → confirm Dependabot **security
    updates** (not version updates) are on. Confirm secret scanning
-   - push protection are on (private repos need a paid tier;
+   and push protection are on (private repos need a paid tier;
      public repo gets it free).
 2. Security tab → Dependabot → count open advisories.
 3. Security tab → Code scanning → count open CodeQL alerts (the
