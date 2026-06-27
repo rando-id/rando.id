@@ -164,7 +164,7 @@ function loadDotEnv(path) {
     const eq = trimmed.indexOf('=')
     if (eq < 0) continue
     const key = trimmed.slice(0, eq)
-    if (process.env[key] != null) continue
+    if (process.env[key] !== undefined) continue
     let value = trimmed.slice(eq + 1)
     if (
       (value.startsWith('"') && value.endsWith('"')) ||
