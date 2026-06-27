@@ -27,6 +27,8 @@ jobs:
       security-events: write
       # Required by scorecard-action to publish to OpenSSF's metrics endpoint.
       id-token: write
+      # Required by scorecard-action to read workflow configurations.
+      actions: read
 
     steps:
       - name: Checkout
