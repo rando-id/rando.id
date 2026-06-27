@@ -38,7 +38,7 @@ if (!POSTMAN_API_KEY) {
 // Refresh the login session token. Idempotent — login overwrites
 // whatever's cached. Only runs once per spec-lint invocation, so the
 // cost is one HTTP round-trip.
-const login = spawnSync('node_modules/.bin/postman', ['login', '--with-api-key', POSTMAN_API_KEY], {
+const login = spawnSync('npx', ['postman', 'login', '--with-api-key', POSTMAN_API_KEY], {
   stdio: ['ignore', 'ignore', 'inherit'],
 })
 if (login.status !== 0) {
@@ -141,8 +141,8 @@ async function resolveSpec() {
 const { path, cleanup } = await resolveSpec()
 try {
   const result = spawnSync(
-    'node_modules/.bin/postman',
-    ['api', 'lint', path, '--fail-severity', 'error'],
+    'npx',
+    ['postman', 'api', 'lint', path, '--fail-severity', 'error'],
     { stdio: 'inherit' },
   )
   process.exit(result.status ?? 1)
