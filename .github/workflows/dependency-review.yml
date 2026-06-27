@@ -28,6 +28,16 @@ jobs:
           # Inline summary on the PR for any blocked dep.
           comment-summary-in-pr: on-failure
           # Disallow GPL-family licenses for new deps (allow existing ones
-          # via transitive). Tune the deny-list if a legitimate dep falls
-          # into this bucket.
-          deny-licenses: GPL-2.0, GPL-3.0, AGPL-1.0, AGPL-3.0
+          # via transitive). LGPL is permitted — typical use as a library
+          # dependency doesn't trigger copyleft on dependents. Tune the
+          # deny-list if a legitimate dep falls into this bucket.
+          #
+          # SPDX gotcha: bare `GPL-3.0` is deprecated; SPDX splits each
+          # GPL/AGPL version into `-only` (this exact version) and
+          # `-or-later` (this version or any later). List both so packages
+          # licensed under either form get caught.
+          deny-licenses: >-
+            GPL-2.0-only, GPL-2.0-or-later,
+            GPL-3.0-only, GPL-3.0-or-later,
+            AGPL-1.0-only, AGPL-1.0-or-later,
+            AGPL-3.0-only, AGPL-3.0-or-later
