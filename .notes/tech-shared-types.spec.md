@@ -104,9 +104,9 @@ boundary that matters at the UI is "what came from the API."
 - **Drizzle as foundational dep** — if we ever swap drizzle for
   another ORM, the migration touches every consumer. Acceptable;
   schema is the single rewrite point.
-- **Server-only fields surfaced as omits** — every `Omit<ContactRow,
-...>` is a place where we explicitly chose what NOT to send to
-  clients. Documented per-type.
+- **Server-only fields surfaced as omits** — every `Omit<ContactRow, ...>`
+  is a place where we explicitly chose what NOT to send to clients.
+  Documented per-type.
 - **`drizzle-zod` is one more transitive dep**. ~20KB. Acceptable for
   the zero-drift benefit at API boundaries.
 
