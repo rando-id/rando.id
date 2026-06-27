@@ -19,7 +19,10 @@ jobs:
   analysis:
     name: Scorecard analysis
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
+      # Required to read repo contents for checkout + analysis.
+      contents: read
       # Required to upload SARIF results to GitHub.
       security-events: write
       # Required by scorecard-action to publish to OpenSSF's metrics endpoint.
