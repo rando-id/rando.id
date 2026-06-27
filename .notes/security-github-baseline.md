@@ -140,23 +140,23 @@ Record those counts in this doc as a follow-up entry once available.
 
 ### Medium-confidence (needs UI check first)
 
-7. **Dependabot security updates may not be enabled.** Different
+1. **Dependabot security updates may not be enabled.** Different
    from version updates. Auto-opens PRs for vulnerable transitive
    deps regardless of our Dependabot config.
-8. **Private vulnerability reporting may not be enabled.** Lets
+2. **Private vulnerability reporting may not be enabled.** Lets
    external researchers privately disclose security issues via
    GitHub UI rather than email (which SECURITY.md currently asks
    for).
-9. **Secret scanning push protection may not be on.** Blocks
+3. **Secret scanning push protection may not be on.** Blocks
    commits that contain known secret formats _before_ they hit
    the remote.
 
 ### Low-priority (existing pattern works for solo flow)
 
-10. **No required signed commits.** Devin / Dependabot bot commits
-    can't be signed. Worth deferring until a second human contributor.
-11. **PR description templates don't enforce a security checklist.**
-    Same — solo-flow doesn't need it.
+1. **No required signed commits.** Devin / Dependabot bot commits
+   can't be signed. Worth deferring until a second human contributor.
+2. **PR description templates don't enforce a security checklist.**
+   Same — solo-flow doesn't need it.
 
 ## Related existing tickets
 

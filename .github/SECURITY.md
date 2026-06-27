@@ -17,8 +17,16 @@ Once 1.0 ships, this table will track active minor lines.
 
 **Do not open a public GitHub issue for security-sensitive reports.**
 
-If you've found a vulnerability in Rando.id, please email
-**security@rando.id** with:
+**Preferred channel: GitHub's private vulnerability reporting form** at
+<https://github.com/rando-id/rando.id/security/advisories/new>. The
+report is end-to-end encrypted, scoped to repo maintainers, and gives
+us a built-in disclosure timeline + advisory draft.
+
+If you can't use the GitHub form (no account, etc.), email
+**security@rando.id** instead. Either channel reaches us; the GitHub
+form is faster because it ties directly into our advisory workflow.
+
+Either way, please include:
 
 - A description of the issue and the impact you believe it has
 - Steps to reproduce (proof-of-concept code, screenshots, or a video are welcome)

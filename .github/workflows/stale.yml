@@ -1,0 +1,68 @@
+name: Stale automation
+
+# Mark inactive issues / PRs as `stale` after a quiet period, then close
+# them if nobody responds. Bounded ergonomic hygiene — accumulating
+# zombie threads makes the issue tracker harder to use than maintaining
+# a small "stale-warning" cycle.
+#
+# Tuned for a solo / small-team flow:
+#   - Issues: 60 days idle → stale, +14 days → closed
+#   - PRs:    30 days idle → stale, +14 days → closed (shorter because PRs
+#             rot faster as main moves)
+# Anything labelled `pinned`, `security`, or `keep-open` is exempt.
+
+on:
+  schedule:
+    # Daily at 06:30 UTC — staggered from CodeQL + Scorecard slots.
+    - cron: '30 6 * * *'
+  workflow_dispatch:
+
+permissions:
+  issues: write
+  pull-requests: write
+
+jobs:
+  stale:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Stale
+        uses: actions/stale@eb5cf3af3ac0a1aa4c9c45633dd1ae542a27a899 # v10.3.0
+        with:
+          # Issues
+          days-before-issue-stale: 60
+          days-before-issue-close: 14
+          stale-issue-label: stale
+          stale-issue-message: >
+            This issue has been idle for 60 days. Marking as stale; it'll
+            be closed in 14 days unless there's a new comment or update.
+            Add the `keep-open` label (or just comment) to override.
+          close-issue-message: >
+            Closing as stale. Reopen any time if it's still relevant —
+            the conversation isn't lost.
+
+          # Pull requests
+          days-before-pr-stale: 30
+          days-before-pr-close: 14
+          stale-pr-label: stale
+          stale-pr-message: >
+            This PR has been idle for 30 days. Marking as stale; it'll
+            be closed in 14 days unless there's a new commit, comment,
+            or rebase. Add the `keep-open` label (or just push something)
+            to override.
+          close-pr-message: >
+            Closing as stale. Reopen with a fresh rebase any time.
+
+          # Common
+          exempt-issue-labels: pinned,security,keep-open
+          exempt-pr-labels: pinned,security,keep-open,deploy-preview
+          # Don't touch already-stale items on the FIRST run — give the
+          # operator a chance to label exempt items before the closer
+          # fires.
+          start-date: ${{ github.event.repository.created_at }}
+          # Don't mark draft PRs stale — they're often intentional WIP.
+          exempt-draft-pr: true
+          # Cap per-run to avoid hitting rate limits if the backlog ever
+          # spikes. The scheduler runs daily so any overflow lands the
+          # next day.
+          operations-per-run: 60
