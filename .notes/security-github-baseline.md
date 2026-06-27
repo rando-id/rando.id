@@ -160,8 +160,9 @@ Record those counts in this doc as a follow-up entry once available.
 
 ## Related existing tickets
 
-- **#217** — `op-env` env-id explicit (potential risk around vault
-  secrets — secret scanning angle).
+- **#217** — make `op-env` require an explicit environment ID when
+  resolving vault secrets, to reduce accidental cross-environment
+  secret use/exposure (secret-scanning relevance).
 - **#222** — `rando setup gh` automating repo config (this baseline
   is exactly what that command would set + verify).
 - **#228** — react/react-dom override drift (supply-chain hygiene).
