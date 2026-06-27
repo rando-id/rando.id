@@ -965,24 +965,33 @@ shared metadata, not per-contributor. Schema (zod-validated):
 
 ```jsonc
 {
+  "$schema": "./rando.config.schema.json",
   "project": "rando",
   "repo": "your-github-handle/rando",
-  "tunnel": "rando-dev",
+  "codeowners": ["your-github-handle"],
+  // Each vendor-backed adapter carries a `kind` discriminator so a future
+  // swap (e.g. GitLab in place of GitHub for `vc`) is a one-enum change.
+  "tunnel": { "kind": "cloudflare", "name": "rando-dev" },
+  "dns": { "kind": "cloudflare" },
+  "deploy": { "kind": "vercel" },
+  "vc": { "kind": "github" },
   "domains": { "nonProd": "rando-id.dev", "production": "rando.id" },
   "apps": [
     { "name": "api", "rootDirectory": "apps/api", "port": 4000 },
     { "name": "web", "rootDirectory": "apps/web", "port": 3000, "prodApex": true },
     { "name": "admin", "rootDirectory": "apps/admin", "port": 3100 },
   ],
-  // Optional — enables `rando jira` + the prepare-commit-msg hook.
-  // Run `rando jira doctor` to discover what transitions exist in your
-  // workflow, then fill in the lifecycle map below (name OR transition id).
-  "jira": {
-    "projectKey": "RANDO",
-    "transitions": {
-      "inProgress": "Start progress",
-      "inReview": "Deploy to staging",
-      "done": "Done",
+  // Optional — issue-tracker integration. `kind: "jira"` or `kind: "github"`.
+  // The matching sub-block (`jira` or `github`) carries adapter-specific config.
+  "tracker": {
+    "kind": "jira",
+    "jira": {
+      "projectKey": "RANDO",
+      "transitions": {
+        "inProgress": "Start progress",
+        "inReview": "Deploy to staging",
+        "done": "Done",
+      },
     },
   },
 }
@@ -991,10 +1000,16 @@ shared metadata, not per-contributor. Schema (zod-validated):
 `prodApex: true` puts one app on the production apex (`rando.id`) instead
 of a subdomain. Staging always uses the `staging-<name>` pattern.
 
-The `jira` block is optional. Without it, `rando jira` commands still work
-for ad-hoc lookups but can't auto-transition through the Rando lifecycle
-(PR opened → In Progress, branch deploy → In Review, merge → Done)
-because the matching transition ids aren't predictable per-project.
+The full type lives in
+[`@rando/config`](../config/src/rando-config.ts) and is generated as a
+JSON schema at the repo root (`rando.config.schema.json`) so editors give
+autocomplete + validation when editing `rando.config.json`. Regenerate via
+`pnpm --filter @rando/config generate:schema` whenever the schema changes.
+
+The `tracker` block is optional. Without it, `rando issues` commands still
+work for ad-hoc lookups but can't auto-transition through the Rando
+lifecycle (PR opened → In Progress, branch deploy → In Review, merge →
+Done) because the matching transition ids aren't predictable per-project.
 
 #### Destroy
 

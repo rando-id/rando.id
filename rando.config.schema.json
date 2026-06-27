@@ -1,0 +1,343 @@
+{
+  "$ref": "#/definitions/RandoConfig",
+  "definitions": {
+    "RandoConfig": {
+      "type": "object",
+      "properties": {
+        "$schema": {
+          "type": "string"
+        },
+        "project": {
+          "type": "string",
+          "minLength": 1
+        },
+        "repo": {
+          "type": "string",
+          "pattern": "^[^/]+\\/[^/]+$"
+        },
+        "tunnel": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "cloudflare"
+              ],
+              "default": "cloudflare"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "default": "rando-dev"
+            }
+          },
+          "additionalProperties": false,
+          "default": {
+            "kind": "cloudflare",
+            "name": "rando-dev"
+          }
+        },
+        "codeowners": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "dns": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "cloudflare"
+              ],
+              "default": "cloudflare"
+            }
+          },
+          "additionalProperties": false,
+          "default": {
+            "kind": "cloudflare"
+          }
+        },
+        "deploy": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "vercel"
+              ],
+              "default": "vercel"
+            }
+          },
+          "additionalProperties": false,
+          "default": {
+            "kind": "vercel"
+          }
+        },
+        "vc": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "github"
+              ],
+              "default": "github"
+            }
+          },
+          "additionalProperties": false,
+          "default": {
+            "kind": "github"
+          }
+        },
+        "domains": {
+          "type": "object",
+          "properties": {
+            "nonProd": {
+              "type": "string",
+              "minLength": 1
+            },
+            "production": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "nonProd",
+            "production"
+          ],
+          "additionalProperties": false
+        },
+        "apps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "rootDirectory": {
+                "type": "string",
+                "minLength": 1
+              },
+              "port": {
+                "type": "integer",
+                "exclusiveMinimum": 0
+              },
+              "prodApex": {
+                "type": "boolean",
+                "default": false
+              }
+            },
+            "required": [
+              "name",
+              "rootDirectory",
+              "port"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 1
+        },
+        "tracker": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "github",
+                "jira"
+              ],
+              "default": "github"
+            },
+            "protectedBranches": {
+              "type": "array",
+              "items": {
+                "type": "string",
+                "minLength": 1
+              },
+              "default": [
+                "main",
+                "master"
+              ]
+            },
+            "github": {
+              "type": "object",
+              "properties": {
+                "labels": {
+                  "type": "object",
+                  "properties": {
+                    "inProgress": {
+                      "type": "string",
+                      "minLength": 1,
+                      "default": "status:in-progress"
+                    },
+                    "inReview": {
+                      "type": "string",
+                      "minLength": 1,
+                      "default": "status:in-review"
+                    }
+                  },
+                  "additionalProperties": false,
+                  "default": {
+                    "inProgress": "status:in-progress",
+                    "inReview": "status:in-review"
+                  }
+                }
+              },
+              "additionalProperties": false,
+              "default": {
+                "labels": {
+                  "inProgress": "status:in-progress",
+                  "inReview": "status:in-review"
+                }
+              }
+            },
+            "jira": {
+              "type": "object",
+              "properties": {
+                "projectKey": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "transitions": {
+                  "type": "object",
+                  "properties": {
+                    "inProgress": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "inReview": {
+                      "type": "string",
+                      "minLength": 1
+                    },
+                    "done": {
+                      "type": "string",
+                      "minLength": 1
+                    }
+                  },
+                  "additionalProperties": false,
+                  "default": {}
+                }
+              },
+              "required": [
+                "projectKey"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "db": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "neon"
+              ],
+              "default": "neon"
+            },
+            "managedBy": {
+              "type": "string",
+              "enum": [
+                "standalone",
+                "vercel"
+              ],
+              "default": "standalone"
+            },
+            "plan": {
+              "type": "string",
+              "minLength": 1,
+              "default": "free_v3"
+            }
+          },
+          "additionalProperties": false
+        },
+        "testing": {
+          "type": "object",
+          "properties": {
+            "api": {
+              "type": "object",
+              "properties": {
+                "kind": {
+                  "type": "string",
+                  "enum": [
+                    "postman"
+                  ],
+                  "default": "postman"
+                },
+                "workspaceId": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "collectionName": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "additionalProperties": false
+            }
+          },
+          "additionalProperties": false
+        },
+        "secrets": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "type": "string",
+              "enum": [
+                "1password"
+              ],
+              "default": "1password"
+            },
+            "account": {
+              "type": "string",
+              "minLength": 1
+            },
+            "field": {
+              "type": "string",
+              "minLength": 1,
+              "default": "credential"
+            },
+            "environments": {
+              "type": "object",
+              "properties": {
+                "local": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "staging": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "prod": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "local"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "required": [
+            "environments"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "project",
+        "repo",
+        "domains",
+        "apps"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "$schema": "http://json-schema.org/draft-07/schema#"
+}

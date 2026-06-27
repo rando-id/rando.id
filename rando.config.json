@@ -1,8 +1,21 @@
 {
+  "$schema": "./rando.config.schema.json",
   "project": "rando",
   "repo": "rando-id/rando.id",
-  "tunnel": "rando-dev",
   "codeowners": ["iamnewton"],
+  "tunnel": {
+    "kind": "cloudflare",
+    "name": "rando-dev"
+  },
+  "dns": {
+    "kind": "cloudflare"
+  },
+  "deploy": {
+    "kind": "vercel"
+  },
+  "vc": {
+    "kind": "github"
+  },
   "domains": {
     "nonProd": "rando-id.dev",
     "production": "rando.id"

@@ -9,13 +9,15 @@
     ".": "./src/index.ts",
     "./themes": "./src/themes/index.ts",
     "./env": "./src/env.ts",
-    "./feature-flags": "./src/feature-flags.ts"
+    "./feature-flags": "./src/feature-flags.ts",
+    "./rando-config": "./src/rando-config.ts"
   },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "generate:schema": "tsx scripts/generate-schema.ts"
   },
   "dependencies": {
     "@rando/brand": "workspace:*",
@@ -24,7 +26,9 @@
   "devDependencies": {
     "@rando/tsconfig": "workspace:*",
     "@vitest/coverage-v8": "catalog:vitest",
+    "tsx": "catalog:",
     "typescript": "catalog:",
-    "vitest": "catalog:vitest"
+    "vitest": "catalog:vitest",
+    "zod-to-json-schema": "^3.24.5"
   }
 }

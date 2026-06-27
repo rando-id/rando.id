@@ -20,7 +20,10 @@ import type { SetupConfig } from '../setup-config'
 const config: SetupConfig = {
   project: 'rando',
   repo: 'me/rando',
-  tunnel: 'rando-dev',
+  tunnel: { kind: 'cloudflare', name: 'rando-dev' },
+  dns: { kind: 'cloudflare' },
+  deploy: { kind: 'vercel' },
+  vc: { kind: 'github' },
   domains: { nonProd: 'rando-id.dev', production: 'rando.id' },
   apps: [
     { name: 'api', rootDirectory: 'apps/api', port: 4000, prodApex: false },
