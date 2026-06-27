@@ -160,7 +160,7 @@ Record those counts in this doc as a follow-up entry once available.
 
 ## Related existing tickets
 
-- **#217** — `op-env` env-id explicit (foot-gun around vault
+- **#217** — `op-env` env-id explicit (potential risk around vault
   secrets — secret scanning angle).
 - **#222** — `rando setup gh` automating repo config (this baseline
   is exactly what that command would set + verify).
