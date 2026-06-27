@@ -1,0 +1,61 @@
+name: OpenSSF Scorecard
+
+# Supply-chain hygiene scan. Surfaces gaps in branch protection,
+# pinned-actions, signed-commits, etc., and uploads results as SARIF
+# so they show up in the Code scanning UI alongside CodeQL findings.
+# Runs weekly + on branch-protection-rule changes.
+
+on:
+  branch_protection_rule:
+  schedule:
+    # Weekly, Monday 07:20 UTC — staggered from CodeQL's nightly slot.
+    - cron: '20 7 * * 1'
+  push:
+    branches: [main]
+
+permissions: read-all
+
+jobs:
+  analysis:
+    name: Scorecard analysis
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # Required to read repo contents for checkout + analysis.
+      contents: read
+      # Required to upload SARIF results to GitHub.
+      security-events: write
+      # Required by scorecard-action to publish to OpenSSF's metrics endpoint.
+      id-token: write
+      # Required by scorecard-action to read workflow configurations.
+      actions: read
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@df4cb1c069e1874edd31b4311f1884172cec0e10 # v6.0.3
+        with:
+          # Scorecard analyzes commit history; persist-credentials false
+          # avoids accidentally exposing the GH token to subsequent steps.
+          persist-credentials: false
+
+      - name: Run Scorecard
+        uses: ossf/scorecard-action@4eaacf0543bb3f2c246792bd56e8cdeffafb205a # v2.4.3
+        with:
+          results_file: results.sarif
+          results_format: sarif
+          # publish_results uploads anonymized findings to the OpenSSF
+          # metrics dashboard at scorecard.dev. Public repo only; set to
+          # false for private repos (Scorecard refuses to publish anyway).
+          publish_results: true
+
+      - name: Upload SARIF artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: SARIF file
+          path: results.sarif
+          retention-days: 5
+
+      - name: Upload SARIF to Code scanning
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e # v4.36.2
+        with:
+          sarif_file: results.sarif
