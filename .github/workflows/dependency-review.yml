@@ -35,15 +35,19 @@ jobs:
           #
           # SPDX gotcha: bare `GPL-3.0` is deprecated; SPDX splits each
           # GPL/AGPL version into `-only` (this exact version) and
-          # `-or-later` (this version or any later). List both so packages
-          # licensed under either form get caught.
+          # `-or-later` (this version or any later). SPDX says deprecated
+          # forms map to `-only`, and the action SHOULD normalize, but if
+          # any registry / lockfile reports the bare form and the action
+          # does strict string matching, a GPL package could slip through.
+          # List all three forms (bare + -only + -or-later) per family for
+          # defense-in-depth — cost is zero extra entries; closes the gap.
           #
           # AGPL-1.0 is the exception — it was deprecated WITHOUT ever
           # getting the `-only` / `-or-later` split, so bare `AGPL-1.0`
           # is the only valid SPDX identifier (and practically extinct in
           # the wild — the world moved to AGPL-3.0 in 2007).
           deny-licenses: >-
-            GPL-2.0-only, GPL-2.0-or-later,
-            GPL-3.0-only, GPL-3.0-or-later,
+            GPL-2.0, GPL-2.0-only, GPL-2.0-or-later,
+            GPL-3.0, GPL-3.0-only, GPL-3.0-or-later,
             AGPL-1.0,
-            AGPL-3.0-only, AGPL-3.0-or-later
+            AGPL-3.0, AGPL-3.0-only, AGPL-3.0-or-later
