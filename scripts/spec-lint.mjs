@@ -38,7 +38,10 @@ if (!POSTMAN_API_KEY) {
 // Refresh the login session token. Idempotent — login overwrites
 // whatever's cached. Only runs once per spec-lint invocation, so the
 // cost is one HTTP round-trip.
-const login = spawnSync('node_modules/.bin/postman', ['login', '--with-api-key', POSTMAN_API_KEY], {
+// `pnpm exec` resolves the local binary through the workspace dep graph;
+// `npx` would auto-download if the local install were missing, which is a
+// supply-chain risk we don't want for a spec-lint hot path.
+const login = spawnSync('pnpm', ['exec', 'postman', 'login', '--with-api-key', POSTMAN_API_KEY], {
   stdio: ['ignore', 'ignore', 'inherit'],
 })
 if (login.status !== 0) {
@@ -141,8 +144,8 @@ async function resolveSpec() {
 const { path, cleanup } = await resolveSpec()
 try {
   const result = spawnSync(
-    'node_modules/.bin/postman',
-    ['api', 'lint', path, '--fail-severity', 'error'],
+    'pnpm',
+    ['exec', 'postman', 'api', 'lint', path, '--fail-severity', 'error'],
     { stdio: 'inherit' },
   )
   process.exit(result.status ?? 1)
@@ -164,7 +167,7 @@ function loadDotEnv(path) {
     const eq = trimmed.indexOf('=')
     if (eq < 0) continue
     const key = trimmed.slice(0, eq)
-    if (process.env[key] != null) continue
+    if (process.env[key] !== undefined) continue
     let value = trimmed.slice(eq + 1)
     if (
       (value.startsWith('"') && value.endsWith('"')) ||
