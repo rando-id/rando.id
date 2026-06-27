@@ -78,4 +78,23 @@ export interface GhAdminProvider {
     encryptedValue: string,
     keyId: string,
   ): Promise<void>
+
+  // --- security toggles --------------------------------------------------
+  // Five repo + org settings that were historically clicked through in the
+  // GitHub UI but each has a documented REST endpoint. Idempotent — every
+  // call either flips state or is a no-op against an already-flipped flag.
+
+  /** Enable Dependabot vulnerability alerts (prereq for security updates). */
+  enableVulnerabilityAlerts(repo: string): Promise<void>
+  /** Enable Dependabot automated security update PRs. */
+  enableAutomatedSecurityFixes(repo: string): Promise<void>
+  /** Enable GitHub-native secret scanning + commit-time push protection. */
+  enableSecretScanning(repo: string): Promise<void>
+  /** Enable the private vulnerability reporting form (/security/advisories/new). */
+  enablePrivateVulnerabilityReporting(repo: string): Promise<void>
+  /**
+   * Require 2FA across the org. Org-admin scope only. Destructive — boots
+   * org members without 2FA on. Caller should confirm.
+   */
+  enableOrgTwoFactorRequirement(org: string): Promise<void>
 }

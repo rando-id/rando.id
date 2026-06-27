@@ -111,4 +111,48 @@ describe('GhRestProvider', () => {
       `https://api.github.com/repos/${REPO}/environments/staging/secrets/X`,
     )
   })
+
+  it('enableVulnerabilityAlerts → PUT /repos/{repo}/vulnerability-alerts', async () => {
+    const { provider, calls } = makeProvider([{ status: 200, body: {} }])
+    await provider.enableVulnerabilityAlerts(REPO)
+    expect(calls[0]?.method).toBe('PUT')
+    expect(calls[0]?.url).toBe(`https://api.github.com/repos/${REPO}/vulnerability-alerts`)
+  })
+
+  it('enableAutomatedSecurityFixes → PUT /repos/{repo}/automated-security-fixes', async () => {
+    const { provider, calls } = makeProvider([{ status: 200, body: {} }])
+    await provider.enableAutomatedSecurityFixes(REPO)
+    expect(calls[0]?.method).toBe('PUT')
+    expect(calls[0]?.url).toBe(`https://api.github.com/repos/${REPO}/automated-security-fixes`)
+  })
+
+  it('enableSecretScanning → PATCH /repos/{repo} with security_and_analysis flags', async () => {
+    const { provider, calls } = makeProvider([{ status: 200, body: {} }])
+    await provider.enableSecretScanning(REPO)
+    expect(calls[0]?.method).toBe('PATCH')
+    expect(calls[0]?.url).toBe(`https://api.github.com/repos/${REPO}`)
+    expect(calls[0]?.body).toEqual({
+      security_and_analysis: {
+        secret_scanning: { status: 'enabled' },
+        secret_scanning_push_protection: { status: 'enabled' },
+      },
+    })
+  })
+
+  it('enablePrivateVulnerabilityReporting → PUT /repos/{repo}/private-vulnerability-reporting', async () => {
+    const { provider, calls } = makeProvider([{ status: 200, body: {} }])
+    await provider.enablePrivateVulnerabilityReporting(REPO)
+    expect(calls[0]?.method).toBe('PUT')
+    expect(calls[0]?.url).toBe(
+      `https://api.github.com/repos/${REPO}/private-vulnerability-reporting`,
+    )
+  })
+
+  it('enableOrgTwoFactorRequirement → PATCH /orgs/{org} with the 2fa flag', async () => {
+    const { provider, calls } = makeProvider([{ status: 200, body: {} }])
+    await provider.enableOrgTwoFactorRequirement('rando-id')
+    expect(calls[0]?.method).toBe('PATCH')
+    expect(calls[0]?.url).toBe('https://api.github.com/orgs/rando-id')
+    expect(calls[0]?.body).toEqual({ two_factor_requirement_enabled: true })
+  })
 })

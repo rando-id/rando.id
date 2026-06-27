@@ -175,18 +175,7 @@ describe('version-control (vc) command', () => {
   })
 
   it('setup prints the manual-revoke link in the post-run message', async () => {
-    const mock: GhAdminProvider = {
-      whoami: vi.fn(async () => ({ login: 'iamnewton' })),
-      listRulesets: vi.fn(async () => []),
-      createRuleset: vi.fn(async () => ({ id: 1, name: 'main', enforcement: 'active' as const })),
-      updateRuleset: vi.fn(),
-      upsertEnvironment: vi.fn(async () => undefined),
-      updateRepoSettings: vi.fn(async () => undefined),
-      getRepoSecretPublicKey: vi.fn(),
-      getEnvironmentSecretPublicKey: vi.fn(),
-      setRepoSecret: vi.fn(),
-      setEnvironmentSecret: vi.fn(),
-    }
+    const mock = stubGhAdminProvider()
     const { path, cwd } = writeConfig()
     mkdirSync(join(cwd, '.github'), { recursive: true })
     const io = captureIo()
@@ -205,4 +194,118 @@ describe('version-control (vc) command', () => {
     expect(io.stderr.join('\n')).toContain('revoke the admin PAT manually')
     expect(io.stderr.join('\n')).toContain('https://github.com/settings/personal-access-tokens')
   })
+
+  it('security --dry-run lists the four repo toggles without org 2fa', async () => {
+    const { path, cwd } = writeConfig()
+    const io = captureIo()
+    const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
+    try {
+      await run(['vc', 'security', '--admin-token', 'fake', '--config', path, '--dry-run'], {
+        adapters: fakeAdapters(),
+        io: io.io,
+        exit: () => {
+          throw new Error('unexpected exit')
+        },
+      })
+    } finally {
+      spy.mockRestore()
+    }
+    const text = io.stdout.join('\n')
+    expect(text).toContain('vulnerability alerts')
+    expect(text).toContain('automated security fixes')
+    expect(text).toContain('secret scanning + push protection')
+    expect(text).toContain('private vulnerability reporting')
+    expect(text).not.toContain('org-level 2FA')
+  })
+
+  it('security --include-org-2fa --dry-run names the org and flags DESTRUCTIVE', async () => {
+    const { path, cwd } = writeConfig()
+    const io = captureIo()
+    const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
+    try {
+      await run(
+        [
+          'vc',
+          'security',
+          '--admin-token',
+          'fake',
+          '--config',
+          path,
+          '--include-org-2fa',
+          '--dry-run',
+        ],
+        { adapters: fakeAdapters(), io: io.io, exit: () => undefined as never },
+      )
+    } finally {
+      spy.mockRestore()
+    }
+    const text = io.stdout.join('\n')
+    expect(text).toContain('org-level 2FA requirement on iamnewton')
+    expect(text).toContain('DESTRUCTIVE')
+  })
+
+  it('security invokes the four repo toggles via the injected adapter', async () => {
+    const mock = stubGhAdminProvider()
+    const { path, cwd } = writeConfig()
+    const io = captureIo()
+    const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
+    try {
+      await run(['vc', 'security', '--admin-token', 'fake', '--config', path], {
+        adapters: fakeAdapters(() => mock),
+        io: io.io,
+        exit: () => {
+          throw new Error('unexpected exit')
+        },
+      })
+    } finally {
+      spy.mockRestore()
+    }
+    expect(mock.enableVulnerabilityAlerts).toHaveBeenCalledWith('iamnewton/rando')
+    expect(mock.enableAutomatedSecurityFixes).toHaveBeenCalledWith('iamnewton/rando')
+    expect(mock.enableSecretScanning).toHaveBeenCalledWith('iamnewton/rando')
+    expect(mock.enablePrivateVulnerabilityReporting).toHaveBeenCalledWith('iamnewton/rando')
+    expect(mock.enableOrgTwoFactorRequirement).not.toHaveBeenCalled()
+  })
+
+  it('security --include-org-2fa also calls the org-level endpoint', async () => {
+    const mock = stubGhAdminProvider()
+    const { path, cwd } = writeConfig()
+    const io = captureIo()
+    const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
+    try {
+      await run(
+        ['vc', 'security', '--admin-token', 'fake', '--config', path, '--include-org-2fa'],
+        {
+          adapters: fakeAdapters(() => mock),
+          io: io.io,
+          exit: () => {
+            throw new Error('unexpected exit')
+          },
+        },
+      )
+    } finally {
+      spy.mockRestore()
+    }
+    expect(mock.enableOrgTwoFactorRequirement).toHaveBeenCalledWith('iamnewton')
+  })
 })
+
+function stubGhAdminProvider() {
+  return {
+    whoami: vi.fn(async () => ({ login: 'iamnewton' })),
+    listRulesets: vi.fn(async () => []),
+    createRuleset: vi.fn(async () => ({ id: 1, name: 'main', enforcement: 'active' as const })),
+    updateRuleset: vi.fn(async () => ({ id: 1, name: 'main', enforcement: 'active' as const })),
+    upsertEnvironment: vi.fn(async () => undefined),
+    updateRepoSettings: vi.fn(async () => undefined),
+    getRepoSecretPublicKey: vi.fn(async () => ({ key_id: '', key: '' })),
+    getEnvironmentSecretPublicKey: vi.fn(async () => ({ key_id: '', key: '' })),
+    setRepoSecret: vi.fn(async () => undefined),
+    setEnvironmentSecret: vi.fn(async () => undefined),
+    enableVulnerabilityAlerts: vi.fn(async () => undefined),
+    enableAutomatedSecurityFixes: vi.fn(async () => undefined),
+    enableSecretScanning: vi.fn(async () => undefined),
+    enablePrivateVulnerabilityReporting: vi.fn(async () => undefined),
+    enableOrgTwoFactorRequirement: vi.fn(async () => undefined),
+  } satisfies GhAdminProvider
+}

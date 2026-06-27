@@ -927,6 +927,28 @@ scripted or CI use. `infra destroy` follows the same convention. Production
 infrastructure is never destroyable via the CLI — see the `infra destroy`
 section below.
 
+### `version-control` (alias `vc`) — GitHub repo provisioning
+
+```
+rando vc setup --admin-token "$PAT"           # ruleset + env + repo-settings + security + CODEOWNERS
+rando vc ruleset --admin-token "$PAT"         # just the branch ruleset
+rando vc repo-settings --admin-token "$PAT"   # squash-only, auto-merge, etc.
+rando vc environments --admin-token "$PAT"    # staging + production environments
+rando vc security --admin-token "$PAT"        # Dependabot, secret scanning, private vuln reporting
+rando vc security --admin-token "$PAT" --include-org-2fa   # adds org 2FA (DESTRUCTIVE)
+rando vc secret <NAME> [VALUE] --admin-token "$PAT" [--env <name>]   # reads stdin if VALUE omitted
+rando vc codeowners                           # local file, no token needed
+```
+
+All admin operations take `--admin-token <pat>` or read `RANDO_ADMIN_TOKEN`
+from the env. Use `--dry-run` on any subcommand to preview the plan.
+
+The PAT is meant to be **ephemeral** — see
+[`.notes/tool-gh-api-coverage.spec.md`](../../.notes/tool-gh-api-coverage.spec.md)
+for the credential lifecycle. The only operator-driven steps are creating
+the PAT in the GitHub UI and deleting it after the run; the command prints
+the cleanup link on its way out.
+
 ### `infrastructure` — one-shot orchestration
 
 ```

@@ -60,6 +60,7 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
         io.stdout(`  • ruleset from ${RULESET_PATH}`)
         io.stdout(`  • repo settings on ${cfg.repo}`)
         io.stdout(`  • environments: staging, production`)
+        io.stdout(`  • security toggles (Dependabot, secret scanning, private vuln reporting)`)
         io.stdout(`  • CODEOWNERS written to ${CODEOWNERS_PATH}`)
         return
       }
@@ -76,6 +77,7 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
         await applyRuleset(gh, cfg.repo, io)
         await applyRepoSettings(gh, cfg.repo, DEFAULT_REPO_SETTINGS, io)
         await applyEnvironments(gh, cfg.repo, io)
+        await applySecurityToggles(gh, cfg.repo, io)
         await writeCodeowners(cfg, io)
       } finally {
         // No REST self-revoke (the `DELETE /personal-access-tokens/{id}`
@@ -185,6 +187,46 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
           await gh.setRepoSecret(cfg.repo, name, encrypted, publicKey.key_id)
         }
         io.stdout(`${colors.success('✓')} secret ${colors.bold(name)} set on ${target}`)
+      },
+    )
+
+  cmd
+    .command('security')
+    .description(
+      'Enable repo-level security toggles (Dependabot alerts + security updates, ' +
+        'secret scanning + push protection, private vulnerability reporting). ' +
+        'Use --include-org-2fa to additionally require 2FA across the org ' +
+        '(org-admin scope, destructive — boots members without 2FA).',
+    )
+    .option('--admin-token <pat>', 'Ephemeral admin PAT (or set RANDO_ADMIN_TOKEN)')
+    .option('--include-org-2fa', 'Also require 2FA across the org (DESTRUCTIVE)', false)
+    .option('--dry-run', 'Print what would happen', false)
+    .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
+    .action(
+      async (opts: {
+        adminToken?: string
+        includeOrg2fa: boolean
+        dryRun: boolean
+        config: string
+      }) => {
+        const cfg = loadSetupConfig(resolve(process.cwd(), opts.config))
+        if (opts.dryRun) {
+          io.stdout(colors.hint(`dry-run: would enable on ${cfg.repo}`))
+          io.stdout('  • vulnerability alerts (Dependabot)')
+          io.stdout('  • automated security fixes (Dependabot)')
+          io.stdout('  • secret scanning + push protection')
+          io.stdout('  • private vulnerability reporting')
+          if (opts.includeOrg2fa) {
+            const org = cfg.repo.split('/')[0]
+            io.stdout(`  • org-level 2FA requirement on ${colors.bold(org!)} (DESTRUCTIVE)`)
+          }
+          return
+        }
+        const gh = adapters.ghAdmin({ token: resolveToken(opts.adminToken) })
+        await applySecurityToggles(gh, cfg.repo, io)
+        if (opts.includeOrg2fa) {
+          await applyOrgTwoFactor(gh, cfg.repo, io)
+        }
       },
     )
 
@@ -309,6 +351,51 @@ async function applyEnvironments(gh: GhAdminProvider, repo: string, io: Io): Pro
       }
       throw err
     }
+  }
+}
+
+async function applySecurityToggles(gh: GhAdminProvider, repo: string, io: Io): Promise<void> {
+  // Each toggle is independent — a 403 on one (e.g. private vuln reporting
+  // needs the repo to be public or have Advanced Security on) shouldn't
+  // block the rest. Soft-fail per CLAUDE.md.
+  const steps: Array<{ label: string; run: () => Promise<void> }> = [
+    { label: 'vulnerability alerts', run: () => gh.enableVulnerabilityAlerts(repo) },
+    { label: 'automated security fixes', run: () => gh.enableAutomatedSecurityFixes(repo) },
+    { label: 'secret scanning + push protection', run: () => gh.enableSecretScanning(repo) },
+    {
+      label: 'private vulnerability reporting',
+      run: () => gh.enablePrivateVulnerabilityReporting(repo),
+    },
+  ]
+  for (const step of steps) {
+    try {
+      await step.run()
+      io.stdout(`${io.colors.success('✓')} ${step.label} enabled`)
+    } catch (err) {
+      if (err instanceof ProviderApiError) {
+        io.stderr(io.colors.warn(`${step.label}: ${err.message}`))
+        continue
+      }
+      throw err
+    }
+  }
+}
+
+async function applyOrgTwoFactor(gh: GhAdminProvider, repo: string, io: Io): Promise<void> {
+  const org = repo.split('/')[0]
+  if (!org) {
+    io.stderr(io.colors.warn(`org 2fa: cannot derive org from repo "${repo}" — skipped`))
+    return
+  }
+  try {
+    await gh.enableOrgTwoFactorRequirement(org)
+    io.stdout(`${io.colors.success('✓')} org 2FA requirement enabled on ${org}`)
+  } catch (err) {
+    if (err instanceof ProviderApiError) {
+      io.stderr(io.colors.warn(`org 2fa (${org}): ${err.message}`))
+      return
+    }
+    throw err
   }
 }
 

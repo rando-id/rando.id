@@ -57,10 +57,24 @@ in `gh-cli.ts` vs gaps.
 | Update repository PAT permissions / fine-grained PAT bootstrap                       | (org-level API)                                                        | P2 — likely manual forever                                  |
 | Create deploy key                                                                    | `POST /repos/.../keys`                                                 | P3                                                          |
 | Manage CODEOWNERS file                                                               | (regular file write, not API)                                          | P0 (just write the file)                                    |
+| Enable vulnerability alerts                                                          | `PUT /repos/.../vulnerability-alerts`                                  | **P0** (`rando vc security`)                                |
+| Enable automated security fixes (Dependabot)                                         | `PUT /repos/.../automated-security-fixes`                              | **P0** (`rando vc security`)                                |
+| Enable secret scanning + push protection                                             | `PATCH /repos/{o}/{r}` (`security_and_analysis` block)                 | **P0** (`rando vc security`)                                |
+| Enable private vulnerability reporting                                               | `PUT /repos/.../private-vulnerability-reporting`                       | **P0** (`rando vc security`)                                |
+| Require org 2FA                                                                      | `PATCH /orgs/{org}` (`two_factor_requirement_enabled`)                 | P1 (`rando vc security --include-org-2fa`, destructive)     |
 
 ### What stays manual (and why)
 
+Two operator actions only — both because GitHub doesn't expose a REST
+endpoint for them:
+
 - **PAT creation.** GitHub doesn't expose an API to mint its own PATs.
+  The operator generates a fine-grained PAT once in Settings →
+  Developer settings → Personal access tokens (with the scopes listed
+  in §"Ephemeral admin PAT"), pipes it into `rando vc setup`, and
+  deletes it in the same UI when the run prints the cleanup link.
+- **PAT deletion (cleanup).** Same reason — no self-revoke endpoint.
+  Operator clicks delete in the UI after the run.
   See "Ephemeral admin PAT" below — the operator creates a high-scope
   PAT just for the duration of `rando vc setup` and revokes it
   immediately after. The long-lived bootstrap PAT (used by every other
@@ -135,6 +149,8 @@ rando vc setup --admin-token "$PAT"             # apply everything (then prompt 
 rando vc ruleset --admin-token "$PAT"     # just the ruleset
 rando vc environments --admin-token "$PAT"
 rando vc secret --admin-token "$PAT"     # calls into [[security-secrets-strategy]]
+rando vc security --admin-token "$PAT"    # Dependabot, secret scanning, private vuln reporting
+rando vc security --admin-token "$PAT" --include-org-2fa   # adds org 2FA (destructive)
 rando vc labels --admin-token "$PAT"
 rando vc repo-settings --admin-token "$PAT"
 rando vc codeowners                       # local file, no token needed

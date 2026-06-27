@@ -126,6 +126,53 @@ export class GhRestProvider implements GhAdminProvider {
     })
   }
 
+  async enableVulnerabilityAlerts(repo: string): Promise<void> {
+    // 204 on success. Prereq for `enableAutomatedSecurityFixes`.
+    await this.request<void>(`/repos/${repo}/vulnerability-alerts`, {
+      method: 'PUT',
+      expectNoContent: true,
+    })
+  }
+
+  async enableAutomatedSecurityFixes(repo: string): Promise<void> {
+    await this.request<void>(`/repos/${repo}/automated-security-fixes`, {
+      method: 'PUT',
+      expectNoContent: true,
+    })
+  }
+
+  async enableSecretScanning(repo: string): Promise<void> {
+    // PATCHing the repo's `security_and_analysis` block is the only way to
+    // flip both secret scanning AND its push-protection sibling. Enabling
+    // push protection without secret scanning is a no-op, so we always
+    // set both together.
+    await this.request<void>(`/repos/${repo}`, {
+      method: 'PATCH',
+      body: {
+        security_and_analysis: {
+          secret_scanning: { status: 'enabled' },
+          secret_scanning_push_protection: { status: 'enabled' },
+        },
+      },
+    })
+  }
+
+  async enablePrivateVulnerabilityReporting(repo: string): Promise<void> {
+    await this.request<void>(`/repos/${repo}/private-vulnerability-reporting`, {
+      method: 'PUT',
+      expectNoContent: true,
+    })
+  }
+
+  async enableOrgTwoFactorRequirement(org: string): Promise<void> {
+    // Org-admin scope required; PATCHing the org with the 2FA flag boots
+    // any member that doesn't have 2FA on. Treat as destructive.
+    await this.request<void>(`/orgs/${org}`, {
+      method: 'PATCH',
+      body: { two_factor_requirement_enabled: true },
+    })
+  }
+
   private async request<T>(path: string, opts: RequestOptions = {}): Promise<T> {
     const url = `${this.baseUrl}${path}`
     const headers: Record<string, string> = {
