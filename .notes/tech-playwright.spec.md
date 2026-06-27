@@ -61,7 +61,7 @@ regression baseline, auth-state fixtures.
 | Tool                    | Pros                                                            | Cons                                                                    |
 | ----------------------- | --------------------------------------------------------------- | ----------------------------------------------------------------------- |
 | **Playwright** (chosen) | Multi-browser, fast, parallel by default, Microsoft maintenance | Bigger install footprint                                                |
-| Cypress                 | Better dev UX (test runner), strong docs                        | Auth popup/cross-origin flows can be brittle; typically slower in CI   |
+| Cypress                 | Better dev UX (test runner), strong docs                        | Cross-origin support has improved in recent versions; auth popup/provider flows may still be brittle for our Clerk-based setup, and CI is often slower |
 | WebdriverIO             | Standards-based (W3C)                                           | More config, less community for React-app testing                       |
 
 ## Touch points
