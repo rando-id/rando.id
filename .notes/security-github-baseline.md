@@ -129,7 +129,7 @@ Record those counts in this doc as a follow-up entry once available.
    self-audit dashboard.
 4. **Action pins are mixed.** Most actions in our workflows are
    SHA-pinned (good — Dependabot bumps them weekly). Worth a sweep
-   to confirm there's no `actions/checkout@v6` style version-tag
+   to confirm there's no `actions/checkout@v4` style version-tag
    pin remaining.
 5. **No stale-issue/PR automation.** Issues and PRs accumulate
    indefinitely. The Dependabot triage doc is the closest thing
