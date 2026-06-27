@@ -56,7 +56,7 @@ unit-tests.yml         — vitest + coverage upload
 ```
 
 Not present (could be added per the security/quality ideas):
-`dependency-review.yml`, `scorecard.yml`, secret-scan trigger,
+`dependency-review.yml`, `scorecard.yml`, secret-scanning trigger,
 SAST (semgrep / snyk), stale-issue automation.
 
 ### Docs / templates
