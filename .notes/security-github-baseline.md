@@ -112,7 +112,7 @@ available:
 The only operator step that stays manual is **PAT creation** —
 GitHub doesn't expose an API for minting fine-grained PATs, so the
 operator generates one in Settings → Developer settings → Personal
-access tokens, runs `rando vc setup --admin-token "$PAT"`, then
+access tokens, runs `rando vc setup --token "$PAT"`, then
 deletes the PAT in the same UI when the run finishes (the command
 prints the cleanup link on its way out).
 

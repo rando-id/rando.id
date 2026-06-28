@@ -13,7 +13,7 @@ import type {
 } from '../domain/gh-admin'
 
 export interface GhRestOptions {
-  /** Ephemeral admin PAT — passed via --admin-token, never persisted. */
+  /** Ephemeral admin PAT — passed via --token, never persisted. */
   token: string
   /** Override fetch in tests. */
   fetch?: typeof fetch

@@ -13,7 +13,7 @@ afterEach(() => {
     const dir = tmpDirs.pop()
     if (dir) rmSync(dir, { recursive: true, force: true })
   }
-  delete process.env.RANDO_ADMIN_TOKEN
+  delete process.env.RANDO_GH_TOKEN
 })
 
 function writeConfig(): { path: string; cwd: string } {
@@ -58,7 +58,7 @@ describe('version-control (vc) command', () => {
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     try {
-      await run(['vc', 'setup', '--admin-token', 'fake', '--config', path, '--dry-run'], {
+      await run(['vc', 'setup', '--token', 'fake', '--config', path, '--dry-run'], {
         adapters: fakeAdapters(),
         io: io.io,
         exit: () => {
@@ -119,7 +119,7 @@ describe('version-control (vc) command', () => {
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     try {
-      await run(['vc', 'ruleset', '--admin-token', 'fake', '--config', path, '--dry-run'], {
+      await run(['vc', 'ruleset', '--token', 'fake', '--config', path, '--dry-run'], {
         adapters: fakeAdapters(),
         io: io.io,
         exit: () => {
@@ -139,7 +139,7 @@ describe('version-control (vc) command', () => {
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     try {
-      await run(['vc', 'repo-settings', '--admin-token', 'fake', '--config', path, '--dry-run'], {
+      await run(['vc', 'repo-settings', '--token', 'fake', '--config', path, '--dry-run'], {
         adapters: fakeAdapters(),
         io: io.io,
         exit: () => {
@@ -181,7 +181,7 @@ describe('version-control (vc) command', () => {
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     try {
-      await run(['vc', 'setup', '--admin-token', 'fake', '--config', path], {
+      await run(['vc', 'setup', '--token', 'fake', '--config', path], {
         adapters: fakeAdapters(() => mock),
         io: io.io,
         exit: () => {
@@ -200,7 +200,7 @@ describe('version-control (vc) command', () => {
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     try {
-      await run(['vc', 'security', '--admin-token', 'fake', '--config', path, '--dry-run'], {
+      await run(['vc', 'security', '--token', 'fake', '--config', path, '--dry-run'], {
         adapters: fakeAdapters(),
         io: io.io,
         exit: () => {
@@ -224,16 +224,7 @@ describe('version-control (vc) command', () => {
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     try {
       await run(
-        [
-          'vc',
-          'security',
-          '--admin-token',
-          'fake',
-          '--config',
-          path,
-          '--include-org-2fa',
-          '--dry-run',
-        ],
+        ['vc', 'security', '--token', 'fake', '--config', path, '--include-org-2fa', '--dry-run'],
         { adapters: fakeAdapters(), io: io.io, exit: () => undefined as never },
       )
     } finally {
@@ -250,7 +241,7 @@ describe('version-control (vc) command', () => {
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     try {
-      await run(['vc', 'security', '--admin-token', 'fake', '--config', path], {
+      await run(['vc', 'security', '--token', 'fake', '--config', path], {
         adapters: fakeAdapters(() => mock),
         io: io.io,
         exit: () => {
@@ -267,14 +258,57 @@ describe('version-control (vc) command', () => {
     expect(mock.enableOrgTwoFactorRequirement).not.toHaveBeenCalled()
   })
 
-  it('security --include-org-2fa also calls the org-level endpoint', async () => {
+  it('security --include-org-2fa also calls the org-level endpoint (default confirm=true)', async () => {
+    const mock = stubGhAdminProvider()
+    const { path, cwd } = writeConfig()
+    const io = captureIo()
+    const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
+    try {
+      await run(['vc', 'security', '--token', 'fake', '--config', path, '--include-org-2fa'], {
+        adapters: fakeAdapters(() => mock),
+        io: io.io,
+        exit: () => {
+          throw new Error('unexpected exit')
+        },
+      })
+    } finally {
+      spy.mockRestore()
+    }
+    // Confirmation prompt fired with the org name in it.
+    expect(io.confirmCalls.some((m) => m.includes('iamnewton'))).toBe(true)
+    expect(mock.enableOrgTwoFactorRequirement).toHaveBeenCalledWith('iamnewton')
+  })
+
+  it('security --include-org-2fa skips org 2fa when the prompt is declined', async () => {
+    const mock = stubGhAdminProvider()
+    const { path, cwd } = writeConfig()
+    const io = captureIo({ confirm: false })
+    const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
+    try {
+      await run(['vc', 'security', '--token', 'fake', '--config', path, '--include-org-2fa'], {
+        adapters: fakeAdapters(() => mock),
+        io: io.io,
+        exit: () => {
+          throw new Error('unexpected exit')
+        },
+      })
+    } finally {
+      spy.mockRestore()
+    }
+    // Repo toggles still ran; org-level was skipped after the decline.
+    expect(mock.enableVulnerabilityAlerts).toHaveBeenCalled()
+    expect(mock.enableOrgTwoFactorRequirement).not.toHaveBeenCalled()
+    expect(io.stderr.join('\n')).toContain('confirmation declined')
+  })
+
+  it('security --include-org-2fa --yes skips the prompt entirely', async () => {
     const mock = stubGhAdminProvider()
     const { path, cwd } = writeConfig()
     const io = captureIo()
     const spy = vi.spyOn(process, 'cwd').mockReturnValue(cwd)
     try {
       await run(
-        ['vc', 'security', '--admin-token', 'fake', '--config', path, '--include-org-2fa'],
+        ['vc', 'security', '--token', 'fake', '--config', path, '--include-org-2fa', '--yes'],
         {
           adapters: fakeAdapters(() => mock),
           io: io.io,
@@ -286,7 +320,8 @@ describe('version-control (vc) command', () => {
     } finally {
       spy.mockRestore()
     }
-    expect(mock.enableOrgTwoFactorRequirement).toHaveBeenCalledWith('iamnewton')
+    expect(io.confirmCalls).toHaveLength(0)
+    expect(mock.enableOrgTwoFactorRequirement).toHaveBeenCalled()
   })
 })
 

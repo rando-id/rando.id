@@ -4,7 +4,7 @@
 // vendor-neutral so a future GitLab/Bitbucket adapter swaps in without a
 // rename. See .notes/tool-gh-api-coverage.spec.md.
 //
-// Token flow: --admin-token flag (or RANDO_ADMIN_TOKEN env var) supplies a
+// Token flow: --token flag (or RANDO_GH_TOKEN env var) supplies a
 // fine-grained PAT minted for this run only. After the run completes, the
 // operator deletes the PAT manually at
 // https://github.com/settings/personal-access-tokens — GitHub has no REST
@@ -21,6 +21,7 @@ import { ProviderApiError } from '../domain/errors'
 import type { GhAdminProvider, GhEnvironment, GhRepoSettings } from '../domain/gh-admin'
 import type { Io } from '../output'
 import { loadSetupConfig, type SetupConfig } from '../setup-config'
+import { confirmDestructive } from './_confirm'
 
 const DEFAULT_CONFIG_PATH = 'rando.config.json'
 const RULESET_PATH = '.github/rulesets/main.json'
@@ -50,10 +51,10 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
       'Run every subcommand in order. After the run, the operator deletes the admin PAT ' +
         'manually in the GitHub UI (GitHub has no self-revoke REST endpoint).',
     )
-    .option('--admin-token <pat>', 'Ephemeral admin PAT (or set RANDO_ADMIN_TOKEN)')
+    .option('--token <pat>', 'Ephemeral admin PAT (or set RANDO_GH_TOKEN)')
     .option('--dry-run', 'Print what would happen without calling any APIs', false)
     .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
-    .action(async (opts: { adminToken?: string; dryRun: boolean; config: string }) => {
+    .action(async (opts: { token?: string; dryRun: boolean; config: string }) => {
       const cfg = loadSetupConfig(resolve(process.cwd(), opts.config))
       if (opts.dryRun) {
         io.stdout(colors.hint('dry-run: would apply'))
@@ -67,7 +68,7 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
       // Resolve the token OUTSIDE the try/finally so the manual-revoke
       // reminder only fires when a PAT was actually accepted — a missing
       // token should not produce "go revoke a PAT" advice.
-      const gh = adapters.ghAdmin({ token: resolveToken(opts.adminToken) })
+      const gh = adapters.ghAdmin({ token: resolveToken(opts.token) })
       try {
         const who = await gh.whoami()
         io.stdout(`${colors.hint('→')} authenticated as ${colors.bold(who.login)}`)
@@ -96,49 +97,49 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
   cmd
     .command('ruleset')
     .description(`Create or update the ruleset declared in ${RULESET_PATH}.`)
-    .option('--admin-token <pat>', 'Ephemeral admin PAT (or set RANDO_ADMIN_TOKEN)')
+    .option('--token <pat>', 'Ephemeral admin PAT (or set RANDO_GH_TOKEN)')
     .option('--dry-run', 'Print what would happen', false)
     .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
-    .action(async (opts: { adminToken?: string; dryRun: boolean; config: string }) => {
+    .action(async (opts: { token?: string; dryRun: boolean; config: string }) => {
       const cfg = loadSetupConfig(resolve(process.cwd(), opts.config))
       if (opts.dryRun) {
         io.stdout(colors.hint(`dry-run: would apply ruleset from ${RULESET_PATH} to ${cfg.repo}`))
         return
       }
-      const gh = adapters.ghAdmin({ token: resolveToken(opts.adminToken) })
+      const gh = adapters.ghAdmin({ token: resolveToken(opts.token) })
       await applyRuleset(gh, cfg.repo, io)
     })
 
   cmd
     .command('repo-settings')
     .description('Apply repo settings (squash-merge, auto-merge, delete-branch-on-merge).')
-    .option('--admin-token <pat>', 'Ephemeral admin PAT (or set RANDO_ADMIN_TOKEN)')
+    .option('--token <pat>', 'Ephemeral admin PAT (or set RANDO_GH_TOKEN)')
     .option('--dry-run', 'Print what would happen', false)
     .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
-    .action(async (opts: { adminToken?: string; dryRun: boolean; config: string }) => {
+    .action(async (opts: { token?: string; dryRun: boolean; config: string }) => {
       const cfg = loadSetupConfig(resolve(process.cwd(), opts.config))
       if (opts.dryRun) {
         io.stdout(colors.hint(`dry-run: PATCH /repos/${cfg.repo}`))
         io.stdout(JSON.stringify(DEFAULT_REPO_SETTINGS, null, 2))
         return
       }
-      const gh = adapters.ghAdmin({ token: resolveToken(opts.adminToken) })
+      const gh = adapters.ghAdmin({ token: resolveToken(opts.token) })
       await applyRepoSettings(gh, cfg.repo, DEFAULT_REPO_SETTINGS, io)
     })
 
   cmd
     .command('environments')
     .description('Create/update Environments (staging, production).')
-    .option('--admin-token <pat>', 'Ephemeral admin PAT (or set RANDO_ADMIN_TOKEN)')
+    .option('--token <pat>', 'Ephemeral admin PAT (or set RANDO_GH_TOKEN)')
     .option('--dry-run', 'Print what would happen', false)
     .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
-    .action(async (opts: { adminToken?: string; dryRun: boolean; config: string }) => {
+    .action(async (opts: { token?: string; dryRun: boolean; config: string }) => {
       const cfg = loadSetupConfig(resolve(process.cwd(), opts.config))
       if (opts.dryRun) {
         io.stdout(colors.hint(`dry-run: PUT /repos/${cfg.repo}/environments/{staging,production}`))
         return
       }
-      const gh = adapters.ghAdmin({ token: resolveToken(opts.adminToken) })
+      const gh = adapters.ghAdmin({ token: resolveToken(opts.token) })
       await applyEnvironments(gh, cfg.repo, io)
     })
 
@@ -150,7 +151,7 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
         'Encrypts via libsodium before push. Use --env <name> to target an ' +
         'environment instead of the repo.',
     )
-    .option('--admin-token <pat>', 'Ephemeral admin PAT (or set RANDO_ADMIN_TOKEN)')
+    .option('--token <pat>', 'Ephemeral admin PAT (or set RANDO_GH_TOKEN)')
     .option('--env <name>', 'Environment name (omit for repo-level secret)')
     .option('--dry-run', 'Print what would happen', false)
     .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
@@ -158,7 +159,7 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
       async (
         name: string,
         value: string | undefined,
-        opts: { adminToken?: string; env?: string; dryRun: boolean; config: string },
+        opts: { token?: string; env?: string; dryRun: boolean; config: string },
       ) => {
         const cfg = loadSetupConfig(resolve(process.cwd(), opts.config))
         const target = opts.env ? `environment ${opts.env}` : 'repo'
@@ -176,7 +177,7 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
               'or pass as a positional argument.',
           )
         }
-        const gh = adapters.ghAdmin({ token: resolveToken(opts.adminToken) })
+        const gh = adapters.ghAdmin({ token: resolveToken(opts.token) })
         const publicKey = opts.env
           ? await gh.getEnvironmentSecretPublicKey(cfg.repo, opts.env)
           : await gh.getRepoSecretPublicKey(cfg.repo)
@@ -198,14 +199,16 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
         'Use --include-org-2fa to additionally require 2FA across the org ' +
         '(org-admin scope, destructive — boots members without 2FA).',
     )
-    .option('--admin-token <pat>', 'Ephemeral admin PAT (or set RANDO_ADMIN_TOKEN)')
+    .option('--token <pat>', 'GitHub token with admin:write (or set RANDO_GH_TOKEN)')
     .option('--include-org-2fa', 'Also require 2FA across the org (DESTRUCTIVE)', false)
+    .option('-y, --yes', 'Skip the confirmation prompt for --include-org-2fa', false)
     .option('--dry-run', 'Print what would happen', false)
     .option('--config <path>', 'Path to rando.config.json', DEFAULT_CONFIG_PATH)
     .action(
       async (opts: {
-        adminToken?: string
+        token?: string
         includeOrg2fa: boolean
+        yes: boolean
         dryRun: boolean
         config: string
       }) => {
@@ -222,11 +225,26 @@ export function versionControlCommand(adapters: Adapters, io: Io): Command {
           }
           return
         }
-        const gh = adapters.ghAdmin({ token: resolveToken(opts.adminToken) })
-        await applySecurityToggles(gh, cfg.repo, io)
+        // Confirm before the destructive org-level call — booting members
+        // without 2FA isn't reversible by the CLI re-running.
         if (opts.includeOrg2fa) {
-          await applyOrgTwoFactor(gh, cfg.repo, io)
+          const org = cfg.repo.split('/')[0]
+          const ok = await confirmDestructive(
+            io,
+            { yes: opts.yes },
+            `Require 2FA on org ${colors.bold(org ?? '?')}? Members without 2FA will be removed.`,
+          )
+          if (!ok) {
+            io.stderr(colors.warn('org 2FA: skipped — confirmation declined'))
+            // Continue with the repo-level toggles regardless.
+          }
+          const gh = adapters.ghAdmin({ token: resolveToken(opts.token) })
+          await applySecurityToggles(gh, cfg.repo, io)
+          if (ok) await applyOrgTwoFactor(gh, cfg.repo, io)
+          return
         }
+        const gh = adapters.ghAdmin({ token: resolveToken(opts.token) })
+        await applySecurityToggles(gh, cfg.repo, io)
       },
     )
 
@@ -264,10 +282,10 @@ async function readStdin(): Promise<string> {
 }
 
 function resolveToken(flag?: string): string {
-  const token = flag ?? process.env.RANDO_ADMIN_TOKEN
+  const token = flag ?? process.env.RANDO_GH_TOKEN
   if (!token) {
     throw new Error(
-      'No admin PAT provided. Pass --admin-token <pat> or set RANDO_ADMIN_TOKEN. ' +
+      'No admin PAT provided. Pass --token <pat> or set RANDO_GH_TOKEN. ' +
         'Mint a fine-grained PAT in GitHub UI scoped to admin operations; revoke it after this run.',
     )
   }
