@@ -58,8 +58,9 @@ test-results/
 .cache/
 .eslintcache
 
-# claude code (user-local permissions)
+# claude code (user-local permissions + session state)
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
 
 # brew bundle install generates this — versions float, no value in committing
 Brewfile.lock.json
