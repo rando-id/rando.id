@@ -17,14 +17,16 @@ Once 1.0 ships, this table will track active minor lines.
 
 **Do not open a public GitHub issue for security-sensitive reports.**
 
-**Preferred channel: GitHub's private vulnerability reporting form** at
-<https://github.com/rando-id/rando.id/security/advisories/new>. The
-report is end-to-end encrypted, scoped to repo maintainers, and gives
-us a built-in disclosure timeline + advisory draft.
+Two channels reach us — pick whichever you prefer:
 
-If you can't use the GitHub form (no account, etc.), email
-**security@rando.id** instead. Either channel reaches us; the GitHub
-form is faster because it ties directly into our advisory workflow.
+- **GitHub's private vulnerability reporting form** at
+  <https://github.com/rando-id/rando.id/security/advisories/new>.
+  End-to-end encrypted, scoped to repo maintainers, ties into the
+  built-in advisory workflow (CVE assignment, coordinated disclosure
+  timeline). Requires a GitHub account; if the link 404s, the form
+  may not be enabled yet — fall back to email.
+- **Email** <security@rando.id>. Always works; no GitHub account
+  required.
 
 Either way, please include:
 
