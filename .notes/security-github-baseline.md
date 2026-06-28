@@ -91,21 +91,30 @@ needs a fine-grained PAT with `Administration: read` or
 | `repos/.../branches/main/protection` | Legacy branch protection (we use rulesets instead — but might also be configured) |
 | `orgs/rando-id` 2FA flag             | Org-level 2FA enforcement                                                         |
 
-**Manual baseline check to run in the GitHub UI**:
+**These toggles are now automated** via `rando vc security` (see
+`.notes/tool-gh-api-coverage.spec.md`). Single command flips:
 
-1. Settings → Security & analysis → confirm Dependabot **security
-   updates** (not version updates) are on. Confirm secret scanning
-   and push protection are on (private repos need a paid tier;
-   public repo gets it free).
-2. Security tab → Dependabot → count open advisories.
-3. Security tab → Code scanning → count open CodeQL alerts (the
-   ruleset would have blocked #102/#226 if any were errors).
-4. Security tab → Secret scanning → count open detections.
-5. Settings → Code security and analysis → check whether private
-   vulnerability reporting is enabled.
-6. Org Settings → Authentication security → 2FA enforcement state.
+- Dependabot vulnerability alerts + automated security fixes
+- Secret scanning + push protection
+- Private vulnerability reporting
+- Org-level 2FA requirement (with `--include-org-2fa`, opt-in because
+  it kicks members without 2FA out of the org)
 
-Record those counts in this doc as a follow-up entry once available.
+The audit / counts side (open advisories, CodeQL findings, etc.) is
+still UI-driven — no API for "show me the current numbers" without a
+fine-grained PAT with `Security events: read`. Counts to record once
+available:
+
+1. Security tab → Dependabot → open advisories.
+2. Security tab → Code scanning → open CodeQL alerts.
+3. Security tab → Secret scanning → open detections.
+
+The only operator step that stays manual is **PAT creation** —
+GitHub doesn't expose an API for minting fine-grained PATs, so the
+operator generates one in Settings → Developer settings → Personal
+access tokens, runs `rando vc setup --token "$PAT"`, then
+deletes the PAT in the same UI when the run finishes (the command
+prints the cleanup link on its way out).
 
 ## Gaps identified by inspection
 
@@ -138,18 +147,20 @@ Record those counts in this doc as a follow-up entry once available.
    solo repo this is fine; for any open-source contribution surface
    it's a gap (a PR touching auth code should self-flag).
 
-### Medium-confidence (needs UI check first)
+### Automated via `rando vc security` (no UI clicks required)
 
-1. **Dependabot security updates may not be enabled.** Different
-   from version updates. Auto-opens PRs for vulnerable transitive
-   deps regardless of our Dependabot config.
-2. **Private vulnerability reporting may not be enabled.** Lets
-   external researchers privately disclose security issues via
-   GitHub UI rather than email (which SECURITY.md currently asks
-   for).
-3. **Secret scanning push protection may not be on.** Blocks
-   commits that contain known secret formats _before_ they hit
-   the remote.
+7. **Dependabot security updates.** Auto-opens PRs for vulnerable
+   transitive deps. Enabled by `rando vc security` via
+   `PUT /repos/{o}/{r}/automated-security-fixes` (+ the prereq
+   `vulnerability-alerts` endpoint).
+8. **Private vulnerability reporting.** Lets external researchers
+   privately disclose via GitHub's form. Enabled by `rando vc
+security` via `PUT /repos/{o}/{r}/private-vulnerability-reporting`.
+   `SECURITY.md` already points reporters at the form (#262).
+9. **Secret scanning + push protection.** Blocks commits with known
+   secret formats _before_ they hit the remote. Enabled by `rando
+vc security` via `PATCH /repos/{o}/{r}` with the
+   `security_and_analysis` block.
 
 ### Low-priority (existing pattern works for solo flow)
 
@@ -172,11 +183,11 @@ Record those counts in this doc as a follow-up entry once available.
 
 Three buckets for the next session:
 
-| Bucket                                          | Items                                                                                                                             |
-| ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
-| **Pure config flips** (manual UI, no PR needed) | enable Dependabot security updates, enable secret scanning + push protection, enable private vulnerability reporting, set org 2FA |
-| **New workflow files**                          | `dependency-review.yml` (#250), `scorecard.yml` (#250), `stale.yml` (#262) — all shipped                                          |
-| **Repo file additions**                         | `CODEOWNERS`, security checklist in PR template (optional), update SECURITY.md to mention private vuln reporting once enabled     |
+| Bucket                                              | Items                                                                                                                                |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------ |
+| **Automated via `rando vc security`** (no UI flips) | Dependabot security updates, secret scanning + push protection, private vulnerability reporting, org 2FA (`--include-org-2fa`)       |
+| **New workflow files**                              | `dependency-review.yml` (#250), `scorecard.yml` (#250), `stale.yml` (#262) — all shipped                                             |
+| **Repo file additions**                             | `CODEOWNERS` (#249), `SECURITY.md` updated to point at the GH private-vuln form (#262), security checklist in PR template (optional) |
 
 Each item in buckets 2 + 3 deserves a short `.spec.md` if the user
 wants to compare options (action pins, ruleset additions, etc.) —

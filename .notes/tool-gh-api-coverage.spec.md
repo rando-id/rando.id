@@ -57,20 +57,36 @@ in `gh-cli.ts` vs gaps.
 | Update repository PAT permissions / fine-grained PAT bootstrap                       | (org-level API)                                                        | P2 — likely manual forever                                  |
 | Create deploy key                                                                    | `POST /repos/.../keys`                                                 | P3                                                          |
 | Manage CODEOWNERS file                                                               | (regular file write, not API)                                          | P0 (just write the file)                                    |
+| Enable vulnerability alerts                                                          | `PUT /repos/.../vulnerability-alerts`                                  | **P0** (`rando vc security`)                                |
+| Enable automated security fixes (Dependabot)                                         | `PUT /repos/.../automated-security-fixes`                              | **P0** (`rando vc security`)                                |
+| Enable secret scanning + push protection                                             | `PATCH /repos/{o}/{r}` (`security_and_analysis` block)                 | **P0** (`rando vc security`)                                |
+| Enable private vulnerability reporting                                               | `PUT /repos/.../private-vulnerability-reporting`                       | **P0** (`rando vc security`)                                |
+| Require org 2FA                                                                      | `PATCH /orgs/{org}` (`two_factor_requirement_enabled`)                 | P1 (`rando vc security --include-org-2fa`, destructive)     |
 
 ### What stays manual (and why)
 
+Two operator actions only — both because GitHub doesn't expose a REST
+endpoint for them:
+
 - **PAT creation.** GitHub doesn't expose an API to mint its own PATs.
-  See "Ephemeral admin PAT" below — the operator creates a high-scope
-  PAT just for the duration of `rando vc setup` and revokes it
-  immediately after. The long-lived bootstrap PAT (used by every other
-  workflow) stays minimal-scope.
-- **2FA enrollment.** User-level action only.
-- **Repo creation** itself (could automate via `POST /user/repos` or `POST
-/orgs/{org}/repos`, but the first run is so tied to org/team policy that
-  manual is fine).
-- **Required reviewer accounts.** Need to exist as GH users first; the
-  API references them by login but can't create them.
+  The operator generates a fine-grained PAT once in Settings →
+  Developer settings → Personal access tokens (with the scopes listed
+  in §"Ephemeral admin PAT"), pipes it into `rando vc setup`, and
+  deletes it in the same UI when the run prints the cleanup link.
+- **PAT deletion (cleanup).** Same reason — no self-revoke endpoint.
+  Operator clicks delete in the UI after the run; `rando vc setup`
+  prints the cleanup link in its `finally` block.
+
+Operator-side prerequisites that aren't really "manual rando steps"
+but worth listing:
+
+- **2FA enrollment** for the operator themselves (separate from the
+  org-level requirement). User-level action only.
+- **Repo creation.** Could automate via `POST /user/repos` or
+  `POST /orgs/{org}/repos`, but the first run is so tied to org / team
+  policy that manual is fine.
+- **Required reviewer accounts.** Need to exist as GH users before
+  `rando vc environments` can reference them by id.
 
 ### Ephemeral admin PAT — credential lifecycle
 
@@ -85,7 +101,7 @@ Solution: the admin PAT is **ephemeral**, scoped to a single setup run:
 1. **Pre-run.** Operator generates a fine-grained PAT in GH UI with the
    admin scope set. (PAT minting itself stays manual — GH gives no API
    for it.) Names it predictably: `rando-vc-setup-YYYYMMDD-HHMMSS`.
-2. **Run.** Operator pipes it in: `rando vc setup --admin-token "$ADMIN_PAT"`.
+2. **Run.** Operator pipes it in: `rando vc setup --token "$ADMIN_PAT"`.
    Token is held only in process memory; never written to disk, never
    logged, never committed. The command runs idempotently against all
    P0 endpoints.
@@ -130,20 +146,22 @@ if we ever have > 3 repos to manage.
 `rando vc setup` becomes the umbrella; subcommands handle the slices:
 
 ```
-rando vc setup --admin-token "$PAT" --dry-run   # full report: what'd change
-rando vc setup --admin-token "$PAT"             # apply everything (then prompt to revoke PAT manually)
-rando vc ruleset --admin-token "$PAT"     # just the ruleset
-rando vc environments --admin-token "$PAT"
-rando vc secret --admin-token "$PAT"     # calls into [[security-secrets-strategy]]
-rando vc labels --admin-token "$PAT"
-rando vc repo-settings --admin-token "$PAT"
+rando vc setup --token "$PAT" --dry-run   # full report: what'd change
+rando vc setup --token "$PAT"             # apply everything (then prompt to revoke PAT manually)
+rando vc ruleset --token "$PAT"     # just the ruleset
+rando vc environments --token "$PAT"
+rando vc secret --token "$PAT"     # calls into [[security-secrets-strategy]]
+rando vc security --token "$PAT"    # Dependabot, secret scanning, private vuln reporting
+rando vc security --token "$PAT" --include-org-2fa   # adds org 2FA (destructive)
+rando vc labels --token "$PAT"
+rando vc repo-settings --token "$PAT"
 rando vc codeowners                       # local file, no token needed
 # (no revoke-token subcommand — manual cleanup at github.com/settings/personal-access-tokens)
 ```
 
 The token is required for every subcommand that hits an admin endpoint
 (everything except `codeowners`, which is a local file write). Reading
-from the process env (`RANDO_ADMIN_TOKEN=$PAT rando vc setup`) works too
+from the process env (`RANDO_GH_TOKEN=$PAT rando vc setup`) works too
 — the flag is for explicit one-shot runs.
 
 Each subcommand is idempotent: read state, diff against desired, apply
