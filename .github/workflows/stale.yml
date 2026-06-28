@@ -56,10 +56,6 @@ jobs:
           # Common
           exempt-issue-labels: pinned,security,keep-open
           exempt-pr-labels: pinned,security,keep-open,deploy-preview
-          # Don't touch already-stale items on the FIRST run — give the
-          # operator a chance to label exempt items before the closer
-          # fires.
-          start-date: ${{ github.event.repository.created_at }}
           # Don't mark draft PRs stale — they're often intentional WIP.
           exempt-draft-pr: true
           # Cap per-run to avoid hitting rate limits if the backlog ever

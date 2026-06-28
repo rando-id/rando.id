@@ -57,7 +57,7 @@ unit-tests.yml         — vitest + coverage upload
 
 Not present (could be added per the security/quality ideas):
 `dependency-review.yml`, `scorecard.yml`, secret-scan trigger,
-SAST (semgrep / snyk), stale-issue automation.
+SAST (semgrep / snyk).
 
 ### Docs / templates
 
@@ -131,9 +131,9 @@ Record those counts in this doc as a follow-up entry once available.
    SHA-pinned (good — Dependabot bumps them weekly). Worth a sweep
    to confirm there's no `actions/checkout@v6` style version-tag
    pin remaining.
-5. **No stale-issue/PR automation.** Issues and PRs accumulate
-   indefinitely. The Dependabot triage doc is the closest thing
-   we have to a process — but no GitHub-side automation.
+5. ~~**No stale-issue/PR automation.**~~ Closed via #262 / #264 —
+   `.github/workflows/stale.yml` runs daily; tunings documented in
+   `.notes/ci-stale-automation.md`.
 6. **PR template doesn't require security-impact line.** For a
    solo repo this is fine; for any open-source contribution surface
    it's a gap (a PR touching auth code should self-flag).
@@ -175,7 +175,7 @@ Three buckets for the next session:
 | Bucket                                          | Items                                                                                                                             |
 | ----------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
 | **Pure config flips** (manual UI, no PR needed) | enable Dependabot security updates, enable secret scanning + push protection, enable private vulnerability reporting, set org 2FA |
-| **New workflow files**                          | `dependency-review.yml`, `scorecard.yml`, stale-issue/PR automation, possibly secret-scan trigger                                 |
+| **New workflow files**                          | `dependency-review.yml` (#250), `scorecard.yml` (#250), `stale.yml` (#262) — all shipped                                          |
 | **Repo file additions**                         | `CODEOWNERS`, security checklist in PR template (optional), update SECURITY.md to mention private vuln reporting once enabled     |
 
 Each item in buckets 2 + 3 deserves a short `.spec.md` if the user
