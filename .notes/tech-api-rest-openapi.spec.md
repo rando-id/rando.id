@@ -1,6 +1,6 @@
 ---
 status: approved # draft → proposed (issue filed) → approved (milestone attached)
-issue: TBD
+issue: 269
 ---
 
 # REST + OpenAPI via ts-rest — API style
