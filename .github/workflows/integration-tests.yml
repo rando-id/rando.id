@@ -195,7 +195,8 @@ jobs:
               }
             ') || {
               # NOTE: DISPATCH_URL is from an env var, NOT inlined via
-              # ${{ ... }} — so even if it contains shell metacharacters
+              # a GitHub Actions template expression — so even if it
+              # contains shell metacharacters
               # the worst that happens is they appear in the error
               # message verbatim. printf %s prevents echo from
               # interpreting backslash escapes.
