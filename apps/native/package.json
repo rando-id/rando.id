@@ -37,7 +37,7 @@
     "tamagui": "catalog:tamagui"
   },
   "devDependencies": {
-    "@babel/core": "^7.26.0",
+    "@babel/core": "^8.0.1",
     "@rando/eslint-config": "workspace:*",
     "@rando/tsconfig": "workspace:*",
     "@tamagui/babel-plugin": "catalog:tamagui",
