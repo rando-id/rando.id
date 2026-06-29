@@ -25,7 +25,7 @@ catalog:
   typescript: ^6.0.3
 
   # Standalone tools, no sibling clusters today.
-  '@types/node': ^22.10.2
+  '@types/node': ^26.0.1
   tsx: ^4.22.4
 
   # Schema validation — 5 consumer workspaces. Runtime dep, version
