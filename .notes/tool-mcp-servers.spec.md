@@ -51,7 +51,7 @@ repo gets the same setup.
 **Actual auth model varies by server:**
 
 - **Vercel MCP** is remote (`https://mcp.vercel.com`) with OAuth — first connect triggers a browser flow, token cached by Claude Code locally per-user. Not stored in the repo.
-- **Clerk MCP** is remote (`https://mcp.clerk.com/mcp`) with **no auth** — it's a docs/SDK guidance server, not a user-data server. (For per-instance user inspection we'd still use `rando clerk users …` or the Clerk CLI.)
+- **Clerk MCP** is remote (`https://mcp.clerk.com/mcp`) and does **not require per-user OAuth/API credentials from Claude Code to connect** — it serves docs/SDK guidance only and does not expose tenant user/session data. (For per-instance user inspection we'd still use `rando clerk users …` or the Clerk CLI.)
 - **Neon MCP** is a local `npx -y @neondatabase/mcp-server-neon start <key>` process. The key is read from `${NEON_API_KEY}` in the calling shell's env, which `rando secrets sync` populates into `.env`. **Caveat:** Claude Code itself doesn't auto-load `.env` — you need to either `source .env` before running `claude`, or set up direnv to auto-export when entering the directory.
 
 ## Decision
