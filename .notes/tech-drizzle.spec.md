@@ -1,6 +1,6 @@
 ---
 status: approved # draft → proposed (issue filed) → approved (milestone attached)
-issue: TBD
+issue: 270
 ---
 
 # Drizzle ORM + Drizzle Kit — schema + queries + migrations
