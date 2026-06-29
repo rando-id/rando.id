@@ -20,13 +20,25 @@ needs the ones it has.
 
 ## Which are which
 
-| Env                             | Created by                         | Read by                                   | Purpose                                                                                         |
-| ------------------------------- | ---------------------------------- | ----------------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `staging`                       | `rando vc environments` (us)       | `.github/workflows/deploy-staging.yml`    | Workflow choke point — push-to-staging triggers our workflow which reads secrets from here.     |
-| `production`                    | `rando vc environments` (us)       | `.github/workflows/deploy-production.yml` | Same shape as `staging`, plus required-reviewer gate (D4 from `process-deploy-strategy`).       |
-| `Preview`                       | Vercel's GitHub integration (auto) | Vercel itself                             | Repo-wide preview env-var sync. Each Vercel deploy on a non-`main` branch reads vars from here. |
-| `Preview – rando-<app>` (×3)    | Same                               | Vercel                                    | Per-project preview env-vars. Overrides the repo-wide `Preview` env for that specific project.  |
-| `Production – rando-<app>` (×3) | Same                               | Vercel                                    | Per-project production env-vars. Read on `main`-branch deploys for that project.                |
+| Env                             | Created by                         | Read by today                                                     | Purpose today                                                                                                                                                             |
+| ------------------------------- | ---------------------------------- | ----------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `staging`                       | `rando vc environments` (us)       | **Nothing**                                                       | **Scaffold.** Provisioned in advance so reviewers / branch-protection rules can be added without a CLI change. No workflow currently declares `environment: staging`.     |
+| `production`                    | `rando vc environments` (us)       | `deploy-production.yml` (declares `environment: production`, L70) | **Reviewer gate only.** The deploy workflow waits at this env for human approval before running. Secrets are still loaded from 1Password via `op-env`, NOT from this env. |
+| `Preview`                       | Vercel's GitHub integration (auto) | Vercel itself                                                     | Repo-wide preview env-var sync. Each Vercel deploy on a non-`main` branch reads vars from here.                                                                           |
+| `Preview – rando-<app>` (×3)    | Same                               | Vercel                                                            | Per-project preview env-vars. Overrides the repo-wide `Preview` env for that specific project.                                                                            |
+| `Production – rando-<app>` (×3) | Same                               | Vercel                                                            | Per-project production env-vars. Read on `main`-branch deploys for that project.                                                                                          |
+
+### Today vs future
+
+**Today**: GH Environments are gates (production = reviewer wait;
+staging = unused placeholder). All actual secrets live in **1Password
+Environments** (read by `op-env` at the top of each deploy workflow)
+and **Vercel-managed envs** (read by Vercel at deploy time per
+project). There's no automatic sync between the two.
+
+**Future** (once `#245 vc secret-sync` lands): GH Environments become
+the runtime source-of-truth for CI secrets, fed by 1P via the sync.
+`op-env` composite retires; the staging GH env starts getting read.
 
 ## Naming, briefly
 
@@ -38,15 +50,17 @@ Our `staging` + `production` are deliberately lower-case + ungarnished so the na
 
 ## Where does a given secret go?
 
-| Secret consumer                                                                                                            | Put it on                                                                                                    |
-| -------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------ |
-| **A Vercel build / runtime** needs it at deploy time (`DATABASE_URL`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_*`)                 | The Vercel-side env: `Production – rando-<app>` (per app) or `Preview – rando-<app>`                         |
-| **A GitHub workflow** needs it (a deploy token, `VERCEL_TOKEN` used by `rando deploy promote`, `OP_SERVICE_ACCOUNT_TOKEN`) | Our env: `production` or `staging`                                                                           |
-| **Both**                                                                                                                   | Both. Easier: put it in 1Password, let `rando vc secret-sync` push to the right targets (queued — see #245). |
+**Today** — secrets do NOT live in our GH Environments. The mapping is:
 
-Mental model: **app secrets → Vercel envs; CI secrets → our envs.**
+| Secret consumer                                                                                            | Put it on                                                                                                                                                                                                           |
+| ---------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **A Vercel build / runtime** needs it at deploy time (`DATABASE_URL`, `CLERK_SECRET_KEY`, `NEXT_PUBLIC_*`) | The Vercel-side env: `Production – rando-<app>` (per app) or `Preview – rando-<app>`                                                                                                                                |
+| **A GitHub workflow** needs it (`VERCEL_TOKEN` for `rando deploy promote`, `CLOUDFLARE_API_TOKEN`, etc.)   | The **1Password** environment matching the workflow's `op-env` step. Bootstrap secret `OP_SERVICE_ACCOUNT_TOKEN` IS in GitHub repo secrets (not env secrets) — it's the one secret needed to unlock all the others. |
+| **Both**                                                                                                   | Put it in 1Password (manually or via `rando secrets push`); set it on the Vercel side via the Vercel dashboard or `vercel env add`. The two stores are independent until `#245` lands.                              |
 
-If you put a Vercel-bound secret on `production` (ours), Vercel won't see it and the build will fail with "undefined env var" at runtime. If you put a CI secret on `Production – rando-api` (Vercel's), our workflows won't see it and `gh actions` errors with `secret X not set in environment production`.
+Mental model **today**: **app secrets → Vercel envs; CI secrets → 1Password.** The GitHub `staging` / `production` envs are gates only, not secret stores.
+
+Mental model **after #245**: CI secrets move into GH envs (synced from 1P); Vercel side unchanged. The mental model becomes "app secrets → Vercel envs; CI secrets → our GH envs."
 
 ## What you should NOT do
 
@@ -57,9 +71,10 @@ If you put a Vercel-bound secret on `production` (ours), Vercel won't see it and
 
 ## What you CAN do
 
-- Add required reviewers to **our** `production` env (currently empty — D4 of `process-deploy-strategy` documents this). Same for branch-protection rules on the GitHub Environment.
-- Push a single secret via `pnpm rando vc secret <NAME> --env production --token "$PAT"` (reads value from stdin so plaintext doesn't hit shell history).
-- Add new app-scoped secrets to the Vercel-side env via the Vercel dashboard OR via `rando vc secret --env "Production – rando-api"` (the en-dash and spaces work as the env name).
+- Add required reviewers to **our** `production` env (currently empty — D4 of `process-deploy-strategy` documents this). Same for branch-protection rules on the GitHub Environment. `deploy-production.yml` will start waiting on the new reviewers automatically.
+- Add reviewers to **our** `staging` env if you ever want staging deploys to be gated too — but no workflow currently consumes that gate, so the reviewer wait wouldn't fire. (A future `deploy-staging.yml` change that adds `environment: staging` would activate it.)
+- Push a one-off secret via `pnpm rando vc secret <NAME> --env production --token "$PAT"` (reads value from stdin so plaintext doesn't hit shell history). Until #245 lands, this is most useful for the Vercel-managed envs (`--env "Production – rando-api"`) since our own envs aren't currently read by any workflow.
+- Add new app-scoped secrets to the Vercel-side env via the Vercel dashboard, the `vercel env add` CLI, or `rando vc secret --env "Production – rando-api"` (the en-dash and spaces work as the env name).
 
 ## When this changes
 
