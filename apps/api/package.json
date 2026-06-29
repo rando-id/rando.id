@@ -14,7 +14,7 @@
     "test:coverage": "vitest run --coverage"
   },
   "dependencies": {
-    "@anatine/zod-openapi": "^1.14.2",
+    "@anatine/zod-openapi": "^2.2.8",
     "@clerk/nextjs": "catalog:clerk",
     "@rando/api-client": "workspace:*",
     "@rando/auth": "workspace:*",
