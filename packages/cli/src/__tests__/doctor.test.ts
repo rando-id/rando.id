@@ -400,11 +400,13 @@ describe('brewChecks', () => {
     expect(result.subject).toContain('no Brewfile')
   })
 
-  it('parses "Formula X needs to be installed" lines correctly', async () => {
+  it('parses "Formula X needs to be installed" lines correctly', { timeout: 30_000 }, async () => {
     // We can't easily stub execFileSync without rewriting the module;
     // instead exercise the parser via a separate exported helper. For
     // now, treat this as a smoke check that the check runs without
     // crashing — the parser is verified by the actual CLI smoke test.
+    // Shells out to real `brew bundle check`, which can take >5s on
+    // machines with a large Brewfile — explicit 30s timeout.
     const { brewChecks } = await import('../doctor/checks/brew')
     const dir = tmpRepo(true)
     const result = await brewChecks(dir)[0]!.run()
