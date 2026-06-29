@@ -46,7 +46,7 @@ Vercel derives env names from the Vercel project's display name (the project nam
 
 **Don't rename the Vercel-side ones.** Renaming a Vercel project breaks deploy hooks + project URLs; the environments are downstream of that.
 
-Our `staging` + `production` are deliberately lower-case + ungarnished so the names are stable when we eventually swap deploy vendors (the env block in `rando.config.json` carries a `kind: 'vercel'` discriminator — see `tech-clients-monorepo`).
+Our `staging` + `production` are deliberately lower-case + ungarnished so the names are stable when we eventually swap deploy vendors (the `deploy` block in `rando.config.json` carries a `kind: 'vercel'` discriminator — see `tech-clients-monorepo`).
 
 ## Where does a given secret go?
 
