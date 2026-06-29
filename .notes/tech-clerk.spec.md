@@ -37,7 +37,7 @@ Clerk user record into the local `users` table on every
 
 - Clerk pricing flips bad at scale we can't avoid.
 - We need a feature Clerk doesn't have and won't add (rare — they ship fast).
-- **Neon Auth ships GA and the architectural cleanness (auth-data-IS-Postgres) outweighs Clerk's UI/feature lead.** Tracked in follow-up issue #85. See below for what a migration would actually look like.
+- **Neon Auth ships GA and the architectural cleanliness (auth-data-IS-Postgres) outweighs Clerk's UI/feature lead.** Tracked in follow-up issue #85. See below for what a migration would actually look like.
 
 ### Neon Auth migration sketch
 
