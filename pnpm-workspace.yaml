@@ -56,7 +56,7 @@ catalogs:
   # dedup; they belong here once that override is reconciled — see
   # #228.)
   react:
-    '@types/react': ^19.0.2
+    '@types/react': ^19.2.17
     '@types/react-dom': ^19.0.2
 
   # Tamagui ecosystem — a tamagui v2 won't load v1 config / plugin /
