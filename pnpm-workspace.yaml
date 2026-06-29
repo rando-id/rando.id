@@ -73,7 +73,7 @@ catalogs:
   # @clerk/types as those get adopted. Kept on v6 until a deliberate
   # v7 migration spec lands.
   clerk:
-    '@clerk/nextjs': ^6.10.0
+    '@clerk/nextjs': ^7.5.10
 
   # React Query — apps/web + apps/native consume the core package.
   # Named catalog future-proofs for @tanstack/query-core, react-query
