@@ -42,7 +42,7 @@
     "@rando/tsconfig": "workspace:*",
     "@tamagui/babel-plugin": "catalog:tamagui",
     "@types/react": "catalog:react",
-    "babel-preset-expo": "~56.0.14",
+    "babel-preset-expo": "~57.0.1",
     "eslint": "catalog:eslint",
     "typescript": "~5.7.2"
   }
