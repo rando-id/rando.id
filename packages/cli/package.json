@@ -20,7 +20,7 @@
     "chalk": "^5.6.2",
     "commander": "^15.0.0",
     "libsodium-wrappers": "0.7.13",
-    "openapi-to-postmanv2": "^6.1.0",
+    "openapi-to-postmanv2": "^6.3.1",
     "ora": "^9.4.0",
     "zod": "catalog:"
   },
