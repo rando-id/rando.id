@@ -45,7 +45,7 @@
     "@vitest/coverage-v8": "catalog:vitest",
     "@vitest/ui": "catalog:vitest",
     "eslint": "catalog:eslint",
-    "jsdom": "^29.1.1",
+    "jsdom": "^30.0.0",
     "typescript": "catalog:",
     "vitest": "catalog:vitest"
   }
