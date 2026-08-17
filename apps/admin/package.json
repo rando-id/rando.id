@@ -18,7 +18,7 @@
     "@rando/brand": "workspace:*",
     "@rando/config": "workspace:*",
     "@rando/observability": "workspace:*",
-    "next": "^16.2.9",
+    "next": "^16.3.1",
     "react": "^19.2.7",
     "react-dom": "^19.0.0"
   },
