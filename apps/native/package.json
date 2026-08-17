@@ -15,7 +15,7 @@
   },
   "dependencies": {
     "@clerk/clerk-expo": "^2.19.0",
-    "@expo/metro-runtime": "~56.0.13",
+    "@expo/metro-runtime": "~57.0.10",
     "@rando/api-client": "workspace:*",
     "@rando/auth": "workspace:*",
     "@rando/config": "workspace:*",
