@@ -15,7 +15,7 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@inquirer/prompts": "^8.5.2",
+    "@inquirer/prompts": "^8.7.0",
     "@rando/config": "workspace:*",
     "chalk": "^5.6.2",
     "commander": "^15.0.0",
