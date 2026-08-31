@@ -49,7 +49,7 @@ catalogs:
   # stays on `^10.5.0` outside this catalog until eslint-plugin-react
   # v8 ships (see #224).
   eslint:
-    eslint: ^9.39.4
+    eslint: ^10.9.1
 
   # React typings — must lockstep with the runtime React major. (The
   # runtime react + react-dom live in pnpm.overrides for transitive

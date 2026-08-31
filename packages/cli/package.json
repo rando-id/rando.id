@@ -30,7 +30,7 @@
     "@types/libsodium-wrappers": "^0.7.14",
     "@types/node": "catalog:",
     "@vitest/coverage-v8": "catalog:vitest",
-    "eslint": "^10.5.0",
+    "eslint": "^10.9.1",
     "tsx": "catalog:",
     "typescript": "catalog:",
     "vitest": "catalog:vitest"
