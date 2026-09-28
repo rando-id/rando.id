@@ -62,11 +62,11 @@ catalogs:
   # Tamagui ecosystem — a tamagui v2 won't load v1 config / plugin /
   # theme and vice versa. Bumping is one PR editing this block.
   tamagui:
-    tamagui: ^1.144.0
-    '@tamagui/config': ^1.144.0
-    '@tamagui/next-theme': ^1.144.0
-    '@tamagui/next-plugin': ^1.144.0
-    '@tamagui/babel-plugin': ^1.144.0
+    tamagui: ^2.7.7
+    '@tamagui/config': ^2.7.7
+    '@tamagui/next-theme': ^2.7.7
+    '@tamagui/next-plugin': ^2.7.7
+    '@tamagui/babel-plugin': ^2.7.7
 
   # Clerk auth — apps/admin, apps/api, apps/web consume @clerk/nextjs
   # today. Named catalog future-proofs for @clerk/themes, @clerk/clerk-js,
